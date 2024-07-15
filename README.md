@@ -1,2 +1,2 @@
-# emissary
-virtual emissary for Heavymeta
+# hvym-daemon
+Heavymeta Daemon
