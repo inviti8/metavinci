@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-echo "Installing metavinci daemon..."
+echo "Installing metavinci..."
 
 BASE_DIR="${XDG_CONFIG_HOME:-$HOME}"
-LOCAL_DIR="${LOCAL_DIR-"$BASE_DIR/.local"}"
-HVYM_DIR="$LOCAL_DIR/share/metavinci"
+METAVINCI_DIR="${METAVINCI_DIR-"$BASE_DIR/.metavinci"}"
+METAVINCI_BIN_DIR="$METAVINCI_DIR/bin"
+METAVINCI_MAN_DIR="$METAVINCI_DIR/share/man/man1"
 
 BIN_URL="https://github.com/inviti8/metavinci/raw/main/build/dist/linux/metavinci"
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    BIN_URL="https://github.com/inviti8/metavinci/raw/main/build/dist/mac/metavinci"
-BIN_PATH="$HVYM_DIR/metavinci"
+BIN_PATH="$METAVINCI_BIN_DIR/metavinci"
 
-# Create the .foundry bin directory and metavinci binary if it doesn't exist.
-mkdir -p "$HVYM_DIR"
+# Create the .metavinci bin directory and metavinci binary if it doesn't exist.
+mkdir -p "$METAVINCI_BIN_DIR"
 curl -sSf -L "$BIN_URL" -o "$BIN_PATH"
 chmod +x "$BIN_PATH"
+
+# Create the man directory for future man files if it doesn't exist.
+mkdir -p "$METAVINCI_MAN_DIR"
 
 # Store the correct profile file (i.e. .profile for bash or .zshenv for ZSH).
 case $SHELL in
@@ -36,17 +38,27 @@ case $SHELL in
     PREF_SHELL=ash
     ;;
 *)
-    echo "could not detect shell, manually add ${HVYM_DIR} to your PATH."
+    echo "metavinci: could not detect shell, manually add ${METAVINCI_BIN_DIR} to your PATH."
     exit 1
 esac
 
-# Only add hvym if it isn't already in PATH.
-if [[ ":$PATH:" != *":${HVYM_DIR}:"* ]]; then
-    # Add the hvym directory to the path and ensure the old PATH variables remain.
+# Only add metavinci if it isn't already in PATH.
+if [[ ":$PATH:" != *":${METAVINCI_BIN_DIR}:"* ]]; then
+    # Add the metavinci directory to the path and ensure the old PATH variables remain.
     # If the shell is fish, echo fish_add_path instead of export.
     if [[ "$PREF_SHELL" == "fish" ]]; then
-        echo >> "$PROFILE" && echo "fish_add_path -a $HVYM_DIR" >> "$PROFILE"
+        echo >> "$PROFILE" && echo "fish_add_path -a $METAVINCI_BIN_DIR" >> "$PROFILE"
     else
-        echo >> "$PROFILE" && echo "export PATH=\"\$PATH:$HVYM_DIR\"" >> "$PROFILE"
+        echo >> "$PROFILE" && echo "export PATH=\"\$PATH:$METAVINCI_BIN_DIR\"" >> "$PROFILE"
     fi
 fi
+
+# Warn MacOS users that they may need to manually install libusb via Homebrew:
+if [[ "$OSTYPE" =~ ^darwin ]] && [[ ! -f /usr/local/opt/libusb/lib/libusb-1.0.0.dylib && ! -f /opt/homebrew/opt/libusb/lib/libusb-1.0.0.dylib ]]; then
+    echo && echo "warning: libusb not found. You may need to install it manually on MacOS via Homebrew (brew install libusb)."
+fi
+
+echo
+echo "Detected your preferred shell is $PREF_SHELL and added metavinci to PATH."
+echo "Run 'source $PROFILE' or start a new terminal session to use metavinci."
+echo "Then, simply run 'metavinci' to install Metavinci."
