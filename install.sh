@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-echo "Installing Metavinci..."
+echo "Installing metavinci daemon..."
 
 BASE_DIR="${XDG_CONFIG_HOME:-$HOME}"
 LOCAL_DIR="${LOCAL_DIR-"$BASE_DIR/.local"}"
-HVYM_DIR="$LOCAL_DIR/share/heavymeta-cli"
+HVYM_DIR="$LOCAL_DIR/share/metavinci"
 
 BIN_URL="https://github.com/inviti8/metavinci/raw/main/build/dist/linux/metavinci"
 if [[ "$OSTYPE" == "darwin"* ]]; then
     BIN_URL="https://github.com/inviti8/metavinci/raw/main/build/dist/mac/metavinci"
-BIN_PATH="$HVYM_DIR/hvym"
+BIN_PATH="$HVYM_DIR/metavinci"
 
-# Create the .foundry bin directory and hvym binary if it doesn't exist.
+# Create the .foundry bin directory and metavinci binary if it doesn't exist.
 mkdir -p "$HVYM_DIR"
 curl -sSf -L "$BIN_URL" -o "$BIN_PATH"
 chmod +x "$BIN_PATH"
