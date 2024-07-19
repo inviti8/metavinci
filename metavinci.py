@@ -5,11 +5,49 @@ from pathlib import Path
 import subprocess
 import os
 from gradientmessagebox import *
+import click
+
+FILE_PATH = Path(__file__).parent
+SERVICE_START = os.path.join(FILE_PATH, 'service', 'start.sh')
+SERVICE_EXISTS = os.path.join(FILE_PATH, 'service', 'exists.sh')
+DB_PATH = os.path.join(FILE_PATH, 'data', 'db.json')
+FG_TXT_COLOR = '#98314a'
+
+def _config_popup(popup):
+      popup.fg_luminance(0.8)
+      popup.bg_saturation(0.6)
+      popup.bg_luminance(0.4)
+      popup.custom_msg_color(FG_TXT_COLOR)
+
+def _choice_popup(msg):
+      """ Show choice popup, message based on passed msg arg."""
+      popup = PresetChoiceWindow(msg)
+      _config_popup(popup)
+      result = popup.Ask()
+      return result.response
+
+def _ssh_install(script,  *args):
+    # run your shell script using subprocess
+    p = subprocess.Popen([script, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = p.communicate()
+
+    output = out.decode('utf-8')
+    # Split the output into lines
+    lines = output.splitlines()
+
+    # Extract the last 10 lines (you can change this to 20 if desired)
+    last_line = lines[-1:]
+
+    # Print the output of the subprocess call
+    print('------------------------------------------------------')
+    print(output)
+    print(last_line)
+    print(p.returncode)
+    print('------------------------------------------------------')
      
-class MainWindow(QMainWindow):
+class Metavinci(QMainWindow):
     """
-         Сheckbox and system tray icons.
-             Will initialize in the constructor.
+        Network Daemon for Heavymeta
     """
     check_box = None
     tray_icon = None
@@ -112,10 +150,29 @@ class MainWindow(QMainWindow):
         except Exception as e:
             return "Command failed with error: "+str(e)
          
-     
-if __name__ == "__main__":
+
+@click.command()
+def up():
     import sys
     app = QApplication(sys.argv)
-    mw = MainWindow()
+    mw = Metavinci()
     #mw.show()
     sys.exit(app.exec())
+    click.echo("Metavinci up")
+
+@click.command()
+def start():
+    self._subprocess('sudo systemctl start metavinci')
+
+@click.command()
+def stop():
+    self._subprocess('sudo systemctl stop metavinci')
+
+if __name__ == "__main__":
+    if os.path.isfile(DB_PATH):
+        up()
+    else:
+        STORAGE = TinyDB(DB_PATH)
+        _ssh_install(SERVICE_START)
+        # IC_IDS = STORAGE.table('ic_identities')
+        # IC_PROJECTS = STORAGE.table('ic_projects')
