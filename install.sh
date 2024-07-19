@@ -6,7 +6,6 @@ echo "Installing metavinci..."
 BASE_DIR="${XDG_CONFIG_HOME:-$HOME}"
 METAVINCI_DIR="${METAVINCI_DIR-"$BASE_DIR/.metavinci"}"
 METAVINCI_BIN_DIR="$METAVINCI_DIR/bin"
-METAVINCI_MAN_DIR="$METAVINCI_DIR/share/man/man1"
 
 BIN_URL="https://github.com/inviti8/metavinci/raw/main/build/dist/linux/metavinci"
 BIN_PATH="$METAVINCI_BIN_DIR/metavinci"
@@ -15,9 +14,6 @@ BIN_PATH="$METAVINCI_BIN_DIR/metavinci"
 mkdir -p "$METAVINCI_BIN_DIR"
 curl -sSf -L "$BIN_URL" -o "$BIN_PATH"
 chmod +x "$BIN_PATH"
-
-# Create the man directory for future man files if it doesn't exist.
-mkdir -p "$METAVINCI_MAN_DIR"
 
 # Store the correct profile file (i.e. .profile for bash or .zshenv for ZSH).
 case $SHELL in
@@ -51,11 +47,6 @@ if [[ ":$PATH:" != *":${METAVINCI_BIN_DIR}:"* ]]; then
     else
         echo >> "$PROFILE" && echo "export PATH=\"\$PATH:$METAVINCI_BIN_DIR\"" >> "$PROFILE"
     fi
-fi
-
-# Warn MacOS users that they may need to manually install libusb via Homebrew:
-if [[ "$OSTYPE" =~ ^darwin ]] && [[ ! -f /usr/local/opt/libusb/lib/libusb-1.0.0.dylib && ! -f /opt/homebrew/opt/libusb/lib/libusb-1.0.0.dylib ]]; then
-    echo && echo "warning: libusb not found. You may need to install it manually on MacOS via Homebrew (brew install libusb)."
 fi
 
 echo
