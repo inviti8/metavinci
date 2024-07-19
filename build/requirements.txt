@@ -1,0 +1,16 @@
+certifi==2024.2.2
+charset-normalizer==3.3.2
+click==8.1.7
+colour==0.1.5
+docutils==0.21.2
+gradientmessagebox==1.1
+idna==3.7
+pillow==10.3.0
+pyperclip==1.8.2
+PyQt5==5.15.10
+PyQt5-Qt5==5.15.14
+PyQt5_sip==12.15.0
+pystray==0.19.5
+python-xlib==0.33
+six==1.16.0
+tomli_w==1.0.0
