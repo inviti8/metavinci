@@ -7,9 +7,9 @@ BASE_DIR="${XDG_CONFIG_HOME:-$HOME}"
 LOCAL_DIR="${LOCAL_DIR-"$BASE_DIR/.local"}"
 HVYM_DIR="$LOCAL_DIR/share/heavymeta-cli"
 
-BIN_URL="https://github.com/inviti8/hvym-daemon/raw/main/build/dist/linux/metavinci"
+BIN_URL="https://github.com/inviti8/metavinci/raw/main/build/dist/linux/metavinci"
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    BIN_URL="https://github.com/inviti8/hvym-daemon/raw/main/build/dist/mac/metavinci"
+    BIN_URL="https://github.com/inviti8/metavinci/raw/main/build/dist/mac/metavinci"
 BIN_PATH="$HVYM_DIR/hvym"
 
 # Create the .foundry bin directory and hvym binary if it doesn't exist.
