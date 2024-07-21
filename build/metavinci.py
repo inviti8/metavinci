@@ -17,7 +17,6 @@ CWD = Path.cwd()
 SERVICE_RUN_DEST = CWD / '.metavinci'
 SERVICE_RUN_FILE = os.path.join(HOME, '.metavinci', 'run.sh')
 SERVICE_START = os.path.join(FILE_PATH, 'service', 'start.sh')
-SERVICE_RUN = os.path.join(FILE_PATH, 'service', 'run.sh')
 APP_ICON_FILE = os.path.join(HOME, '.metavinci', 'app_icon.png')
 APP_ICON = os.path.join(FILE_PATH, 'images', 'app_icon.png')
 DB_PATH = os.path.join(FILE_PATH, 'data', 'db.json')
@@ -36,36 +35,9 @@ def _choice_popup(msg):
       result = popup.Ask()
       return result.response
 
-def _ssh_install(script,  *args):
-    # run your shell script using subprocess
-    p = subprocess.Popen([script, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = p.communicate()
-
-    output = out.decode('utf-8')
-    # Split the output into lines
-    lines = output.splitlines()
-
-    # Extract the last 10 lines (you can change this to 20 if desired)
-    last_line = lines[-1:]
-
-    # Print the output of the subprocess call
-    print('------------------------------------------------------')
-    print(output)
-    print(last_line)
-    print(p.returncode)
-    print('------------------------------------------------------')
-    return output
-
-def _install_runner():
-    if not os.path.isfile(str(SERVICE_RUN_FILE)):
-        shutil.copy(str(SERVICE_RUN), SERVICE_RUN_DEST)
-        r = os.stat(SERVICE_RUN_FILE)
-        os.chmod(SERVICE_RUN_FILE, r.st_mode | stat.S_IEXEC)
-
 def _install_icon():
     if not os.path.isfile(str(APP_ICON_FILE)):
         shutil.copy(str(APP_ICON), SERVICE_RUN_DEST)
-    
      
 class Metavinci(QMainWindow):
     """

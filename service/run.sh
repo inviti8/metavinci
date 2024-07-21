@@ -6,11 +6,3 @@ METAVINCI_BIN_DIR="$METAVINCI_DIR/bin"
 
 metavinci="$METAVINCI_BIN_DIR/metavinci"
 $metavinci
-# STATUS="$(systemctl is-active metavinci.service)"
-# if [ "${STATUS}" = "active" ]; then
-# 	metavinci
-#     echo "metavinci started"
-# else 
-#     echo "metavinci could not be started"  
-#     exit 1  
-# fi
