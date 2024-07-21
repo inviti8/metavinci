@@ -4,12 +4,72 @@ from PyQt5.QtGui import QIcon
 from pathlib import Path
 import subprocess
 import os
+import stat
+from tinydb import TinyDB, Query
 from gradientmessagebox import *
+import click
+import getpass
+import shutil
+
+HOME = os.path.expanduser('~')
+FILE_PATH = Path(__file__).parent
+CWD = Path.cwd()
+SERVICE_RUN_DEST = CWD / '.metavinci'
+SERVICE_RUN_FILE = os.path.join(HOME, '.metavinci', 'run.sh')
+SERVICE_START = os.path.join(FILE_PATH, 'service', 'start.sh')
+SERVICE_RUN = os.path.join(FILE_PATH, 'service', 'run.sh')
+APP_ICON_FILE = os.path.join(HOME, '.metavinci', 'app_icon.png')
+APP_ICON = os.path.join(FILE_PATH, 'images', 'app_icon.png')
+DB_PATH = os.path.join(FILE_PATH, 'data', 'db.json')
+FG_TXT_COLOR = '#98314a'
+
+def _config_popup(popup):
+      popup.fg_luminance(0.8)
+      popup.bg_saturation(0.6)
+      popup.bg_luminance(0.4)
+      popup.custom_msg_color(FG_TXT_COLOR)
+
+def _choice_popup(msg):
+      """ Show choice popup, message based on passed msg arg."""
+      popup = PresetChoiceWindow(msg)
+      _config_popup(popup)
+      result = popup.Ask()
+      return result.response
+
+def _ssh_install(script,  *args):
+    # run your shell script using subprocess
+    p = subprocess.Popen([script, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = p.communicate()
+
+    output = out.decode('utf-8')
+    # Split the output into lines
+    lines = output.splitlines()
+
+    # Extract the last 10 lines (you can change this to 20 if desired)
+    last_line = lines[-1:]
+
+    # Print the output of the subprocess call
+    print('------------------------------------------------------')
+    print(output)
+    print(last_line)
+    print(p.returncode)
+    print('------------------------------------------------------')
+    return output
+
+def _install_runner():
+    if not os.path.isfile(str(SERVICE_RUN_FILE)):
+        shutil.copy(str(SERVICE_RUN), SERVICE_RUN_DEST)
+        r = os.stat(SERVICE_RUN_FILE)
+        os.chmod(SERVICE_RUN_FILE, r.st_mode | stat.S_IEXEC)
+
+def _install_icon():
+    if not os.path.isfile(str(APP_ICON_FILE)):
+        shutil.copy(str(APP_ICON), SERVICE_RUN_DEST)
+    
      
-class MainWindow(QMainWindow):
+class Metavinci(QMainWindow):
     """
-         Сheckbox and system tray icons.
-             Will initialize in the constructor.
+        Network Daemon for Heavymeta
     """
     check_box = None
     tray_icon = None
@@ -78,13 +138,13 @@ class MainWindow(QMainWindow):
                 2000
             )
     def new_ic_account(self):
-        return(self._subprocess('hvym icp-new-account'))
+        return(self._subprocess(f'{self.HVYM} icp-new-account'))
 
     def change_ic_account(self):
-        return(self._subprocess('hvym icp-set-account'))
+        return(self._subprocess(f'{self.HVYM} icp-set-account'))
 
     def hvym_check(self):
-        return(self._subprocess('hvym check'))
+        return(self._subprocess(f'{self.HVYM} check'))
 
     def _installation_check(self):
         if not os.path.isfile(self.HVYM):
@@ -112,10 +172,35 @@ class MainWindow(QMainWindow):
         except Exception as e:
             return "Command failed with error: "+str(e)
          
-     
-if __name__ == "__main__":
+
+@click.command()
+def up():
     import sys
     app = QApplication(sys.argv)
-    mw = MainWindow()
+    mw = Metavinci()
     #mw.show()
     sys.exit(app.exec())
+    click.echo("Metavinci up")
+
+@click.command()
+def start():
+    self._subprocess('sudo systemctl start metavinci')
+
+@click.command()
+def stop():
+    self._subprocess('sudo systemctl stop metavinci')
+
+if __name__ == "__main__":
+    if not os.path.isfile(str(APP_ICON_FILE)):
+        click.echo('Metavinci needs permission to start a system service:')
+        st = os.stat(SERVICE_START)
+        os.chmod(SERVICE_START, st.st_mode | stat.S_IEXEC)
+        _install_icon()
+        STORAGE.insert({'INITIALIZED': True})
+        metavinci = str(SERVICE_RUN_DEST)
+        cmd = f'sudo {SERVICE_START} {getpass.getuser()} "{metavinci}"'
+        output = subprocess.check_output(f'sudo {SERVICE_START} {getpass.getuser()} "{metavinci}"', shell=True, stderr=subprocess.STDOUT)
+        click.echo(output.decode('utf-8'))
+
+    up()
+

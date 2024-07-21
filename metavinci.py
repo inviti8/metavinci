@@ -4,12 +4,22 @@ from PyQt5.QtGui import QIcon
 from pathlib import Path
 import subprocess
 import os
+import stat
+from tinydb import TinyDB, Query
 from gradientmessagebox import *
 import click
+import getpass
+import shutil
 
+HOME = os.path.expanduser('~')
 FILE_PATH = Path(__file__).parent
+CWD = Path.cwd()
+SERVICE_RUN_DEST = CWD / '.metavinci'
+SERVICE_RUN_FILE = os.path.join(HOME, '.metavinci', 'run.sh')
 SERVICE_START = os.path.join(FILE_PATH, 'service', 'start.sh')
-SERVICE_EXISTS = os.path.join(FILE_PATH, 'service', 'exists.sh')
+SERVICE_RUN = os.path.join(FILE_PATH, 'service', 'run.sh')
+APP_ICON_FILE = os.path.join(HOME, '.metavinci', 'app_icon.png')
+APP_ICON = os.path.join(FILE_PATH, 'images', 'app_icon.png')
 DB_PATH = os.path.join(FILE_PATH, 'data', 'db.json')
 FG_TXT_COLOR = '#98314a'
 
@@ -44,6 +54,18 @@ def _ssh_install(script,  *args):
     print(last_line)
     print(p.returncode)
     print('------------------------------------------------------')
+    return output
+
+def _install_runner():
+    if not os.path.isfile(str(SERVICE_RUN_FILE)):
+        shutil.copy(str(SERVICE_RUN), SERVICE_RUN_DEST)
+        r = os.stat(SERVICE_RUN_FILE)
+        os.chmod(SERVICE_RUN_FILE, r.st_mode | stat.S_IEXEC)
+
+def _install_icon():
+    if not os.path.isfile(str(APP_ICON_FILE)):
+        shutil.copy(str(APP_ICON), SERVICE_RUN_DEST)
+    
      
 class Metavinci(QMainWindow):
     """
@@ -116,13 +138,13 @@ class Metavinci(QMainWindow):
                 2000
             )
     def new_ic_account(self):
-        return(self._subprocess('hvym icp-new-account'))
+        return(self._subprocess(f'{self.HVYM} icp-new-account'))
 
     def change_ic_account(self):
-        return(self._subprocess('hvym icp-set-account'))
+        return(self._subprocess(f'{self.HVYM} icp-set-account'))
 
     def hvym_check(self):
-        return(self._subprocess('hvym check'))
+        return(self._subprocess(f'{self.HVYM} check'))
 
     def _installation_check(self):
         if not os.path.isfile(self.HVYM):
@@ -169,10 +191,16 @@ def stop():
     self._subprocess('sudo systemctl stop metavinci')
 
 if __name__ == "__main__":
-    if os.path.isfile(DB_PATH):
-        up()
-    else:
-        STORAGE = TinyDB(DB_PATH)
-        _ssh_install(SERVICE_START)
-        # IC_IDS = STORAGE.table('ic_identities')
-        # IC_PROJECTS = STORAGE.table('ic_projects')
+    if not os.path.isfile(str(APP_ICON_FILE)):
+        click.echo('Metavinci needs permission to start a system service:')
+        st = os.stat(SERVICE_START)
+        os.chmod(SERVICE_START, st.st_mode | stat.S_IEXEC)
+        _install_icon()
+        STORAGE.insert({'INITIALIZED': True})
+        metavinci = str(SERVICE_RUN_DEST)
+        cmd = f'sudo {SERVICE_START} {getpass.getuser()} "{metavinci}"'
+        output = subprocess.check_output(f'sudo {SERVICE_START} {getpass.getuser()} "{metavinci}"', shell=True, stderr=subprocess.STDOUT)
+        click.echo(output.decode('utf-8'))
+
+    up()
+

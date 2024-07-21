@@ -1,27 +1,21 @@
 #!/usr/bin/env bash
 #SETUP METAVINCI AS SERVICE
-USER=$(whoami)
-BASE_DIR="${XDG_CONFIG_HOME:-$HOME}"
-METAVINCI_DIR="${METAVINCI_DIR-"$BASE_DIR/.metavinci"}"
-METAVINCI_BIN_DIR="$METAVINCI_DIR/bin"
-METAVINCI="$METAVINCI_DIR/bin/metavinci"
-cat >>/etc/systemd/system/metavinci.service <<EOL
-Description=Metavinci Daemon
-[Service]
-Type=simple
-ExecStart=$METAVINCI
-User=$USER
-Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$METAVINCI_BIN_DIR"
-[Install]
-WantedBy=multi-user.target
+metavinci="$2/bin/metavinci"
+icon="$2/app_icon.png"
+cat >>/usr/share/applications/metavinci.desktop <<EOL
+[Desktop Entry]
+Type=Application
+Name=Metavinci Daemon
+Exec=$metavinci
+Icon=$icon
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true
 EOL
-echo "metavinci sevice created."
+echo "metavinci added to autostart."
 
-sudo systemctl daemon-reload
-echo "systemctl daemon reloaded."
+# sudo chown $SUDO_USER /home/$1/.config/autostart/metavinci.desktop
 
-sudo systemctl enable metavinci
-echo "systemctl enabled metavinci"
+# sudo chown $SUDO_USER /home/$1/.config/autostart/metavinci.desktop
 
-sudo systemctl start metavinci
-echo "systemctl started metavinci"
+# chmod 644 /home/$1/.config/autostart/metavinci.desktop

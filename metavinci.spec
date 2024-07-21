@@ -5,7 +5,7 @@ a = Analysis(
     ['/media/desktop/HD2/Dev/hvym-daemon/build/metavinci.py'],
     pathex=[],
     binaries=[],
-    datas=[('images', 'images')],
+    datas=[('images', 'images'), ('data', 'data'), ('service', 'service')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -35,4 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['/media/desktop/HD2/Dev/hvym-daemon/hvym_logo_64.ico'],
 )
