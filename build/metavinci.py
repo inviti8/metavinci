@@ -170,7 +170,9 @@ class Metavinci(QMainWindow):
         if answer.response == 'OK':
             loading= _loading_message('UPDATING')
             loading.Play()
-            #_update_blender_addon(version)
+            _update_blender_addon(version)
+            _update_cli()
+            self._subprocess('hvym update-npm-modules')
             loading.Close()
 
     def _installation_check(self):
@@ -192,7 +194,7 @@ class Metavinci(QMainWindow):
         else:
             print('hvym not installed.')
 
-    def _delete_hvym_cli(self):
+    def _delete_hvym(self):
         home = Path.home()
         hvym = home / '.local' / 'share' / 'heavymeta-cli' / 'hvym'
         
@@ -219,6 +221,10 @@ class Metavinci(QMainWindow):
         _delete_blender_addon(version)
         _install_blender_addon(version)
 
+    def _update_cli(self):
+        _delete_hvym()
+        _install_hvym()
+
          
 
 @click.command()
@@ -244,7 +250,6 @@ if __name__ == "__main__":
         st = os.stat(SERVICE_START)
         os.chmod(SERVICE_START, st.st_mode | stat.S_IEXEC)
         _install_icon()
-        STORAGE.insert({'INITIALIZED': True})
         metavinci = str(SERVICE_RUN_DEST)
         cmd = f'sudo {SERVICE_START} {getpass.getuser()} "{metavinci}"'
         output = subprocess.check_output(f'sudo {SERVICE_START} {getpass.getuser()} "{metavinci}"', shell=True, stderr=subprocess.STDOUT)

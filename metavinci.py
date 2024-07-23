@@ -250,7 +250,6 @@ if __name__ == "__main__":
         st = os.stat(SERVICE_START)
         os.chmod(SERVICE_START, st.st_mode | stat.S_IEXEC)
         _install_icon()
-        STORAGE.insert({'INITIALIZED': True})
         metavinci = str(SERVICE_RUN_DEST)
         cmd = f'sudo {SERVICE_START} {getpass.getuser()} "{metavinci}"'
         output = subprocess.check_output(f'sudo {SERVICE_START} {getpass.getuser()} "{metavinci}"', shell=True, stderr=subprocess.STDOUT)
