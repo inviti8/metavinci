@@ -186,13 +186,12 @@ class Metavinci(QMainWindow):
     def _installation_check(self):
         if not os.path.isfile(self.HVYM):
             print('Install the cli')
+            self._install_hvym()
         else:
             print('hvym is installed')
             if self.hvym_check().strip() == 'ONE-TWO':
                 print('hvym is on path')
                 self._subprocess('hvym splash')
-            else:
-                self._install_hvym()
 
     def _install_hvym(self):
         installed = self._subprocess('curl -L https://github.com/inviti8/hvym/raw/main/install.sh | bash')
