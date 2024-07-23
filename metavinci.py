@@ -62,7 +62,7 @@ def _subprocess(command):
             output = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT)
             return output.decode('utf-8')
         except Exception as e:
-            return "Command failed with error: "+str(e)
+            return None
 
 def _install_hvym():
     _subprocess('curl -L https://github.com/inviti8/hvym/raw/main/install.sh | bash')
@@ -157,7 +157,7 @@ class Metavinci(QMainWindow):
             output = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT)
             return output.decode('utf-8')
         except Exception as e:
-            return "Command failed with error: "+str(e)
+            return None
 
     def new_ic_account(self):
         return(self._subprocess(f'{self.HVYM} icp-new-account'))
@@ -195,8 +195,8 @@ class Metavinci(QMainWindow):
                 self._install_hvym()
 
     def _install_hvym(self):
-        self._subprocess('curl -L https://github.com/inviti8/hvym/raw/main/install.sh | bash')
-        if self.hvym_check().strip() == 'ONE-TWO':
+        installed = self._subprocess('curl -L https://github.com/inviti8/hvym/raw/main/install.sh | bash')
+        if installed != None and self.hvym_check().strip() == 'ONE-TWO':
             print('hvym is on path')
             self._subprocess('hvym splash')
         else:
@@ -266,5 +266,5 @@ if __name__ == "__main__":
         _install_hvym()
         click.echo("Metavinci Installed")
 
-    # up()
+    up()
 
