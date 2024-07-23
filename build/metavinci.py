@@ -254,6 +254,7 @@ def stop():
 
 if __name__ == "__main__":
     if not os.path.isfile(str(APP_ICON_FILE)):
+        #DO INSTALL
         click.echo('Metavinci needs permission to start a system service:')
         st = os.stat(SERVICE_START)
         os.chmod(SERVICE_START, st.st_mode | stat.S_IEXEC)
@@ -263,6 +264,7 @@ if __name__ == "__main__":
         output = subprocess.check_output(f'sudo {SERVICE_START} {getpass.getuser()} "{metavinci}"', shell=True, stderr=subprocess.STDOUT)
         click.echo(output.decode('utf-8'))
         _install_hvym()
+        click.echo("Metavinci Installed")
 
-    up()
+    # up()
 
