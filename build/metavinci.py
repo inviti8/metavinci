@@ -64,6 +64,14 @@ def _subprocess(command):
         except Exception as e:
             return "Command failed with error: "+str(e)
 
+def _install_hvym():
+    _subprocess('curl -L https://github.com/inviti8/hvym/raw/main/install.sh | bash')
+    if _subprocess('hvym check').strip() == 'ONE-TWO':
+        print('hvym is on path')
+        _subprocess('hvym splash')
+    else:
+        print('hvym not installed.')
+
 
 def _install_icon():
     if not os.path.isfile(str(APP_ICON_FILE)):
@@ -218,12 +226,12 @@ class Metavinci(QMainWindow):
         _download_unzip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(addon_dir))
 
     def _update_blender_addon(self, version):
-        _delete_blender_addon(version)
-        _install_blender_addon(version)
+        self._delete_blender_addon(version)
+        self._install_blender_addon(version)
 
     def _update_cli(self):
-        _delete_hvym()
-        _install_hvym()
+        self._delete_hvym()
+        self._install_hvym()
 
          
 
@@ -254,6 +262,7 @@ if __name__ == "__main__":
         cmd = f'sudo {SERVICE_START} {getpass.getuser()} "{metavinci}"'
         output = subprocess.check_output(f'sudo {SERVICE_START} {getpass.getuser()} "{metavinci}"', shell=True, stderr=subprocess.STDOUT)
         click.echo(output.decode('utf-8'))
+        _install_hvym()
 
     up()
 
