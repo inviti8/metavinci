@@ -263,8 +263,7 @@ if __name__ == "__main__":
         cmd = f'sudo {SERVICE_START} {getpass.getuser()} "{metavinci}"'
         output = subprocess.check_output(f'sudo {SERVICE_START} {getpass.getuser()} "{metavinci}"', shell=True, stderr=subprocess.STDOUT)
         click.echo(output.decode('utf-8'))
-        _install_hvym()
-        click.echo("Metavinci Installed")
 
     up()
+    click.echo("Metavinci Installed, close this terminal.")
 
