@@ -49,6 +49,7 @@ if [[ ":$PATH:" != *":${METAVINCI_BIN_DIR}:"* ]]; then
     fi
 fi
 
+. ~/.bashrc
 echo
 echo "Detected your preferred shell is $PREF_SHELL and added metavinci to PATH."
 echo "Run 'source $PROFILE' or start a new terminal session to use metavinci."
