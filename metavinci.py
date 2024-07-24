@@ -198,7 +198,10 @@ class Metavinci(QMainWindow):
         check = self.hvym_check()
         if installed != None and check != None and check.strip() == 'ONE-TWO':
             print('hvym is on path')
+            print(self.HVYM)
             self._subprocess(f'{self.HVYM} up')
+            print('close this terminal')
+            qApp.quit()
         else:
             print('hvym not installed.')
 
