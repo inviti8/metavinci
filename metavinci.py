@@ -200,8 +200,7 @@ class Metavinci(QMainWindow):
             print('hvym is on path')
             print(self.HVYM)
             self._subprocess(f'{self.HVYM} up')
-            print('close this terminal')
-            qApp.quit()
+            self._subprocess('. ~/.bashrc')
         else:
             print('hvym not installed.')
 

@@ -5,7 +5,7 @@ icon="$2/app_icon.png"
 cat >>/usr/share/applications/metavinci.desktop <<EOL
 [Desktop Entry]
 Type=Application
-Name=Metavinci Daemon
+Name=Metavinci
 Exec=$metavinci
 Icon=$icon
 Terminal=false

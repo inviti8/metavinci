@@ -201,7 +201,7 @@ class Metavinci(QMainWindow):
             print(self.HVYM)
             self._subprocess(f'{self.HVYM} up')
             print('close this terminal')
-            qApp.quit()
+            sys.exit()
         else:
             print('hvym not installed.')
 
