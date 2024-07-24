@@ -180,7 +180,7 @@ class Metavinci(QMainWindow):
             loading.Play()
             _update_blender_addon(version)
             _update_cli()
-            self._subprocess('hvym update-npm-modules')
+            self._subprocess(f'{self.HVYM} update-npm-modules')
             loading.Close()
 
     def _installation_check(self):
@@ -189,14 +189,16 @@ class Metavinci(QMainWindow):
             self._install_hvym()
         else:
             print('hvym is installed')
-            if self.hvym_check().strip() == 'ONE-TWO':
+            check = self.hvym_check()
+            if check != None and check.strip() == 'ONE-TWO':
                 print('hvym is on path')
 
     def _install_hvym(self):
         installed = self._subprocess('curl -L https://github.com/inviti8/hvym/raw/main/install.sh | bash')
-        if installed != None and self.hvym_check().strip() == 'ONE-TWO':
+        check = self.hvym_check()
+        if installed != None and check != None and check.strip() == 'ONE-TWO':
             print('hvym is on path')
-            self._subprocess('hvym up')
+            self._subprocess(f'{self.HVYM} up')
         else:
             print('hvym not installed.')
 
