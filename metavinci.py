@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp, QVBoxLayout, QPushButton, QDialog
 from PyQt5.QtCore import QSize
 from PyQt5.QtGui import QIcon
 from pathlib import Path
@@ -12,6 +12,10 @@ from gradientmessagebox import *
 import click
 import getpass
 import shutil
+from biscuit_auth import KeyPair,PrivateKey, PublicKey
+from cryptography.fernet import Fernet
+import json
+import re
 
 HOME = os.path.expanduser('~')
 FILE_PATH = Path(__file__).parent
@@ -97,7 +101,8 @@ class Metavinci(QMainWindow):
         self.icon = QIcon(self.LOGO_IMG)
         self.update_icon = QIcon(self.UPDATE_IMG)
         self.ic_icon = QIcon(self.ICP_LOGO_IMG)
-     
+        self.user_pid = self._subprocess('hvym icp-principal').strip()
+
         self.setMinimumSize(QSize(480, 80))             # Set sizes
         self.setWindowTitle("Metavinci")  # Set a title
         central_widget = QWidget(self)                  # Create a central widget
@@ -130,16 +135,214 @@ class Metavinci(QMainWindow):
         icp_new_account_action.triggered.connect(self.new_ic_account)
         icp_change_account_action.triggered.connect(self.change_ic_account)
         update_tools_action.triggered.connect(self.update_tools)
+
+        # Add a new action for tasks
+        task_action = QAction("Show Tasks", self)
+        task_action.triggered.connect(self.show_tasks_popup)
+
         quit_action.triggered.connect(qApp.quit)
         tray_menu = QMenu()
         tray_menu.addAction(icp_new_account_action)
         tray_menu.addAction(icp_change_account_action)
+        tray_menu.addAction(task_action)
         tray_menu.addAction(update_tools_action)
         tray_menu.addAction(quit_action)
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
         self._installation_check()
      
+    def show_tasks_popup(self):
+        # Create a QDialog instance for the popup
+        popup = QDialog(self)
+        
+        # Set the dialog window title
+        popup.setWindowTitle("Choose Task")
+        
+        # Create layout and buttons
+        layout = QVBoxLayout()
+        
+        generate_keypair_button = QPushButton("Generate and Store App Keypair", self)
+        generate_keypair_button.clicked.connect(self.generate_store_keypair)
+
+        import_keypair_button = QPushButton("Import App Keypair", self)
+        import_keypair_button.clicked.connect(self.import_keys)
+
+        get_icp_balance_button = QPushButton("Get ICP Balance", self)
+        get_icp_balance_button.clicked.connect(self.get_icp_balance)
+
+        get_oro_balance_button = QPushButton("Get ORO Balance", self)
+        get_oro_balance_button.clicked.connect(self.get_oro_balance)
+
+        get_ckETH_balance_button = QPushButton("Get ckETH Balance", self)
+        get_ckETH_balance_button.clicked.connect(self.get_ckETH_balance)
+
+        get_ckBTC_balance_button = QPushButton("Get ckBTC Balance", self)
+        get_ckBTC_balance_button.clicked.connect(self.get_ckBTC_balance)
+
+        layout.addWidget(generate_keypair_button)
+        layout.addWidget(import_keypair_button)
+        layout.addWidget(get_icp_balance_button)
+        layout.addWidget(get_oro_balance_button)
+        layout.addWidget(get_ckETH_balance_button)
+        layout.addWidget(get_ckBTC_balance_button)
+
+        # Set layout for the dialog
+        popup.setLayout(layout)
+        
+        # Show the dialog
+        popup.exec_()
+
+    # Task function for generating and storing the app keypair using biscuit-python
+    def generate_store_keypair(self):
+        try:
+            # Generate keypair using biscuit-python
+            keypair = KeyPair()
+
+            serialized_keys = {
+                "private_key": keypair.private_key.to_hex(),
+                "public_key": keypair.public_key.to_hex()
+            }
+            
+            # print("key generated & stored : ",serialized_keys)
+            # locate .metavinci directory in user's home directory
+            meta_dir = os.path.join(HOME, '.metavinci')
+            if not os.path.exists(meta_dir):
+                os.makedirs(meta_dir, mode=0o700)  # Create directory with secure permissions
+
+            # # Generate a symmetric encryption key
+            encryption_key = Fernet.generate_key()
+            cipher_suite = Fernet(encryption_key)
+
+            serialized_keys_str = json.dumps(serialized_keys)
+            encrpted_keys = cipher_suite.encrypt(serialized_keys_str.encode())
+
+            keystore_path = os.path.join(meta_dir, 'keystore.enc')
+            encryption_key_path = os.path.join(meta_dir, 'encryption_key.key')
+
+            # # # Write the private key securely (restrict access to owner)
+            with open(keystore_path, 'wb') as keystore_file:
+                keystore_file.write(encrpted_keys)
+            os.chmod(keystore_path, 0o600)
+
+            # # # Write the encryption key
+            with open(encryption_key_path, 'wb') as encrypt_key_file:
+                encrypt_key_file.write(encryption_key)
+
+            # # Show success message
+            _prompt_popup("keypair generated and stored successfully at : "+keystore_path)
+        except Exception as e:
+            # Show error message
+            print(e)
+            _prompt_popup("Error generating and storing app keypair.")
+
+    def import_keys(self):
+        try:
+            # locate .metavinci directory in user's home directory
+            meta_dir = os.path.join(HOME, '.metavinci')
+            if not os.path.exists(meta_dir):
+                os.makedirs(meta_dir, mode=0o700)
+            
+            # Read the encrypted keys
+            keystore_path = os.path.join(meta_dir, 'keystore.enc')
+            encrypt_key_path = os.path.join(meta_dir, 'encryption_key.key')
+
+            if not os.path.exists(keystore_path) or not os.path.exists(encrypt_key_path):
+                _prompt_popup("No keypair found to import.")
+                return
+            
+            with open(encrypt_key_path, 'rb') as encrypt_key_file:
+                encryption_key = encrypt_key_file.read()
+            cipher_suite = Fernet(encryption_key)
+
+            with open(keystore_path, 'rb') as keystore_file:
+                encrypted_keys = keystore_file.read()
+
+            decrypted_keys = cipher_suite.decrypt(encrypted_keys)
+            serialized_keys = json.loads(decrypted_keys)
+
+            # print("key imported : ",serialized_keys)
+            private_key = PrivateKey.from_hex(serialized_keys['private_key'])
+            public_key = PublicKey.from_hex(serialized_keys['public_key'])
+
+            # Show success message
+            _prompt_popup("keypair imported successfully.")
+        except Exception as e:
+            # Show error message
+            print(e)
+            _prompt_popup("Error importing app keypair.")
+
+    def get_icp_balance(self):
+        icp_canister_id = "ryjl3-tyaaa-aaaaa-aaaba-cai"
+
+        command = f'dfx canister call {icp_canister_id} icrc1_balance_of "(record {{ owner = principal \\"{self.user_pid}\\" }})" --ic'
+        try:
+            balance = self._subprocess(command)
+            
+            # Extract the numeric part from the returned string using a regular expression
+            match = re.search(r'\(([\d_]+) : nat\)', balance)
+            if match:
+                numeric_balance = int(match.group(1).replace('_', ''))  # 
+                _prompt_popup(f"ICP Balance: {numeric_balance}")
+            else:
+                _prompt_popup("Invalid balance format returned.")
+        except Exception as e:
+            print(e)
+            _prompt_popup("Error fetching ICP balance.")
+
+    def get_oro_balance(self):
+        oro_canister_id = "ryjl3-tyaaa-aaaaa-aaaba-cai" # currently set to ICP canister id
+
+        command = f'dfx canister call {oro_canister_id} icrc1_balance_of "(record {{ owner = principal \\"{self.user_pid}\\" }})" --ic'
+        try:
+            balance = self._subprocess(command)
+            
+            # Extract the numeric part from the returned string using a regular expression
+            match = re.search(r'\(([\d_]+) : nat\)', balance)
+            if match:
+                numeric_balance = int(match.group(1).replace('_', '' ) )  # 
+                _prompt_popup(f"ORO Balance: {numeric_balance}")
+            else:
+                _prompt_popup("Invalid balance format returned.")
+        except Exception as e:
+            print(e)
+            _prompt_popup("Error fetching ORO balance.")
+
+    def get_ckETH_balance(self):
+        ckETH_canister_id = "ss2fx-dyaaa-aaaar-qacoq-cai"
+
+        command = f'dfx canister call {ckETH_canister_id} icrc1_balance_of "(record {{ owner = principal \\"{self.user_pid}\\" }})" --ic'
+        try:
+            balance = self._subprocess(command)
+            
+            # Extract the numeric part from the returned string using a regular expression
+            match = re.search(r'\(([\d_]+) : nat\)', balance)
+            if match:
+                numeric_balance = int(match.group(1).replace('_', '' ) )  # 
+                _prompt_popup(f"ckETH Balance: {numeric_balance}")
+            else:
+                _prompt_popup("Invalid balance format returned.")
+        except Exception as e:
+            print(e)
+            _prompt_popup("Error fetching ckETH balance.")
+
+    def get_ckBTC_balance(self):
+        ckBTC_canister_id = "mxzaz-hqaaa-aaaar-qaada-cai"
+
+        command = f'dfx canister call {ckBTC_canister_id} icrc1_balance_of "(record {{ owner = principal \\"{self.user_pid}\\" }})" --ic'
+        try:
+            balance = self._subprocess(command)
+            
+            # Extract the numeric part from the returned string using a regular expression
+            match = re.search(r'\(([\d_]+) : nat\)', balance)
+            if match:
+                numeric_balance = int(match.group(1).replace('_', '' ) )  # 
+                _prompt_popup(f"ckBTC Balance: {numeric_balance}")
+            else:
+                _prompt_popup("Invalid balance format returned.")
+        except Exception as e:
+            print(e)
+            _prompt_popup("Error fetching ckBTC balance.")
+
     # Override closeEvent, to intercept the window closing event
     # The window will be closed only if there is no check mark in the check box
     def closeEvent(self, event):
