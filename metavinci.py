@@ -12,10 +12,12 @@ from gradientmessagebox import *
 import click
 import getpass
 import shutil
-from biscuit_auth import KeyPair,PrivateKey, PublicKey
+from biscuit_auth import KeyPair,PrivateKey, PublicKey,BiscuitBuilder,Fact,Authorizer,Biscuit
 from cryptography.fernet import Fernet
 import json
 import re
+from datetime import datetime, timedelta, timezone
+import time
 
 HOME = os.path.expanduser('~')
 FILE_PATH = Path(__file__).parent
@@ -102,6 +104,10 @@ class Metavinci(QMainWindow):
         self.update_icon = QIcon(self.UPDATE_IMG)
         self.ic_icon = QIcon(self.ICP_LOGO_IMG)
         self.user_pid = self._subprocess('hvym icp-principal').strip()
+        self.metavinci_dir = os.path.join(self.HOME, '.metavinci')
+        self.publik_key = None
+        self.private_key = None
+        self.refresh_interval = 8 * 60 * 60  # 8 hours in seconds
 
         self.setMinimumSize(QSize(480, 80))             # Set sizes
         self.setWindowTitle("Metavinci")  # Set a title
@@ -150,6 +156,8 @@ class Metavinci(QMainWindow):
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
         self._installation_check()
+        self.generate_store_keypair()
+        self.import_keys()
      
     def show_tasks_popup(self):
         # Create a QDialog instance for the popup
@@ -179,12 +187,20 @@ class Metavinci(QMainWindow):
         get_ckBTC_balance_button = QPushButton("Get ckBTC Balance", self)
         get_ckBTC_balance_button.clicked.connect(self.get_ckBTC_balance)
 
+        generate_store_token_button = QPushButton("Generate and Store Token", self)
+        generate_store_token_button.clicked.connect(self.generate_store_token)
+
+        authorization_loop_button = QPushButton("Start Authorization Loop", self)
+        authorization_loop_button.clicked.connect(self.authorization_loop)
+
         layout.addWidget(generate_keypair_button)
         layout.addWidget(import_keypair_button)
         layout.addWidget(get_icp_balance_button)
         layout.addWidget(get_oro_balance_button)
         layout.addWidget(get_ckETH_balance_button)
         layout.addWidget(get_ckBTC_balance_button)
+        layout.addWidget(generate_store_token_button)
+        layout.addWidget(authorization_loop_button)
 
         # Set layout for the dialog
         popup.setLayout(layout)
@@ -261,8 +277,8 @@ class Metavinci(QMainWindow):
             serialized_keys = json.loads(decrypted_keys)
 
             # print("key imported : ",serialized_keys)
-            private_key = PrivateKey.from_hex(serialized_keys['private_key'])
-            public_key = PublicKey.from_hex(serialized_keys['public_key'])
+            self.private_key = PrivateKey.from_hex(serialized_keys['private_key'])
+            self.public_key = PublicKey.from_hex(serialized_keys['public_key'])
 
             # Show success message
             _prompt_popup("keypair imported successfully.")
@@ -342,6 +358,83 @@ class Metavinci(QMainWindow):
         except Exception as e:
             print(e)
             _prompt_popup("Error fetching ckBTC balance.")
+
+    def generate_store_token(self):
+        try:
+            builder = BiscuitBuilder()
+            
+            account_name = self._subprocess('dfx identity whoami').strip()
+            oro_balance = 1000
+
+            # Add facts to the token
+            builder.add_fact(Fact(f'account_name("{account_name}")'))
+            builder.add_fact(Fact(f'account_principal("{self.user_pid}")'))
+            builder.add_fact(Fact(f'account_oro_balance({oro_balance})'))
+
+            # Add expiration timestamp as a fact
+            expiration_time = (datetime.now(tz=timezone.utc) + timedelta(hours=8)).timestamp()
+            print(expiration_time)
+            builder.add_fact(Fact(f'Timestamp("{expiration_time}")'))
+
+            # Build and serialize the token
+            token = builder.build(self.private_key)
+            serialized_token = bytes(token.to_bytes())
+            token_path = os.path.join(self.metavinci_dir, 'auth_token.enc')
+
+            # Write the token securely (restrict access to owner)
+            with open(token_path, 'wb') as token_file:
+                token_file.write(serialized_token)
+            os.chmod(token_path, 0o600)
+
+        except Exception as e:
+            # Show error message
+            print(e)
+            _prompt_popup("Error generating and storing token.")
+
+    def authorize_token(self):
+        try:
+            s_token = self.get_serialized_token()
+            tkn = Biscuit.from_bytes(s_token, self.public_key)
+            authorizer = Authorizer("""
+                                    allow if account_principal({p});
+                                    """,{ "p": f'{self.user_pid}'})
+            authorizer.add_token(tkn)
+            idx = authorizer.authorize()
+            print("token authorized (index): ",idx)
+            return True
+        except Exception as e:
+            # Show error message
+            print(e)
+            _prompt_popup("Error authorizing token.")
+            return False
+
+    def get_serialized_token(self):
+        try:
+            token_path = os.path.join(self.metavinci_dir, 'auth_token.enc')
+            if not os.path.exists(token_path):
+                _prompt_popup("No token found.")
+                return
+            
+            with open(token_path, 'rb') as token_file:
+                serialized_token = token_file.read()
+            
+            return serialized_token
+
+        except Exception as e:
+            # Show error message
+            print(e)
+            _prompt_popup("Error fetching token.")
+
+    def authorization_loop(self):
+        while True:
+            # print("Generating new token and authorizing...")
+            # self.generate_store_token()
+            authorized = self.authorize_token()
+            if authorized:
+                print("Token authorized. Sleeping for 8 hours...")
+            else:
+                print("Token authorization failed. Retrying in 10 seconds...")
+            time.sleep(self.refresh_interval if authorized else 10)
 
     # Override closeEvent, to intercept the window closing event
     # The window will be closed only if there is no check mark in the check box
