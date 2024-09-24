@@ -52,3 +52,5 @@ subprocess.run(['pyinstaller', '--noconsole', '--onefile', f'--icon={str(ico_fil
 if args.test:
     test_dir = Path('/home/desktop/.metavinci/bin/metavinci')
     shutil.copy(str(dist_dir / (src_file1.stem )), test_dir)
+    bin_dir = Path('/home/desktop/.metavinci/bin/')
+    subprocess.Popen('chmod +x ./metavinci', cwd=bin_dir, shell=True, stderr=subprocess.STDOUT)
