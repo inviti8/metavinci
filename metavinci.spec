@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['/media/desktop/HD2/Dev/hvym-daemon/build/metavinci.py'],
+    ['/media/desktop/_dsk/dev/metavinci/build/metavinci.py'],
     pathex=[],
     binaries=[],
     datas=[('images', 'images'), ('data', 'data'), ('service', 'service')],
@@ -12,6 +12,7 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[],
     noarchive=False,
+    optimize=0,
 )
 pyz = PYZ(a.pure)
 
@@ -34,5 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['/media/desktop/HD2/Dev/hvym-daemon/hvym_logo_64.ico'],
+    icon=['/media/desktop/_dsk/dev/metavinci/hvym_logo_64.ico'],
 )
