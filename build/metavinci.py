@@ -44,9 +44,12 @@ def _choice_popup(msg):
       return result.response
 
 
-def _prompt_popup(msg):
+def _prompt_popup(msg, wide=False):
       """ Show choice popup, message based on passed msg arg."""
       popup = PresetPromptWindow(msg)
+      if wide:
+        popup = PresetWidePromptWindow(msg)
+
       _config_popup(popup)
       result = popup.Prompt()
 
@@ -160,53 +163,20 @@ class Metavinci(QMainWindow):
         self.import_keys()
      
     def show_tasks_popup(self):
-        # Create a QDialog instance for the popup
-        popup = QDialog(self)
-        
-        # Set the dialog window title
-        popup.setWindowTitle("Choose Task")
-        
-        # Create layout and buttons
-        layout = QVBoxLayout()
-        
-        generate_keypair_button = QPushButton("Generate and Store App Keypair", self)
-        generate_keypair_button.clicked.connect(self.generate_store_keypair)
-
-        import_keypair_button = QPushButton("Import App Keypair", self)
-        import_keypair_button.clicked.connect(self.import_keys)
-
-        get_icp_balance_button = QPushButton("Get ICP Balance", self)
-        get_icp_balance_button.clicked.connect(self.get_icp_balance)
-
-        get_oro_balance_button = QPushButton("Get ORO Balance", self)
-        get_oro_balance_button.clicked.connect(self.get_oro_balance)
-
-        get_ckETH_balance_button = QPushButton("Get ckETH Balance", self)
-        get_ckETH_balance_button.clicked.connect(self.get_ckETH_balance)
-
-        get_ckBTC_balance_button = QPushButton("Get ckBTC Balance", self)
-        get_ckBTC_balance_button.clicked.connect(self.get_ckBTC_balance)
-
-        generate_store_token_button = QPushButton("Generate and Store Token", self)
-        generate_store_token_button.clicked.connect(self.generate_store_token)
-
-        authorization_loop_button = QPushButton("Start Authorization Loop", self)
-        authorization_loop_button.clicked.connect(self.authorization_loop)
-
-        layout.addWidget(generate_keypair_button)
-        layout.addWidget(import_keypair_button)
-        layout.addWidget(get_icp_balance_button)
-        layout.addWidget(get_oro_balance_button)
-        layout.addWidget(get_ckETH_balance_button)
-        layout.addWidget(get_ckBTC_balance_button)
-        layout.addWidget(generate_store_token_button)
-        layout.addWidget(authorization_loop_button)
-
-        # Set layout for the dialog
-        popup.setLayout(layout)
-        
-        # Show the dialog
-        popup.exec_()
+        #Create a dict for popup buttons
+        tasks = {
+            "Generate and Store App Keypair" : self.generate_store_keypair,
+            "Import App Keypair" : self.import_keys,
+            "Get ICP Balance" : self.get_icp_balance,
+            "Get ORO Balance" : self.get_oro_balance,
+            "Get ckETH Balance" : self.get_ckETH_balance,
+            "Get ckBTC Balance" : self.get_ckBTC_balance,
+            "Generate and Store Token" : self.generate_store_token,
+            "Start Authorization Loop" : self.authorization_loop
+        }
+        #create the popup
+        popup = PresetMultiButtonWindow(tasks)
+        popup.Show()
 
     # Task function for generating and storing the app keypair using biscuit-python
     def generate_store_keypair(self):
@@ -245,7 +215,7 @@ class Metavinci(QMainWindow):
                 encrypt_key_file.write(encryption_key)
 
             # # Show success message
-            _prompt_popup("keypair generated and stored successfully at : "+keystore_path)
+            _prompt_popup("keypair generated and stored successfully at : "+keystore_path, True)
         except Exception as e:
             # Show error message
             print(e)
