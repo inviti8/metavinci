@@ -139,10 +139,18 @@ class Metavinci(QMainWindow):
         #show_action = QAction("Show", self)
         icp_new_account_action = QAction(self.ic_icon, "New Account", self)
         icp_change_account_action = QAction(self.ic_icon, "Change Account", self)
+        icp_balance_action = QAction("ICP Balance", self)
+        oro_balance_action = QAction("ORO Balance", self)
+        ckETH_balance_action = QAction("ckETH Balance", self)
+        ckBTC_balance_action = QAction("ckBTC Balance", self)
         update_tools_action = QAction(self.update_icon, "Update Tools", self)
         quit_action = QAction("Exit", self)
         icp_new_account_action.triggered.connect(self.new_ic_account)
         icp_change_account_action.triggered.connect(self.change_ic_account)
+        icp_balance_action.triggered.connect(self.get_icp_balance)
+        oro_balance_action.triggered.connect(self.get_oro_balance)
+        ckETH_balance_action.triggered.connect(self.get_ckETH_balance)
+        ckBTC_balance_action.triggered.connect(self.get_ckBTC_balance)
         update_tools_action.triggered.connect(self.update_tools)
 
         # Add a new action for tasks
@@ -151,8 +159,14 @@ class Metavinci(QMainWindow):
 
         quit_action.triggered.connect(qApp.quit)
         tray_menu = QMenu()
-        tray_menu.addAction(icp_new_account_action)
-        tray_menu.addAction(icp_change_account_action)
+        tray_accounts_menu = tray_menu.addMenu("Accounts")
+        tray_accounts_menu.addAction(icp_new_account_action)
+        tray_accounts_menu.addAction(icp_change_account_action)
+        tray_balances_menu = tray_menu.addMenu("Balances")
+        tray_balances_menu.addAction(icp_balance_action)
+        tray_balances_menu.addAction(oro_balance_action)
+        tray_balances_menu.addAction(ckETH_balance_action)
+        tray_balances_menu.addAction(ckBTC_balance_action)
         tray_menu.addAction(task_action)
         tray_menu.addAction(update_tools_action)
         tray_menu.addAction(quit_action)
@@ -167,10 +181,6 @@ class Metavinci(QMainWindow):
         tasks = {
             "Generate and Store App Keypair" : self.generate_store_keypair,
             "Import App Keypair" : self.import_keys,
-            "Get ICP Balance" : self.get_icp_balance,
-            "Get ORO Balance" : self.get_oro_balance,
-            "Get ckETH Balance" : self.get_ckETH_balance,
-            "Get ckBTC Balance" : self.get_ckBTC_balance,
             "Generate and Store Token" : self.generate_store_token,
             "Start Authorization Loop" : self.authorization_loop
         }
