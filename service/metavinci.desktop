@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Metavinci
+Comment=Daemon for Heavymeta Tools.
+Path=/opt/metavinci
+Exec=/opt/metavinci/metavinci
+Icon=metavinci
