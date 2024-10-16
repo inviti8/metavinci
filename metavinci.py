@@ -513,7 +513,6 @@ class Metavinci(QMainWindow):
         self._install_hvym()
 
          
-
 @click.command()
 def up():
     import sys
@@ -522,14 +521,6 @@ def up():
     #mw.show()
     sys.exit(app.exec())
     click.echo("Metavinci up")
-
-@click.command()
-def start():
-    self._subprocess('sudo systemctl start metavinci')
-
-@click.command()
-def stop():
-    self._subprocess('sudo systemctl stop metavinci')
 
 if __name__ == "__main__":
     if not os.path.isfile(str(APP_ICON_FILE)):
