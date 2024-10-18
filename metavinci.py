@@ -27,8 +27,11 @@ SERVICE_RUN_FILE = os.path.join(HOME, '.metavinci', 'run.sh')
 SERVICE_START = os.path.join(FILE_PATH, 'service', 'start.sh')
 APP_ICON_FILE = os.path.join(HOME, '.metavinci', 'metavinci.png')
 APP_ICON = os.path.join(FILE_PATH, 'images', 'metavinci.png')
+HVYM_BIN = Path.home() / '.local'/ 'share'/ 'heavymeta-cli'/ 'hvym'
+PRESS_BIN = Path.home() / '.local' / 'share' / 'heavymeta-press' / 'hvym_press'
 DB_PATH = os.path.join(FILE_PATH, 'data', 'db.json')
 FG_TXT_COLOR = '#98314a'
+
 
 def _config_popup(popup):
       popup.fg_luminance(0.8)
@@ -73,15 +76,6 @@ def _subprocess(command):
         except Exception as e:
             return None
 
-def _install_hvym():
-    _subprocess('curl -L https://github.com/inviti8/hvym/raw/main/install.sh | bash')
-    if _subprocess('hvym check').strip() == 'ONE-TWO':
-        print('hvym is on path')
-        _subprocess('hvym splash')
-    else:
-        print('hvym not installed.')
-
-
 def _install_icon():
     if not os.path.isfile(str(APP_ICON_FILE)):
         shutil.copy(str(APP_ICON), SERVICE_RUN_DEST)
@@ -102,9 +96,11 @@ class Metavinci(QMainWindow):
         self.FILE_PATH = Path(__file__).parent
         self.LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'hvym_logo_64.png')
         self.UPDATE_IMG = os.path.join(self.FILE_PATH, 'images', 'update.png')
+        self.INSTALL_IMG = os.path.join(self.FILE_PATH, 'images', 'install.png')
         self.ICP_LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_logo.png')
         self.icon = QIcon(self.LOGO_IMG)
         self.update_icon = QIcon(self.UPDATE_IMG)
+        self.install_icon = QIcon(self.INSTALL_IMG)
         self.ic_icon = QIcon(self.ICP_LOGO_IMG)
         self.user_pid = self._subprocess('hvym icp-principal').strip()
         self.metavinci_dir = os.path.join(self.HOME, '.metavinci')
@@ -143,6 +139,8 @@ class Metavinci(QMainWindow):
         oro_balance_action = QAction("ORO Balance", self)
         ckETH_balance_action = QAction("ckETH Balance", self)
         ckBTC_balance_action = QAction("ckBTC Balance", self)
+        install_hvym_action = QAction(self.install_icon, "Install hvym", self)
+        install_press_action = QAction(self.install_icon, "Install press", self)
         update_tools_action = QAction(self.update_icon, "Update Tools", self)
         quit_action = QAction("Exit", self)
         icp_new_account_action.triggered.connect(self.new_ic_account)
@@ -152,6 +150,8 @@ class Metavinci(QMainWindow):
         ckETH_balance_action.triggered.connect(self.get_ckETH_balance)
         ckBTC_balance_action.triggered.connect(self.get_ckBTC_balance)
         update_tools_action.triggered.connect(self.update_tools)
+        install_hvym_action.triggered.connect(self._install_hvym)
+        install_press_action.triggered.connect(self._install_press)
 
         # Add a new action for tasks
         task_action = QAction("Show Tasks", self)
@@ -160,6 +160,7 @@ class Metavinci(QMainWindow):
         quit_action.triggered.connect(qApp.quit)
         tray_menu = QMenu()
         tray_accounts_menu = tray_menu.addMenu("Accounts")
+        tray_tools_menu = tray_menu.addMenu("Tools")
         tray_ic_accounts_menu = tray_accounts_menu.addMenu("IC")
         tray_ic_accounts_menu.addAction(icp_new_account_action)
         tray_ic_accounts_menu.addAction(icp_change_account_action)
@@ -169,13 +170,17 @@ class Metavinci(QMainWindow):
         tray_balances_menu.addAction(ckETH_balance_action)
         tray_balances_menu.addAction(ckBTC_balance_action)
         tray_menu.addAction(task_action)
-        tray_menu.addAction(update_tools_action)
+        tray_tools_menu.addAction(update_tools_action)
+        if not HVYM_BIN.exists():
+            tray_tools_menu.addAction(install_hvym_action)
+        if not PRESS_BIN.exists():
+            tray_tools_menu.addAction(install_press_action)
         tray_menu.addAction(quit_action)
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
         self._installation_check()
-        self.generate_store_keypair()
-        self.import_keys()
+        # self.generate_store_keypair()
+        # self.import_keys()
      
     def show_tasks_popup(self):
         #Create a dict for popup buttons
@@ -455,9 +460,12 @@ class Metavinci(QMainWindow):
         if answer.response == 'OK':
             loading= _loading_message('UPDATING')
             loading.Play()
-            _update_blender_addon(version)
-            _update_cli()
-            self._subprocess(f'{self.HVYM} update-npm-modules')
+            self._update_blender_addon(version)
+            if HVYM_BIN.exists():
+                self._update_cli()
+                self._subprocess(f'{self.HVYM} update-npm-modules')
+            if PRESS_BIN.exists():
+                self._update_press()
             loading.Close()
 
     def _installation_check(self):
@@ -512,6 +520,19 @@ class Metavinci(QMainWindow):
         self._delete_hvym()
         self._install_hvym()
 
+    def _install_press(self):
+        _subprocess('curl -L https://github.com/inviti8/hvym_press/raw/main/install.sh | bash')
+
+    def _delete_press(self):
+        home = Path.home()
+        press = home / '.local' / 'share' / 'heavymeta-press' / 'hvym_press'
+        
+        press.unlink
+
+    def _update_press(self):
+        self._delete_press()
+        self._install_press()
+
          
 @click.command()
 def up():
@@ -526,13 +547,13 @@ if __name__ == "__main__":
     if not os.path.isfile(str(APP_ICON_FILE)):
         #DO INSTALL
         click.echo('Metavinci needs permission to start a system service:')
-        st = os.stat(SERVICE_START)
-        os.chmod(SERVICE_START, st.st_mode | stat.S_IEXEC)
-        _install_icon()
-        metavinci = str(SERVICE_RUN_DEST)
-        cmd = f'sudo {SERVICE_START} {getpass.getuser()} "{metavinci}"'
-        output = subprocess.check_output(f'sudo {SERVICE_START} {getpass.getuser()} "{metavinci}"', shell=True, stderr=subprocess.STDOUT)
-        click.echo(output.decode('utf-8'))
+        # st = os.stat(SERVICE_START)
+        # os.chmod(SERVICE_START, st.st_mode | stat.S_IEXEC)
+        # _install_icon()
+        # metavinci = str(SERVICE_RUN_DEST)
+        # cmd = f'sudo {SERVICE_START} {getpass.getuser()} "{metavinci}"'
+        # output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
+        # click.echo(output.decode('utf-8'))
 
     up()
     click.echo("Metavinci Installed, close this terminal.")
