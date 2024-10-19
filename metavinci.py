@@ -4,19 +4,16 @@ from PyQt5.QtGui import QIcon, QPixmap
 from pathlib import Path
 import subprocess
 import os
-import stat
 from urllib.request import urlopen
 from zipfile import ZipFile
 from tinydb import TinyDB, Query
-from gradientmessagebox import *
-import click
-import getpass
 import shutil
 from biscuit_auth import KeyPair,PrivateKey, PublicKey,BiscuitBuilder,Fact,Authorizer,Biscuit
 from cryptography.fernet import Fernet
 import json
 import re
 from datetime import datetime, timedelta, timezone
+from gifanimus import GifAnimation
 import time
 
 HOME = os.path.expanduser('~')
@@ -31,36 +28,6 @@ DB_PATH = os.path.join(FILE_PATH, 'data', 'db.json')
 FG_TXT_COLOR = '#98314a'
 
 
-def _config_popup(popup):
-      popup.fg_luminance(0.8)
-      popup.bg_saturation(0.6)
-      popup.bg_luminance(0.4)
-      popup.custom_msg_color(FG_TXT_COLOR)
-
-def _choice_popup(msg):
-      """ Show choice popup, message based on passed msg arg."""
-      popup = PresetChoiceWindow(msg)
-      _config_popup(popup)
-      result = popup.Ask()
-      return result.response
-
-
-def _prompt_popup(msg, wide=False):
-      """ Show choice popup, message based on passed msg arg."""
-      popup = PresetPromptWindow(msg)
-      if wide:
-        popup = PresetWidePromptWindow(msg)
-
-      _config_popup(popup)
-      result = popup.Prompt()
-
-
-def _loading_message(msg):
-    loading = PresetLoadingMessage(msg)
-    _config_popup(loading)
-    return loading
-
-
 def _download_unzip(url, out_path):
       with urlopen(url) as zipresp:
           with ZipFile(BytesIO(zipresp.read())) as zfile:
@@ -69,14 +36,15 @@ def _download_unzip(url, out_path):
 
 def _subprocess(command):
         try:
-            output = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT)
+            output = subprocess.check_output(command, stderr=subprocess.STDOUT)
             return output.decode('utf-8')
         except Exception as e:
             return None
+        
 
-def _install_icon():
-    if not os.path.isfile(str(APP_ICON_FILE)):
-        shutil.copy(str(APP_ICON), SERVICE_RUN_DEST)
+def _run(command):
+    output = subprocess.run(command, shell=True, capture_output=True, text=True)
+    return output.stdout
      
 class Metavinci(QMainWindow):
     """
@@ -88,6 +56,7 @@ class Metavinci(QMainWindow):
         QMainWindow.__init__(self)
         self.HOME = os.path.expanduser('~')
         self.PATH = self.HVYM = Path.home() / '.metavinci'
+        self.BIN_PATH = self.PATH / 'bin'
         self.KEYSTORE = self.PATH / 'keystore.enc'
         self.ENC_KEY = self.PATH / 'encryption_key.key'
         self.HVYM = Path.home() / '.local'/ 'share'/ 'heavymeta-cli'/ 'hvym'
@@ -100,17 +69,25 @@ class Metavinci(QMainWindow):
         self.FILE_PATH = Path(__file__).parent
         self.HVYM_IMG = os.path.join(self.FILE_PATH, 'images', 'metavinci.png')
         self.LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'hvym_logo_64.png')
+        self.LOADING_GIF = os.path.join(self.FILE_PATH, 'images', 'loading.gif')
         self.UPDATE_IMG = os.path.join(self.FILE_PATH, 'images', 'update.png')
         self.INSTALL_IMG = os.path.join(self.FILE_PATH, 'images', 'install.png')
         self.ICP_LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_logo.png')
         self.STYLE_SHEET = os.path.join(self.FILE_PATH, 'data', 'style.qss')
+        self.DB_SRC = os.path.join(self.FILE_PATH, 'data', 'db.json')
+        self.DB_PATH = self.BIN_PATH /'db.json'
+        if not self.DB_PATH.exists():
+            shutil.copyfile(self.DB_SRC, str(self.DB_PATH))
+        self.DB = TinyDB(str(self.DB_PATH))
+        self.QUERY = Query()
+        self.user_pid = str(_run('dfx identity get-principal')).strip()
+        self.DB.update({'INITIALIZED': True, 'principal': self.user_pid}, self.QUERY.type == 'app_data')
+        self.INITIALIZED = (len(self.DB.search(self.QUERY.INITIALIZED == True)) > 0)
         self.win_icon = QIcon(self.HVYM_IMG)
         self.icon = QIcon(self.LOGO_IMG)
         self.update_icon = QIcon(self.UPDATE_IMG)
         self.install_icon = QIcon(self.INSTALL_IMG)
         self.ic_icon = QIcon(self.ICP_LOGO_IMG)
-        self.user_pid = self._subprocess('hvym icp-principal').strip()
-        self.metavinci_dir = os.path.join(self.HOME, '.metavinci')
         self.publik_key = None
         self.private_key = None
         self.refresh_interval = 8 * 60 * 60  # 8 hours in seconds
@@ -156,7 +133,9 @@ class Metavinci(QMainWindow):
             hide - hide window
             exit - exit from application
         '''
-        #show_action = QAction("Show", self)
+        post_init_action = QAction(self.icon, "Initialize", self)
+        post_init_action.triggered.connect(self.init_post)
+
         icp_new_account_action = QAction(self.ic_icon, "New Account", self)
         icp_new_account_action.triggered.connect(self.new_ic_account)
 
@@ -205,16 +184,25 @@ class Metavinci(QMainWindow):
         import_keys_action = QAction("Import Key Pair", self)
         import_keys_action.triggered.connect(self.import_keys)
         
-        # Add a new action for tasks
-        task_action = QAction("Show Tasks", self)
-        task_action.triggered.connect(self.show_tasks_popup)
+        # Add a new actions for tasks
+        gen_keypair_action = QAction("Generate Keypair", self)
+        gen_keypair_action.triggered.connect(self.generate_store_keypair)
+
+        import_keypair_action = QAction("Import Keypair", self)
+        import_keypair_action.triggered.connect(self.import_keys)
+
+        gen_token_action = QAction("Generate Token", self)
+        gen_token_action.triggered.connect(self.generate_store_token)
+
+        start_daemon_action = QAction("Start Daemon", self)
+        start_daemon_action.triggered.connect(self.authorization_loop)
 
         tray_menu = QMenu()
+
         tray_accounts_menu = tray_menu.addMenu("Accounts")
         tray_ic_accounts_menu = tray_accounts_menu.addMenu("IC")
         tray_ic_accounts_menu.addAction(icp_new_account_action)
         tray_ic_accounts_menu.addAction(icp_change_account_action)
-
 
         tray_tools_menu = tray_menu.addMenu("Tools")
 
@@ -245,15 +233,27 @@ class Metavinci(QMainWindow):
         tray_keys_menu.addAction(gen_keys_action)
         tray_keys_menu.addAction(import_keys_action)
 
-        tray_menu.addAction(task_action)
+        tray_tasks_menu = tray_menu.addMenu("Tasks")
+        tray_tasks_menu.addAction(gen_keypair_action)
+        tray_tasks_menu.addAction(import_keypair_action)
+        tray_tasks_menu.addAction(gen_token_action)
+        tray_tasks_menu.addAction(start_daemon_action)
+
         tray_menu.addAction(quit_action)
 
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
-        self._installation_check()
         self.setStyleSheet(Path(str(self.STYLE_SHEET)).read_text())
-        # self.generate_store_keypair()
-        # self.import_keys()
+
+    def init_post(self):
+        self.user_pid = str(_run('dfx identity get-principal')).strip()
+        self.DB.update({'INITIALIZED': True, 'principal': self.user_pid}, self.QUERY.type == 'app_data')
+        self._installation_check()
+        msg = QMessageBox(self)
+        msg.setWindowTitle("!")
+        msg.setText("Metavinci must restart now...")
+        msg.exec_()
+        self.close()
 
     def center(self):
         qr = self.frameGeometry()
@@ -269,6 +269,9 @@ class Metavinci(QMainWindow):
             return str(path)
         
         self.hide()
+
+    def loading_indicator(self, prompt):
+        return GifAnimation(str(self.LOADING_GIF), 1000, True, prompt)
         
     def open_file_dialog(self, prompt, filter="*.key"):
         self.show
@@ -283,7 +286,6 @@ class Metavinci(QMainWindow):
             return str(path)
 
         self.hide()
-
         
     def open_confirm_dialog(self, prompt):
         self.show()
@@ -295,6 +297,12 @@ class Metavinci(QMainWindow):
 
         self.hide()
         return result
+
+    def open_msg_dialog(self, prompt):
+        msg = QMessageBox(self)
+        msg.setWindowTitle("!")
+        msg.setText(prompt)
+        msg.exec_()
     
     def open_option_dialog(self, prompt, options):
         self.show()
@@ -325,18 +333,6 @@ class Metavinci(QMainWindow):
 
         self.hide()
         return result
-     
-    def show_tasks_popup(self):
-        #Create a dict for popup buttons
-        tasks = {
-            "Generate and Store App Keypair" : self.generate_store_keypair,
-            "Import App Keypair" : self.import_keys,
-            "Generate and Store Token" : self.generate_store_token,
-            "Start Authorization Loop" : self.authorization_loop
-        }
-        #create the popup
-        popup = PresetMultiButtonWindow(tasks)
-        popup.Show()
 
     # Task function for generating and storing the app keypair using biscuit-python
     def generate_store_keypair(self):
@@ -390,7 +386,7 @@ class Metavinci(QMainWindow):
         except Exception as e:
             # Show error message
             print(e)
-            _prompt_popup("Error generating and storing app keypair.")
+            self.open_msg_dialog("Error generating and storing app keypair.")
 
     def import_keys(self):
         encryption_key_path = self.open_file_dialog("Load encryption key.")
@@ -410,7 +406,7 @@ class Metavinci(QMainWindow):
             encryption_key_path = str(self.ENC_KEY)
 
             if not os.path.exists(keystore_path) or not os.path.exists(encryption_key_path):
-                _prompt_popup("No keypair found to import.")
+                self.open_msg_dialog("No keypair found to import.")
                 return
             
             with open(encryption_key_path, 'rb') as encrypt_key_file:
@@ -430,7 +426,7 @@ class Metavinci(QMainWindow):
         except Exception as e:
             # Show error message
             print(e)
-            _prompt_popup("Error importing app keypair.")
+            self.open_msg_dialog("Error importing app keypair.")
 
     def get_icp_balance(self):
         icp_canister_id = "ryjl3-tyaaa-aaaaa-aaaba-cai"
@@ -443,12 +439,12 @@ class Metavinci(QMainWindow):
             match = re.search(r'\(([\d_]+) : nat\)', balance)
             if match:
                 numeric_balance = int(match.group(1).replace('_', ''))  # 
-                _prompt_popup(f"ICP Balance: {numeric_balance}")
+                self.open_msg_dialog(f"ICP Balance: {numeric_balance}")
             else:
-                _prompt_popup("Invalid balance format returned.")
+                self.open_msg_dialog("Invalid balance format returned.")
         except Exception as e:
             print(e)
-            _prompt_popup("Error fetching ICP balance.")
+            self.open_msg_dialog("Error fetching ICP balance.")
 
     def get_oro_balance(self):
         oro_canister_id = "ryjl3-tyaaa-aaaaa-aaaba-cai" # currently set to ICP canister id
@@ -461,12 +457,12 @@ class Metavinci(QMainWindow):
             match = re.search(r'\(([\d_]+) : nat\)', balance)
             if match:
                 numeric_balance = int(match.group(1).replace('_', '' ) )  # 
-                _prompt_popup(f"ORO Balance: {numeric_balance}")
+                self.open_msg_dialog(f"ORO Balance: {numeric_balance}")
             else:
-                _prompt_popup("Invalid balance format returned.")
+                self.open_msg_dialog("Invalid balance format returned.")
         except Exception as e:
             print(e)
-            _prompt_popup("Error fetching ORO balance.")
+            self.open_msg_dialog("Error fetching ORO balance.")
 
     def get_ckETH_balance(self):
         ckETH_canister_id = "ss2fx-dyaaa-aaaar-qacoq-cai"
@@ -479,12 +475,12 @@ class Metavinci(QMainWindow):
             match = re.search(r'\(([\d_]+) : nat\)', balance)
             if match:
                 numeric_balance = int(match.group(1).replace('_', '' ) )  # 
-                _prompt_popup(f"ckETH Balance: {numeric_balance}")
+                self.open_msg_dialog(f"ckETH Balance: {numeric_balance}")
             else:
-                _prompt_popup("Invalid balance format returned.")
+                self.open_msg_dialog("Invalid balance format returned.")
         except Exception as e:
             print(e)
-            _prompt_popup("Error fetching ckETH balance.")
+            self.open_msg_dialog("Error fetching ckETH balance.")
 
     def get_ckBTC_balance(self):
         ckBTC_canister_id = "mxzaz-hqaaa-aaaar-qaada-cai"
@@ -497,12 +493,12 @@ class Metavinci(QMainWindow):
             match = re.search(r'\(([\d_]+) : nat\)', balance)
             if match:
                 numeric_balance = int(match.group(1).replace('_', '' ) )  # 
-                _prompt_popup(f"ckBTC Balance: {numeric_balance}")
+                self.open_msg_dialog(f"ckBTC Balance: {numeric_balance}")
             else:
-                _prompt_popup("Invalid balance format returned.")
+                self.open_msg_dialog("Invalid balance format returned.")
         except Exception as e:
             print(e)
-            _prompt_popup("Error fetching ckBTC balance.")
+            self.open_msg_dialog("Error fetching ckBTC balance.")
 
     def generate_store_token(self):
         try:
@@ -524,7 +520,7 @@ class Metavinci(QMainWindow):
             # Build and serialize the token
             token = builder.build(self.private_key)
             serialized_token = bytes(token.to_bytes())
-            token_path = os.path.join(self.metavinci_dir, 'auth_token.enc')
+            token_path = os.path.join(self.PATH, 'auth_token.enc')
 
             # Write the token securely (restrict access to owner)
             with open(token_path, 'wb') as token_file:
@@ -534,7 +530,7 @@ class Metavinci(QMainWindow):
         except Exception as e:
             # Show error message
             print(e)
-            _prompt_popup("Error generating and storing token.")
+            self.open_msg_dialog("Error generating and storing token.")
 
     def authorize_token(self):
         try:
@@ -550,14 +546,14 @@ class Metavinci(QMainWindow):
         except Exception as e:
             # Show error message
             print(e)
-            _prompt_popup("Error authorizing token.")
+            self.open_msg_dialog("Error authorizing token.")
             return False
 
     def get_serialized_token(self):
         try:
-            token_path = os.path.join(self.metavinci_dir, 'auth_token.enc')
+            token_path = os.path.join(self.PATH, 'auth_token.enc')
             if not os.path.exists(token_path):
-                _prompt_popup("No token found.")
+                self.open_msg_dialog("No token found.")
                 return
             
             with open(token_path, 'rb') as token_file:
@@ -568,7 +564,7 @@ class Metavinci(QMainWindow):
         except Exception as e:
             # Show error message
             print(e)
-            _prompt_popup("Error fetching token.")
+            self.open_msg_dialog("Error fetching token.")
 
     def authorization_loop(self):
         while True:
@@ -580,19 +576,6 @@ class Metavinci(QMainWindow):
             else:
                 print("Token authorization failed. Retrying in 10 seconds...")
             time.sleep(self.refresh_interval if authorized else 10)
-
-    # Override closeEvent, to intercept the window closing event
-    # The window will be closed only if there is no check mark in the check box
-    def closeEvent(self, event):
-        if self.check_box.isChecked():
-            event.ignore()
-            self.hide()
-            self.tray_icon.showMessage(
-                "Tray Program",
-                "Application was minimized to Tray",
-                QSystemTrayIcon.Information,
-                2000
-            )
 
     def _subprocess(self, command):
         try:
@@ -613,15 +596,15 @@ class Metavinci(QMainWindow):
     def update_tools(self):
         update = self.open_confirm_dialog('You want to update Heavymeta Tools?')
         if update == True:
-            loading= _loading_message('UPDATING')
+            loading = self.loading_indicator('UPDATING')
             loading.Play()
-            self._update_blender_addon(version)
+            self._update_blender_addon(self.BLENDER_VERSION)
             if self.HVYM.is_file():
                 self._update_cli()
                 self._subprocess(f'{str(self.HVYM)} update-npm-modules')
             if self.PRESS.is_file():
                 self._update_press()
-            loading.Close()
+            loading.Stop()
 
     def _installation_check(self):
         if not self.HVYM.is_file():
@@ -689,9 +672,7 @@ class Metavinci(QMainWindow):
         self._delete_press()
         self._install_press()
 
-         
-@click.command()
-def up():
+if __name__ == "__main__":
     import sys
     app = QApplication(sys.argv)
     mw = Metavinci()
@@ -700,20 +681,4 @@ def up():
     mw.center()
     mw.hide()
     sys.exit(app.exec())
-    click.echo("Metavinci up")
-
-if __name__ == "__main__":
-    # if not os.path.isfile(str(APP_ICON_FILE)):
-        #DO INSTALL
-        # click.echo('Metavinci needs permission to start a system service:')
-        # st = os.stat(SERVICE_START)
-        # os.chmod(SERVICE_START, st.st_mode | stat.S_IEXEC)
-        # _install_icon()
-        # metavinci = str(SERVICE_RUN_DEST)
-        # cmd = f'sudo {SERVICE_START} {getpass.getuser()} "{metavinci}"'
-        # output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
-        # click.echo(output.decode('utf-8'))
-
-    up()
-    click.echo("Metavinci Installed, close this terminal.")
 
