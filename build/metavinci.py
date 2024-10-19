@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp, QVBoxLayout, QPushButton, QDialog, QDesktopWidget, QFileDialog, QMessageBox
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QComboBox, QDialogButtonBox, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp, QVBoxLayout, QPushButton, QDialog, QDesktopWidget, QFileDialog, QMessageBox
 from PyQt5.QtCore import QSize
 from PyQt5.QtGui import QIcon, QPixmap
 from pathlib import Path
@@ -95,6 +95,10 @@ class Metavinci(QMainWindow):
         self.ENC_KEY = self.PATH / 'encryption_key.key'
         self.HVYM = Path.home() / '.local'/ 'share'/ 'heavymeta-cli'/ 'hvym'
         self.PRESS = Path.home() / '.local' / 'share' / 'heavymeta-press' / 'hvym_press'
+        self.BLENDER_PATH = Path.home() / '.config' / 'blender'
+        self.BLENDER_VERSIONS = []
+        self.BLENDER_VERSION = None
+        self.ADDON_PATH = self.BLENDER_PATH / str(self.BLENDER_VERSION) / 'scripts' / 'addons' / 'heavymeta_standard'
         self.FILE_PATH = Path(__file__).parent
         self.HVYM_IMG = os.path.join(self.FILE_PATH, 'images', 'metavinci.png')
         self.LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'hvym_logo_64.png')
@@ -125,6 +129,22 @@ class Metavinci(QMainWindow):
         label = QLabel("", self)
         label.setPixmap(QPixmap(self.LOGO_IMG))
         grid_layout.addWidget(label, 0, 0)
+
+        if self.BLENDER_PATH.exists():
+            for file in os.listdir(str(self.BLENDER_PATH)):
+                d = os.path.join(str(self.BLENDER_PATH), file)
+                if os.path.isdir(d):
+                    self.BLENDER_VERSIONS.append(file)
+
+        idx=0
+        for ver in self.BLENDER_VERSIONS:
+            if self.BLENDER_VERSION == None:
+                self.BLENDER_VERSION = ver
+            if idx > 0:
+                if float(ver) > float(self.BLENDER_VERSIONS[idx-1]):
+                    self.BLENDER_VERSION = ver
+                    self.ADDON_PATH = self.BLENDER_PATH / str(self.BLENDER_VERSION) / 'scripts' / 'addons' / 'heavymeta_standard'
+            idx += 1
      
         # Add a checkbox, which will depend on the behavior of the program when the window is closed
         #self.check_box = QCheckBox('Minimize to Tray')
@@ -163,10 +183,22 @@ class Metavinci(QMainWindow):
         install_hvym_action = QAction(self.install_icon, "Install hvym", self)
         install_hvym_action.triggered.connect(self._install_hvym)
 
+        update_hvym_action = QAction(self.update_icon, "Update hvym", self)
+        update_hvym_action.triggered.connect(self._update_hvym)
+
         install_press_action = QAction(self.install_icon, "Install press", self)
         install_press_action.triggered.connect(self._install_press)
 
-        update_tools_action = QAction(self.update_icon, "Update Tools", self)
+        update_press_action = QAction(self.update_icon, "Update press", self)
+        update_press_action.triggered.connect(self._update_press)
+
+        install_addon_action = QAction(self.install_icon, "Install Blender Addon", self)
+        install_addon_action.triggered.connect(self._install_blender_addon)
+
+        update_addon_action = QAction(self.update_icon, "Update Blender Addon", self)
+        update_addon_action.triggered.connect(self._update_blender_addon)
+
+        update_tools_action = QAction(self.update_icon, "Update All Tools", self)
         update_tools_action.triggered.connect(self.update_tools)
 
         quit_action = QAction("Exit", self)
@@ -190,11 +222,23 @@ class Metavinci(QMainWindow):
 
 
         tray_tools_menu = tray_menu.addMenu("Tools")
-        tray_tools_menu.addAction(update_tools_action)
+
         if not self.HVYM.is_file():
             tray_tools_menu.addAction(install_hvym_action)
+        else:
+            tray_tools_menu.addAction(update_hvym_action)
+
         if not self.PRESS.is_file():
             tray_tools_menu.addAction(install_press_action)
+        else:
+            tray_tools_menu.addAction(update_press_action)
+
+        if not self.ADDON_PATH.exists():
+            tray_tools_menu.addAction(install_addon_action)
+        else:
+            tray_tools_menu.addAction(update_addon_action)
+
+        tray_tools_menu.addAction(update_tools_action)
 
         tray_balances_menu = tray_ic_accounts_menu.addMenu("Balances")
         tray_balances_menu.addAction(icp_balance_action)
@@ -252,6 +296,36 @@ class Metavinci(QMainWindow):
         response = QMessageBox.question(self, '?', prompt, QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
         if response == QMessageBox.Yes:
+            result = True
+
+        self.hide()
+        return result
+    
+    def open_option_dialog(self, prompt, options):
+        self.show()
+        result = False
+        dlg =  QFileDialog(self)
+        label = QLabel(prompt)
+        combo = QComboBox()
+        combo.addItems(["option1", "option2", "option3"])
+        box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
+            centerButtons=True,
+        )
+
+        box.accepted.connect(dlg.accept)
+        box.rejected.connect(dlg.reject)
+
+        lay = QGridLayout(self)
+        lay.addWidget(label, 0, 0)
+        lay.addWidget(combo, 0, 1)
+        lay.addWidget(box, 1, 0, 1, 2)
+
+        dlg.resize(640, 240)
+
+        response = box.Ok
+
+        if response == QDialogButtonBox.Ok:
             result = True
 
         self.hide()
@@ -515,8 +589,6 @@ class Metavinci(QMainWindow):
     # Override closeEvent, to intercept the window closing event
     # The window will be closed only if there is no check mark in the check box
     def closeEvent(self, event):
-        print('!!!!!!!!!!!!!')
-        print(event)
         if self.check_box.isChecked():
             event.ignore()
             self.hide()
@@ -544,13 +616,8 @@ class Metavinci(QMainWindow):
         return(self._subprocess(f'{str(self.HVYM)} check'))
 
     def update_tools(self):
-        answer = _choice_popup('You want to update Heavymeta Tools?')
-        home = Path.home()
-        hvym = home / '.local' / 'share' / 'heavymeta-cli' / 'hvym'
-        print(hvym)
-        _prompt_popup(str(hvym))
-
-        if answer.response == 'OK':
+        update = self.open_confirm_dialog('You want to update Heavymeta Tools?')
+        if update == True:
             loading= _loading_message('UPDATING')
             loading.Play()
             self._update_blender_addon(version)
@@ -582,9 +649,22 @@ class Metavinci(QMainWindow):
         else:
             print('hvym not installed.')
 
+    def _update_hvym(self):
+        self._delete_hvym()
+        self._install_hvym()
+
     def _delete_hvym(self):
         if self.HVYM.is_file():
             self.HVYM.unlink
+
+    def _install_blender_addon(self, version):
+        home = Path.home()
+        addon_dir = home / '.config' / 'blender' / version /'scripts' / 'addons' 
+        _download_unzip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(addon_dir))
+
+    def _update_blender_addon(self, version):
+        self._delete_blender_addon()
+        self._install_blender_addon(version)
 
     def _delete_blender_addon(self, version):
         home = Path.home()
@@ -597,11 +677,6 @@ class Metavinci(QMainWindow):
                         shutil.rmtree(item)
 
         shutil.rmtree(addon_dir)
-
-    def _install_blender_addon(self, version):
-        home = Path.home()
-        addon_dir = home / '.config' / 'blender' / version /'scripts' / 'addons' 
-        _download_unzip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(addon_dir))
 
     def _update_blender_addon(self, version):
         self._delete_blender_addon(version)
@@ -630,6 +705,7 @@ def up():
     mw = Metavinci()
     mw.show()
     mw.center()
+    print(mw.BLENDER_VERSION)
     mw.hide()
     sys.exit(app.exec())
     click.echo("Metavinci up")
