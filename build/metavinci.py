@@ -82,9 +82,6 @@ class Metavinci(QMainWindow):
     """
         Network Daemon for Heavymeta
     """
-    check_box = None
-    tray_icon = None
-    
     # Override the class constructor
     def __init__(self):
         # Be sure to call the super class method
@@ -98,7 +95,8 @@ class Metavinci(QMainWindow):
         self.BLENDER_PATH = Path.home() / '.config' / 'blender'
         self.BLENDER_VERSIONS = []
         self.BLENDER_VERSION = None
-        self.ADDON_PATH = self.BLENDER_PATH / str(self.BLENDER_VERSION) / 'scripts' / 'addons' / 'heavymeta_standard'
+        self.ADDON_INSTALL_PATH = self.BLENDER_PATH / str(self.BLENDER_VERSION) / 'scripts' / 'addons'
+        self.ADDON_PATH = self.ADDON_INSTALL_PATH / 'heavymeta_standard'
         self.FILE_PATH = Path(__file__).parent
         self.HVYM_IMG = os.path.join(self.FILE_PATH, 'images', 'metavinci.png')
         self.LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'hvym_logo_64.png')
@@ -117,18 +115,18 @@ class Metavinci(QMainWindow):
         self.private_key = None
         self.refresh_interval = 8 * 60 * 60  # 8 hours in seconds
 
-        
         self.setMinimumSize(QSize(64, 64))             # Set sizes
         self.setWindowTitle("Metavinci")  # Set a title
         self.central_widget = QWidget(self)                 # Create a central widget
         self.setCentralWidget(self.central_widget)           # Set the central widget
         self.setWindowIcon(self.win_icon)          # Set the icon
-     
-        grid_layout = QGridLayout(self)         # Create a QGridLayout
-        self.central_widget.setLayout(grid_layout)   # Set the layout into the central widget
         label = QLabel("", self)
         label.setPixmap(QPixmap(self.LOGO_IMG))
-        grid_layout.addWidget(label, 0, 0)
+        label.adjustSize() 
+        #grid_layout = QGridLayout(self)       # Create a QGridLayout
+        #grid_layout.addWidget(label, 0, 0)
+        #self.central_widget.setLayout(grid_layout)   # Set the layout into the central widget
+        
 
         if self.BLENDER_PATH.exists():
             for file in os.listdir(str(self.BLENDER_PATH)):
@@ -143,7 +141,8 @@ class Metavinci(QMainWindow):
             if idx > 0:
                 if float(ver) > float(self.BLENDER_VERSIONS[idx-1]):
                     self.BLENDER_VERSION = ver
-                    self.ADDON_PATH = self.BLENDER_PATH / str(self.BLENDER_VERSION) / 'scripts' / 'addons' / 'heavymeta_standard'
+                    self.ADDON_INSTALL_PATH = self.BLENDER_PATH / str(self.BLENDER_VERSION) / 'scripts' / 'addons'
+                    self.ADDON_PATH = self.ADDON_INSTALL_PATH / 'heavymeta_standard'
             idx += 1
      
         # Add a checkbox, which will depend on the behavior of the program when the window is closed
@@ -268,7 +267,7 @@ class Metavinci(QMainWindow):
 
     def open_dir_dialog(self, prompt):
         self.show()
-        dir_name = QFileDialog.getExistingDirectory(self.central_widget, prompt)
+        dir_name = QFileDialog.getExistingDirectory(self, prompt)
         if dir_name:
             path = Path(dir_name)
             return str(path)
@@ -658,25 +657,22 @@ class Metavinci(QMainWindow):
             self.HVYM.unlink
 
     def _install_blender_addon(self, version):
-        home = Path.home()
-        addon_dir = home / '.config' / 'blender' / version /'scripts' / 'addons' 
-        _download_unzip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(addon_dir))
+        if not self.ADDON_PATH.exists():
+            _download_unzip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(self.ADDON_INSTALL_PATH))
 
     def _update_blender_addon(self, version):
         self._delete_blender_addon()
         self._install_blender_addon(version)
 
     def _delete_blender_addon(self, version):
-        home = Path.home()
-        addon_dir = home / '.config' / 'blender' / version /'scripts' / 'addons' / 'heavymeta_standard'
-        for item in addon_dir.iterdir():
+        for item in self.ADDON_INSTALL_PATH.iterdir():
                 if item.name != '.git' and item.name != 'README.md' and item.name != 'install.sh':
                     if item.is_file():
                         item.unlink()
                     else:
                         shutil.rmtree(item)
 
-        shutil.rmtree(addon_dir)
+        shutil.rmtree(str(self.ADDON_INSTALL_PATH))
 
     def _update_blender_addon(self, version):
         self._delete_blender_addon(version)
@@ -704,16 +700,16 @@ def up():
     app = QApplication(sys.argv)
     mw = Metavinci()
     mw.show()
+    mw.setFixedSize(80,80)
     mw.center()
-    print(mw.BLENDER_VERSION)
     mw.hide()
     sys.exit(app.exec())
     click.echo("Metavinci up")
 
 if __name__ == "__main__":
-    if not os.path.isfile(str(APP_ICON_FILE)):
+    # if not os.path.isfile(str(APP_ICON_FILE)):
         #DO INSTALL
-        click.echo('Metavinci needs permission to start a system service:')
+        # click.echo('Metavinci needs permission to start a system service:')
         # st = os.stat(SERVICE_START)
         # os.chmod(SERVICE_START, st.st_mode | stat.S_IEXEC)
         # _install_icon()

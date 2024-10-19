@@ -82,9 +82,6 @@ class Metavinci(QMainWindow):
     """
         Network Daemon for Heavymeta
     """
-    check_box = None
-    tray_icon = None
-    
     # Override the class constructor
     def __init__(self):
         # Be sure to call the super class method
@@ -118,18 +115,14 @@ class Metavinci(QMainWindow):
         self.private_key = None
         self.refresh_interval = 8 * 60 * 60  # 8 hours in seconds
 
-        
         self.setMinimumSize(QSize(64, 64))             # Set sizes
         self.setWindowTitle("Metavinci")  # Set a title
         self.central_widget = QWidget(self)                 # Create a central widget
         self.setCentralWidget(self.central_widget)           # Set the central widget
         self.setWindowIcon(self.win_icon)          # Set the icon
-     
-        grid_layout = QGridLayout(self)         # Create a QGridLayout
-        self.central_widget.setLayout(grid_layout)   # Set the layout into the central widget
         label = QLabel("", self)
         label.setPixmap(QPixmap(self.LOGO_IMG))
-        grid_layout.addWidget(label, 0, 0)
+        label.adjustSize()
 
         if self.BLENDER_PATH.exists():
             for file in os.listdir(str(self.BLENDER_PATH)):
@@ -270,7 +263,7 @@ class Metavinci(QMainWindow):
 
     def open_dir_dialog(self, prompt):
         self.show()
-        dir_name = QFileDialog.getExistingDirectory(self.central_widget, prompt)
+        dir_name = QFileDialog.getExistingDirectory(self, prompt)
         if dir_name:
             path = Path(dir_name)
             return str(path)
@@ -703,15 +696,16 @@ def up():
     app = QApplication(sys.argv)
     mw = Metavinci()
     mw.show()
+    mw.setFixedSize(80,80)
     mw.center()
     mw.hide()
     sys.exit(app.exec())
     click.echo("Metavinci up")
 
 if __name__ == "__main__":
-    if not os.path.isfile(str(APP_ICON_FILE)):
+    # if not os.path.isfile(str(APP_ICON_FILE)):
         #DO INSTALL
-        click.echo('Metavinci needs permission to start a system service:')
+        # click.echo('Metavinci needs permission to start a system service:')
         # st = os.stat(SERVICE_START)
         # os.chmod(SERVICE_START, st.st_mode | stat.S_IEXEC)
         # _install_icon()
