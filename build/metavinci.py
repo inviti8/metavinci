@@ -16,18 +16,6 @@ from datetime import datetime, timedelta, timezone
 from gifanimus import GifAnimation
 import time
 
-HOME = os.path.expanduser('~')
-FILE_PATH = Path(__file__).parent
-CWD = Path.cwd()
-SERVICE_RUN_DEST = CWD / '.metavinci'
-SERVICE_RUN_FILE = os.path.join(HOME, '.metavinci', 'run.sh')
-SERVICE_START = os.path.join(FILE_PATH, 'service', 'start.sh')
-APP_ICON_FILE = os.path.join(HOME, '.metavinci', 'metavinci.png')
-APP_ICON = os.path.join(FILE_PATH, 'images', 'metavinci.png')
-DB_PATH = os.path.join(FILE_PATH, 'data', 'db.json')
-FG_TXT_COLOR = '#98314a'
-
-
 def _download_unzip(url, out_path):
       with urlopen(url) as zipresp:
           with ZipFile(BytesIO(zipresp.read())) as zfile:
