@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QComboBox, QDialogButtonBox, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp, QVBoxLayout, QPushButton, QDialog, QDesktopWidget, QFileDialog, QMessageBox
-from PyQt5.QtCore import QSize
+from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QIcon, QPixmap
 from pathlib import Path
 import subprocess
@@ -88,6 +88,8 @@ class Metavinci(QMainWindow):
         label = QLabel("", self)
         label.setPixmap(QPixmap(self.LOGO_IMG))
         label.adjustSize()
+
+        self.setWindowFlag(Qt.FramelessWindowHint) 
 
         if self.BLENDER_PATH.exists():
             for file in os.listdir(str(self.BLENDER_PATH)):
@@ -665,7 +667,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     mw = Metavinci()
     mw.show()
-    mw.setFixedSize(80,80)
+    mw.setFixedSize(70,70)
     mw.center()
     mw.hide()
     sys.exit(app.exec())
