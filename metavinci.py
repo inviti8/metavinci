@@ -61,6 +61,10 @@ class Metavinci(QMainWindow):
         self.UPDATE_IMG = os.path.join(self.FILE_PATH, 'images', 'update.png')
         self.INSTALL_IMG = os.path.join(self.FILE_PATH, 'images', 'install.png')
         self.ICP_LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_logo.png')
+        self.ICP_ADD_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_add.png')
+        self.ICP_TEST_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_test.png')
+        self.ICP_SELECT_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_select.png')
+        self.ICP_REMOVE_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_remove.png')
         self.STYLE_SHEET = os.path.join(self.FILE_PATH, 'data', 'style.qss')
         self.DB_SRC = os.path.join(self.FILE_PATH, 'data', 'db.json')
         self.DB_PATH = self.BIN_PATH /'db.json'
@@ -76,13 +80,18 @@ class Metavinci(QMainWindow):
         self.update_icon = QIcon(self.UPDATE_IMG)
         self.install_icon = QIcon(self.INSTALL_IMG)
         self.ic_icon = QIcon(self.ICP_LOGO_IMG)
+        self.ic_add_icon = QIcon(self.ICP_ADD_IMG)
+        self.ic_test_icon = QIcon(self.ICP_TEST_IMG)
+        self.ic_select_icon = QIcon(self.ICP_SELECT_IMG)
+        self.ic_remove_icon = QIcon(self.ICP_REMOVE_IMG)
         self.publik_key = None
         self.private_key = None
         self.refresh_interval = 8 * 60 * 60  # 8 hours in seconds
 
         self.setMinimumSize(QSize(64, 64))             # Set sizes
         self.setWindowTitle("Metavinci")  # Set a title
-        self.central_widget = QWidget(self)                 # Create a central widget
+        self.central_widget = QWidget(self) 
+        self.central_widget.setWindowIcon(self.win_icon)                # Create a central widget
         self.setCentralWidget(self.central_widget)           # Set the central widget
         self.setWindowIcon(self.win_icon)          # Set the icon
         label = QLabel("", self)
@@ -126,11 +135,17 @@ class Metavinci(QMainWindow):
         post_init_action = QAction(self.icon, "Initialize", self)
         post_init_action.triggered.connect(self.init_post)
 
-        icp_new_account_action = QAction(self.ic_icon, "New Account", self)
+        icp_new_account_action = QAction(self.ic_add_icon, "New Account", self)
         icp_new_account_action.triggered.connect(self.new_ic_account)
 
-        icp_change_account_action = QAction(self.ic_icon, "Change Account", self)
+        icp_new_test_account_action = QAction(self.ic_test_icon, "New Test Account", self)
+        icp_new_test_account_action.triggered.connect(self.new_ic_test_account)
+
+        icp_change_account_action = QAction(self.ic_select_icon, "Change Account", self)
         icp_change_account_action.triggered.connect(self.change_ic_account)
+
+        icp_remove_account_action = QAction(self.ic_remove_icon, "Remove Account", self)
+        icp_remove_account_action.triggered.connect(self.remove_ic_account)
 
         icp_balance_action = QAction("ICP Balance", self)
         icp_balance_action.triggered.connect(self.get_icp_balance)
@@ -191,8 +206,10 @@ class Metavinci(QMainWindow):
 
         tray_accounts_menu = tray_menu.addMenu("Accounts")
         tray_ic_accounts_menu = tray_accounts_menu.addMenu("IC")
+        tray_ic_accounts_menu.addAction(icp_new_test_account_action)
         tray_ic_accounts_menu.addAction(icp_new_account_action)
         tray_ic_accounts_menu.addAction(icp_change_account_action)
+        tray_ic_accounts_menu.addAction(icp_remove_account_action)
 
         tray_tools_menu = tray_menu.addMenu("Tools")
 
@@ -577,8 +594,14 @@ class Metavinci(QMainWindow):
     def new_ic_account(self):
         return(self._subprocess(f'{str(self.HVYM)} icp-new-account'))
 
+    def new_ic_test_account(self):
+        return(self._subprocess(f'{str(self.HVYM)} icp-new-test-account'))
+
     def change_ic_account(self):
         return(self._subprocess(f'{str(self.HVYM)} icp-set-account'))
+
+    def remove_ic_account(self):
+        return(self._subprocess(f'{str(self.HVYM)} icp-remove-account'))
 
     def hvym_check(self):
         return(self._subprocess(f'{str(self.HVYM)} check'))
