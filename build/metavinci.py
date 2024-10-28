@@ -7,6 +7,7 @@ import os
 from urllib.request import urlopen
 from zipfile import ZipFile
 from tinydb import TinyDB, Query
+import tinydb_encrypted_jsonstorage as enc_json
 import shutil
 from biscuit_auth import KeyPair,PrivateKey, PublicKey,BiscuitBuilder,Fact,Authorizer,Biscuit
 from cryptography.fernet import Fernet
@@ -28,12 +29,25 @@ def _subprocess(command):
             return output.decode('utf-8')
         except Exception as e:
             return None
-        
+
 
 def _run(command):
     output = subprocess.run(command, shell=True, capture_output=True, text=True)
     return output.stdout
-     
+
+
+class HVYM_SeedVault(TinyDB):
+    """
+        A class for encrypting & storing seed phrases
+    """
+    # Override the class constructor
+    def __init__(self, encryption_key, path, storage=enc_json.EncryptedJSONStorage):
+        # Be sure to call the super class method
+        TinyDB.__init__(self, encryption_key, path, storage)
+        self.HOME = os.path.expanduser('~')
+        self.PATH = self.HVYM = Path.home() / '.metavinci'
+
+
 class Metavinci(QMainWindow):
     """
         Network Daemon for Heavymeta
@@ -135,6 +149,9 @@ class Metavinci(QMainWindow):
         post_init_action = QAction(self.icon, "Initialize", self)
         post_init_action.triggered.connect(self.init_post)
 
+        icp_principal_action = QAction(self.ic_icon, "Get Principal", self)
+        icp_principal_action.triggered.connect(self.get_ic_principal)
+
         icp_new_account_action = QAction(self.ic_add_icon, "New Account", self)
         icp_new_account_action.triggered.connect(self.new_ic_account)
 
@@ -206,6 +223,7 @@ class Metavinci(QMainWindow):
 
         tray_accounts_menu = tray_menu.addMenu("Accounts")
         tray_ic_accounts_menu = tray_accounts_menu.addMenu("IC")
+        tray_ic_accounts_menu.addAction(icp_principal_action)
         tray_ic_accounts_menu.addAction(icp_new_test_account_action)
         tray_ic_accounts_menu.addAction(icp_new_account_action)
         tray_ic_accounts_menu.addAction(icp_change_account_action)
@@ -602,6 +620,9 @@ class Metavinci(QMainWindow):
 
     def remove_ic_account(self):
         return(self._subprocess(f'{str(self.HVYM)} icp-remove-account'))
+    
+    def get_ic_principal(self):
+        return(self._subprocess(f'{str(self.HVYM)} icp-active-principal'))
 
     def hvym_check(self):
         return(self._subprocess(f'{str(self.HVYM)} check'))
