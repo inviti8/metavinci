@@ -252,11 +252,12 @@ class Metavinci(QMainWindow):
 
         tray_tools_menu.addAction(update_tools_action)
 
-        tray_balances_menu = tray_ic_accounts_menu.addMenu("Balances")
-        tray_balances_menu.addAction(icp_balance_action)
-        tray_balances_menu.addAction(oro_balance_action)
-        tray_balances_menu.addAction(ckETH_balance_action)
-        tray_balances_menu.addAction(ckBTC_balance_action)
+        if self.HVYM.is_file():
+            tray_balances_menu = tray_ic_accounts_menu.addMenu("Balances")
+            tray_balances_menu.addAction(icp_balance_action)
+            tray_balances_menu.addAction(oro_balance_action)
+            tray_balances_menu.addAction(ckETH_balance_action)
+            tray_balances_menu.addAction(ckBTC_balance_action)
 
         tray_keys_menu = tray_menu.addMenu("Keys")
         tray_keys_menu.addAction(gen_keys_action)
@@ -292,6 +293,13 @@ class Metavinci(QMainWindow):
         cp = QDesktopWidget().availableGeometry().center()
         qr.moveCenter(cp)
         self.move(qr.topLeft())
+
+    def restart(self):
+        msg = QMessageBox(self)
+        msg.setWindowTitle("!")
+        msg.setText("Metavinci must close now, restart it after close...")
+        msg.exec_()
+        self.close()
 
     def open_dir_dialog(self, prompt):
         self.show()
@@ -671,6 +679,7 @@ class Metavinci(QMainWindow):
         else:
             print('hvym not installed.')
         loading.Stop()
+        self.restart()
 
     def _update_hvym(self):
         loading = self.loading_indicator('UPDATING')
@@ -690,6 +699,7 @@ class Metavinci(QMainWindow):
             _download_unzip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(self.ADDON_INSTALL_PATH))
             self.open_msg_dialog(f'Blender Addon installed. Please restart Daemon.')
         loading.Stop()
+        self.restart()
 
     def _update_blender_addon(self, version):
         self._delete_blender_addon(version)
@@ -718,7 +728,7 @@ class Metavinci(QMainWindow):
         loading = self.loading_indicator('Installing Heavymeta Press')
         loading.Play()
         _subprocess('curl -L https://github.com/inviti8/hvym_press/raw/main/install.sh | bash')
-        self.open_msg_dialog('Press installed. Please restart Daemon.') 
+        self.open_msg_dialog('Press installed. Please restart Daemon.')
         loading.Stop()
 
     def _delete_press(self):
