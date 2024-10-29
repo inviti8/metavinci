@@ -16,6 +16,9 @@ import re
 from datetime import datetime, timedelta, timezone
 from gifanimus import GifAnimation
 import time
+import threading
+import sys
+
 
 def _download_unzip(url, out_path):
       with urlopen(url) as zipresp:
@@ -221,13 +224,14 @@ class Metavinci(QMainWindow):
 
         tray_menu = QMenu()
 
-        tray_accounts_menu = tray_menu.addMenu("Accounts")
-        tray_ic_accounts_menu = tray_accounts_menu.addMenu("IC")
-        tray_ic_accounts_menu.addAction(icp_principal_action)
-        tray_ic_accounts_menu.addAction(icp_new_test_account_action)
-        tray_ic_accounts_menu.addAction(icp_new_account_action)
-        tray_ic_accounts_menu.addAction(icp_change_account_action)
-        tray_ic_accounts_menu.addAction(icp_remove_account_action)
+        if self.HVYM.is_file():
+            tray_accounts_menu = tray_menu.addMenu("Accounts")
+            tray_ic_accounts_menu = tray_accounts_menu.addMenu("IC")
+            tray_ic_accounts_menu.addAction(icp_principal_action)
+            tray_ic_accounts_menu.addAction(icp_new_test_account_action)
+            tray_ic_accounts_menu.addAction(icp_new_account_action)
+            tray_ic_accounts_menu.addAction(icp_change_account_action)
+            tray_ic_accounts_menu.addAction(icp_remove_account_action)
 
         tray_tools_menu = tray_menu.addMenu("Tools")
 
@@ -269,6 +273,7 @@ class Metavinci(QMainWindow):
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
         self.setStyleSheet(Path(str(self.STYLE_SHEET)).read_text())
+        
 
     def init_post(self):
         self.user_pid = str(_run('dfx identity get-principal')).strip()
@@ -281,6 +286,8 @@ class Metavinci(QMainWindow):
         self.close()
 
     def center(self):
+        thread = threading.Thread(target=self.splash, args=())
+        thread.start()
         qr = self.frameGeometry()
         cp = QDesktopWidget().availableGeometry().center()
         qr.moveCenter(cp)
@@ -633,15 +640,12 @@ class Metavinci(QMainWindow):
     def update_tools(self):
         update = self.open_confirm_dialog('You want to update Heavymeta Tools?')
         if update == True:
-            loading = self.loading_indicator('UPDATING')
-            loading.Play()
             self._update_blender_addon(self.BLENDER_VERSION)
             if self.HVYM.is_file():
                 self._update_cli()
                 self._subprocess(f'{str(self.HVYM)} update-npm-modules')
             if self.PRESS.is_file():
                 self._update_press()
-            loading.Stop()
 
     def _installation_check(self):
         if not self.HVYM.is_file():
@@ -654,6 +658,8 @@ class Metavinci(QMainWindow):
                 print('hvym is on path')
 
     def _install_hvym(self):
+        loading = self.loading_indicator('UPDATING HVYM')
+        loading.Play()
         installed = self._subprocess('curl -L https://github.com/inviti8/hvym/raw/main/install.sh | bash')
         check = self.hvym_check()
         if installed != None and check != None and check.strip() == 'ONE-TWO':
@@ -661,24 +667,34 @@ class Metavinci(QMainWindow):
             print(str(self.HVYM))
             self._subprocess(f'{str(self.HVYM)} up')
             self._subprocess('. ~/.bashrc')
+            self.open_confirm_dialog('Installation Complete', 'You can now use the cli')
         else:
             print('hvym not installed.')
+        loading.Stop()
 
     def _update_hvym(self):
+        loading = self.loading_indicator('UPDATING')
+        loading.Play()
         self._delete_hvym()
         self._install_hvym()
+        loading.Stop()
 
     def _delete_hvym(self):
         if self.HVYM.is_file():
             self.HVYM.unlink
 
     def _install_blender_addon(self, version):
+        loading = self.loading_indicator('Installing Blender Addon')
+        loading.Play()
         if not self.ADDON_PATH.exists():
             _download_unzip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(self.ADDON_INSTALL_PATH))
+            self.open_msg_dialog(f'Blender Addon installed. Please restart Daemon.')
+        loading.Stop()
 
     def _update_blender_addon(self, version):
-        self._delete_blender_addon()
+        self._delete_blender_addon(version)
         self._install_blender_addon(version)
+        self.open_msg_dialog('Blender Addon updated. Please restart Daemon.')
 
     def _delete_blender_addon(self, version):
         for item in self.ADDON_INSTALL_PATH.iterdir():
@@ -690,31 +706,36 @@ class Metavinci(QMainWindow):
 
         shutil.rmtree(str(self.ADDON_INSTALL_PATH))
 
-    def _update_blender_addon(self, version):
-        self._delete_blender_addon(version)
-        self._install_blender_addon(version)
-
     def _update_cli(self):
+        loading = self.loading_indicator('UPDATING HVYM')
+        loading.Play()
         self._delete_hvym()
         self._install_hvym()
+        self.open_msg_dialog('CLI updated.')
+        loading.Stop()
 
     def _install_press(self):
+        loading = self.loading_indicator('Installing Heavymeta Press')
+        loading.Play()
         _subprocess('curl -L https://github.com/inviti8/hvym_press/raw/main/install.sh | bash')
+        self.open_msg_dialog('Press installed. Please restart Daemon.') 
+        loading.Stop()
 
     def _delete_press(self):
         if self.PRESS.is_file():
             self.PRESS.unlink
 
     def _update_press(self):
+        loading = self.loading_indicator('UPDATING Press')
+        loading.Play()
         self._delete_press()
         self._install_press()
+        loading.Stop()
 
 if __name__ == "__main__":
-    import sys
     app = QApplication(sys.argv)
     mw = Metavinci()
     mw.show()
-    mw.splash()
     mw.setFixedSize(70,70)
     mw.center()
     mw.hide()
