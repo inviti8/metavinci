@@ -302,7 +302,7 @@ class Metavinci(QMainWindow):
         self.move(qr.topLeft())
 
     def restart(self):
-        confirm = self.open_confirm_dialog("Metavinci must close now, restart it after close...")
+        self.open_msg_dialog("Metavinci must close now, restart it after close...")
         self.close()
 
     def open_dir_dialog(self, prompt):
