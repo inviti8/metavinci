@@ -627,7 +627,7 @@ class Metavinci(QMainWindow):
             output = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT)
             return output.decode('utf-8')
         except Exception as e:
-            return None
+            return e
 
     def splash(self):
         return(self._subprocess(f'{str(self.HVYM)} splash'))
@@ -655,8 +655,9 @@ class Metavinci(QMainWindow):
         if install == True:
             loading = self.loading_indicator('INSTALLING DFX...')
             loading.Play()
-            self._subprocess('sh -ci "$(curl -fsSL https://internetcomputer.org/install.sh)"')
+            installed = self._subprocess('sh -ci "$(curl -fsSL https://internetcomputer.org/install.sh)"')
             loading.Stop()
+            self.open_msg_dialog(f"{installed}")
 
     def update_tools(self):
         update = self.open_confirm_dialog('You want to update Heavymeta Tools?')
@@ -688,9 +689,9 @@ class Metavinci(QMainWindow):
             if installed != None and check != None and check.strip() == 'ONE-TWO':
                 print('hvym is on path')
                 print(str(self.HVYM))
-                self._subprocess(f'{str(self.HVYM)} up')
+                installed = self._subprocess(f'{str(self.HVYM)} up')
                 self._subprocess('. ~/.bashrc')
-                self.open_confirm_dialog('Installation Complete', 'You can now use the cli')
+                self.open_msg_dialog(f"{installed}")
             else:
                 print('hvym not installed.')
             loading.Stop()
@@ -742,8 +743,9 @@ class Metavinci(QMainWindow):
         if install == True:
             loading = self.loading_indicator('Installing Heavymeta Press')
             loading.Play()
-            _subprocess('curl -L https://raw.githubusercontent.com/inviti8/hvym_press/refs/heads/main/install.sh | bash')
+            installed = _subprocess('curl -L https://raw.githubusercontent.com/inviti8/hvym_press/refs/heads/main/install.sh | bash')
             loading.Stop()
+            self.open_msg_dialog(f"{installed}")
 
     def _delete_press(self):
         if self.PRESS.is_file():
