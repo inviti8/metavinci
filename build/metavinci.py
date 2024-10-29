@@ -609,6 +609,9 @@ class Metavinci(QMainWindow):
         except Exception as e:
             return None
 
+    def splash(self):
+        return(self._subprocess(f'{str(self.HVYM)} splash'))
+
     def new_ic_account(self):
         return(self._subprocess(f'{str(self.HVYM)} icp-new-account'))
 
@@ -711,6 +714,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     mw = Metavinci()
     mw.show()
+    mw.splash()
     mw.setFixedSize(70,70)
     mw.center()
     mw.hide()

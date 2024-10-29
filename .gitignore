@@ -1,3 +1,6 @@
 test.py
-/build
+/build/data
+/build/build
+/build/images
+/build/service
 /package
