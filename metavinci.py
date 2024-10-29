@@ -186,6 +186,9 @@ class Metavinci(QMainWindow):
         update_hvym_action = QAction(self.update_icon, "Update hvym", self)
         update_hvym_action.triggered.connect(self._update_hvym)
 
+        run_press_action = QAction(self.install_icon, "Run press", self)
+        run_press_action.triggered.connect(self.run_press)
+
         install_press_action = QAction(self.install_icon, "Install press", self)
         install_press_action.triggered.connect(self._install_press)
 
@@ -236,24 +239,29 @@ class Metavinci(QMainWindow):
 
         tray_tools_menu = tray_menu.addMenu("Tools")
 
+        if self.PATH.is_file():
+            tray_tools_menu.addAction(run_press_action)
+
+        tray_tools_update_menu = tray_tools_menu.addMenu("Updates")
+
         if not self.HVYM.is_file():
-            tray_tools_menu.addAction(install_hvym_action)
+            tray_tools_update_menu.addAction(install_hvym_action)
         else:
-            tray_tools_menu.addAction(update_hvym_action)
+            tray_tools_update_menu.addAction(update_hvym_action)
 
         if not self.PRESS.is_file():
-            tray_tools_menu.addAction(install_press_action)
+            tray_tools_update_menu.addAction(install_press_action)
         else:
-            tray_tools_menu.addAction(update_press_action)
+            tray_tools_update_menu.addAction(update_press_action)
 
         if not self.ADDON_PATH.exists():
-            tray_tools_menu.addAction(install_addon_action)
+            tray_tools_update_menu.addAction(install_addon_action)
         else:
-            tray_tools_menu.addAction(update_addon_action)
-
-        tray_tools_menu.addAction(update_tools_action)
+            tray_tools_update_menu.addAction(update_addon_action)
 
         if self.HVYM.is_file():
+            tray_tools_update_menu.addAction(update_tools_action)
+
             tray_balances_menu = tray_ic_accounts_menu.addMenu("Balances")
             tray_balances_menu.addAction(icp_balance_action)
             tray_balances_menu.addAction(oro_balance_action)
@@ -622,6 +630,9 @@ class Metavinci(QMainWindow):
             return output.decode('utf-8')
         except Exception as e:
             return None
+        
+    def run_press(self):
+        self._subprocess(str(self.PRESS))
 
     def splash(self):
         return(self._subprocess(f'{str(self.HVYM)} splash'))
@@ -709,7 +720,7 @@ class Metavinci(QMainWindow):
                 self.open_confirm_dialog('Installation Complete', 'Metavinci must restart.')
                 self.restart()
             else:
-                self.open_msg_dialog('Blender not found.', 'Please install blender first')
+                self.open_msg_dialog('Blender not found. Please install blender first')
 
     def _update_blender_addon(self, version):
         self._delete_blender_addon(version)
