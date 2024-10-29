@@ -112,9 +112,9 @@ class Metavinci(QMainWindow):
         self.central_widget.setWindowIcon(self.win_icon)                # Create a central widget
         self.setCentralWidget(self.central_widget)           # Set the central widget
         self.setWindowIcon(self.win_icon)          # Set the icon
-        label = QLabel("", self)
-        label.setPixmap(QPixmap(self.LOGO_IMG))
-        label.adjustSize()
+        # label = QLabel("", self)
+        # label.setPixmap(QPixmap(self.LOGO_IMG))
+        # label.adjustSize()
 
         self.setWindowFlag(Qt.FramelessWindowHint) 
 
@@ -186,7 +186,7 @@ class Metavinci(QMainWindow):
         update_hvym_action = QAction(self.update_icon, "Update hvym", self)
         update_hvym_action.triggered.connect(self._update_hvym)
 
-        run_press_action = QAction(self.install_icon, "Run press", self)
+        run_press_action = QAction(self.icon, "Run press", self)
         run_press_action.triggered.connect(self.run_press)
 
         install_press_action = QAction(self.install_icon, "Install press", self)
@@ -687,8 +687,6 @@ class Metavinci(QMainWindow):
                 print(str(self.HVYM))
                 self._subprocess(f'{str(self.HVYM)} up')
                 self._subprocess('. ~/.bashrc')
-                self.open_confirm_dialog('Installation Complete. Metavinci must restart.')
-                self.restart()
             else:
                 print('hvym not installed.')
             loading.Stop()
@@ -717,7 +715,6 @@ class Metavinci(QMainWindow):
                     _download_unzip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(self.ADDON_INSTALL_PATH))
                     self.open_msg_dialog(f'Blender Addon installed. Please restart Daemon.')
                 loading.Stop()
-                self.open_confirm_dialog('Installation Complete. Metavinci must restart.')
                 self.restart()
             else:
                 self.open_msg_dialog('Blender not found. Please install blender first')
@@ -742,7 +739,6 @@ class Metavinci(QMainWindow):
             loading = self.loading_indicator('Installing Heavymeta Press')
             loading.Play()
             self._subprocess('curl -L https://raw.githubusercontent.com/inviti8/hvym_press/refs/heads/main/install.sh | bash')
-            self.open_confirm_dialog('Installation Complete. Metavinci must restart.')
             self.restart()
             loading.Stop()
 
