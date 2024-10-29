@@ -287,8 +287,6 @@ class Metavinci(QMainWindow):
         self.close()
 
     def center(self):
-        thread = threading.Thread(target=self.splash, args=())
-        thread.start()
         qr = self.frameGeometry()
         cp = QDesktopWidget().availableGeometry().center()
         qr.moveCenter(cp)
@@ -693,13 +691,16 @@ class Metavinci(QMainWindow):
             self.HVYM.unlink
 
     def _install_blender_addon(self, version):
-        loading = self.loading_indicator('Installing Blender Addon')
-        loading.Play()
-        if not self.ADDON_PATH.exists():
-            _download_unzip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(self.ADDON_INSTALL_PATH))
-            self.open_msg_dialog(f'Blender Addon installed. Please restart Daemon.')
-        loading.Stop()
-        self.restart()
+        if self.BLENDER_PATH.exists() and self.ADDON_INSTALL_PATH.exists():
+            loading = self.loading_indicator('Installing Blender Addon')
+            loading.Play()
+            if not self.ADDON_PATH.exists():
+                _download_unzip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(self.ADDON_INSTALL_PATH))
+                self.open_msg_dialog(f'Blender Addon installed. Please restart Daemon.')
+            loading.Stop()
+            self.restart()
+        else:
+            self.open_msg_dialog('Blender not found.', 'Please install blender first')
 
     def _update_blender_addon(self, version):
         self._delete_blender_addon(version)
