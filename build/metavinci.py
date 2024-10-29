@@ -64,6 +64,7 @@ class Metavinci(QMainWindow):
         self.BIN_PATH = self.PATH / 'bin'
         self.KEYSTORE = self.PATH / 'keystore.enc'
         self.ENC_KEY = self.PATH / 'encryption_key.key'
+        self.DFX = Path.home() / '.local'/ 'share'/ 'dfx'/ 'bin' / 'dfx'
         self.HVYM = Path.home() / '.local'/ 'share'/ 'heavymeta-cli'/ 'hvym'
         self.PRESS = Path.home() / '.local' / 'share' / 'heavymeta-press' / 'hvym_press'
         self.BLENDER_PATH = Path.home() / '.config' / 'blender'
@@ -179,6 +180,9 @@ class Metavinci(QMainWindow):
         ckBTC_balance_action = QAction("ckBTC Balance", self)
         ckBTC_balance_action.triggered.connect(self.get_ckBTC_balance)
 
+        install_dfx_action = QAction(self.install_icon, "Install dfx", self)
+        install_dfx_action.triggered.connect(self._install_dfx)
+
         install_hvym_action = QAction(self.install_icon, "Install hvym", self)
         install_hvym_action.triggered.connect(self._install_hvym)
 
@@ -224,7 +228,7 @@ class Metavinci(QMainWindow):
 
         tray_menu = QMenu()
 
-        if self.HVYM.is_file():
+        if self.HVYM.is_file() and self.DFX.is_file():
             tray_accounts_menu = tray_menu.addMenu("Accounts")
             tray_ic_accounts_menu = tray_accounts_menu.addMenu("IC")
             tray_ic_accounts_menu.addAction(icp_principal_action)
@@ -232,6 +236,9 @@ class Metavinci(QMainWindow):
             tray_ic_accounts_menu.addAction(icp_new_account_action)
             tray_ic_accounts_menu.addAction(icp_change_account_action)
             tray_ic_accounts_menu.addAction(icp_remove_account_action)
+
+        if not self.DFX.is_file():
+            tray_menu.addAction(install_dfx_action)
 
         tray_tools_menu = tray_menu.addMenu("Tools")
 
@@ -252,7 +259,7 @@ class Metavinci(QMainWindow):
 
         tray_tools_menu.addAction(update_tools_action)
 
-        if self.HVYM.is_file():
+        if self.HVYM.is_file() and self.DFX.is_file():
             tray_balances_menu = tray_ic_accounts_menu.addMenu("Balances")
             tray_balances_menu.addAction(icp_balance_action)
             tray_balances_menu.addAction(oro_balance_action)
@@ -643,6 +650,14 @@ class Metavinci(QMainWindow):
     def hvym_check(self):
         return(self._subprocess(f'{str(self.HVYM)} check'))
 
+    def _install_dfx(self):
+        install = self.open_confirm_dialog('Install dfx?')
+        if install == True:
+            loading = self.loading_indicator('INSTALLING DFX...')
+            loading.Play()
+            self._subprocess('sh -ci "$(curl -fsSL https://internetcomputer.org/install.sh)"')
+            loading.Stop()
+
     def update_tools(self):
         update = self.open_confirm_dialog('You want to update Heavymeta Tools?')
         if update == True:
@@ -664,48 +679,53 @@ class Metavinci(QMainWindow):
                 print('hvym is on path')
 
     def _install_hvym(self):
-        loading = self.loading_indicator('UPDATING HVYM')
-        loading.Play()
-        installed = self._subprocess('curl -L https://github.com/inviti8/hvym/raw/main/install.sh | bash')
-        check = self.hvym_check()
-        if installed != None and check != None and check.strip() == 'ONE-TWO':
-            print('hvym is on path')
-            print(str(self.HVYM))
-            self._subprocess(f'{str(self.HVYM)} up')
-            self._subprocess('. ~/.bashrc')
-            self.open_confirm_dialog('Installation Complete', 'You can now use the cli')
-        else:
-            print('hvym not installed.')
-        loading.Stop()
-        self.restart()
+        install = self.open_confirm_dialog('Install Heavymeta cli?')
+        if install == True:
+            loading = self.loading_indicator('UPDATING HVYM')
+            loading.Play()
+            installed = self._subprocess('curl -L https://github.com/inviti8/hvym/raw/main/install.sh | bash')
+            check = self.hvym_check()
+            if installed != None and check != None and check.strip() == 'ONE-TWO':
+                print('hvym is on path')
+                print(str(self.HVYM))
+                self._subprocess(f'{str(self.HVYM)} up')
+                self._subprocess('. ~/.bashrc')
+                self.open_confirm_dialog('Installation Complete', 'You can now use the cli')
+            else:
+                print('hvym not installed.')
+            loading.Stop()
+            self.restart()
 
     def _update_hvym(self):
-        loading = self.loading_indicator('UPDATING')
-        loading.Play()
-        self._delete_hvym()
-        self._install_hvym()
-        loading.Stop()
+        update = self.open_confirm_dialog('Update Heavymeta cli?')
+        if update == True:
+            loading = self.loading_indicator('UPDATING')
+            loading.Play()
+            self._delete_hvym()
+            self._install_hvym()
+            loading.Stop()
 
     def _delete_hvym(self):
         if self.HVYM.is_file():
             self.HVYM.unlink
 
     def _install_blender_addon(self, version):
-        if self.BLENDER_PATH.exists() and self.ADDON_INSTALL_PATH.exists():
-            loading = self.loading_indicator('Installing Blender Addon')
-            loading.Play()
-            if not self.ADDON_PATH.exists():
-                _download_unzip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(self.ADDON_INSTALL_PATH))
-                self.open_msg_dialog(f'Blender Addon installed. Please restart Daemon.')
-            loading.Stop()
-            self.restart()
-        else:
-            self.open_msg_dialog('Blender not found.', 'Please install blender first')
+        install = self.open_confirm_dialog('Install Heavymeta Blender Addon?')
+        if install == True:
+            if self.BLENDER_PATH.exists() and self.ADDON_INSTALL_PATH.exists():
+                loading = self.loading_indicator('Installing Blender Addon')
+                loading.Play()
+                if not self.ADDON_PATH.exists():
+                    _download_unzip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(self.ADDON_INSTALL_PATH))
+                    self.open_msg_dialog(f'Blender Addon installed. Please restart Daemon.')
+                loading.Stop()
+                self.restart()
+            else:
+                self.open_msg_dialog('Blender not found.', 'Please install blender first')
 
     def _update_blender_addon(self, version):
         self._delete_blender_addon(version)
         self._install_blender_addon(version)
-        self.open_msg_dialog('Blender Addon updated. Please restart Daemon.')
 
     def _delete_blender_addon(self, version):
         for item in self.ADDON_INSTALL_PATH.iterdir():
@@ -717,31 +737,26 @@ class Metavinci(QMainWindow):
 
         shutil.rmtree(str(self.ADDON_INSTALL_PATH))
 
-    def _update_cli(self):
-        loading = self.loading_indicator('UPDATING HVYM')
-        loading.Play()
-        self._delete_hvym()
-        self._install_hvym()
-        self.open_msg_dialog('CLI updated.')
-        loading.Stop()
-
     def _install_press(self):
-        loading = self.loading_indicator('Installing Heavymeta Press')
-        loading.Play()
-        _subprocess('curl -L https://raw.githubusercontent.com/inviti8/hvym_press/refs/heads/main/install.sh | bash')
-        self.open_msg_dialog('Press installed. Please restart Daemon.')
-        loading.Stop()
+        install = self.open_confirm_dialog('Install Heavymeta Press?')
+        if install == True:
+            loading = self.loading_indicator('Installing Heavymeta Press')
+            loading.Play()
+            _subprocess('curl -L https://raw.githubusercontent.com/inviti8/hvym_press/refs/heads/main/install.sh | bash')
+            loading.Stop()
 
     def _delete_press(self):
         if self.PRESS.is_file():
             self.PRESS.unlink
 
     def _update_press(self):
-        loading = self.loading_indicator('UPDATING Press')
-        loading.Play()
-        self._delete_press()
-        self._install_press()
-        loading.Stop()
+        update = self.open_confirm_dialog('Update Heavymeta Press?')
+        if update == True:
+            loading = self.loading_indicator('UPDATING Press')
+            loading.Play()
+            self._delete_press()
+            self._install_press()
+            loading.Stop()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
