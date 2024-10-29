@@ -728,7 +728,7 @@ class Metavinci(QMainWindow):
     def _install_press(self):
         loading = self.loading_indicator('Installing Heavymeta Press')
         loading.Play()
-        _subprocess('curl -L https://github.com/inviti8/hvym_press/raw/main/install.sh | bash')
+        _subprocess('curl -L https://raw.githubusercontent.com/inviti8/hvym_press/refs/heads/main/install.sh | bash')
         self.open_msg_dialog('Press installed. Please restart Daemon.')
         loading.Stop()
 
