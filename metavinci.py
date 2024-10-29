@@ -676,7 +676,8 @@ class Metavinci(QMainWindow):
                 print(str(self.HVYM))
                 self._subprocess(f'{str(self.HVYM)} up')
                 self._subprocess('. ~/.bashrc')
-                self.open_confirm_dialog('Installation Complete', 'You can now use the cli')
+                self.open_confirm_dialog('Installation Complete', 'Metavinci must restart.')
+                self.restart()
             else:
                 print('hvym not installed.')
             loading.Stop()
@@ -705,6 +706,7 @@ class Metavinci(QMainWindow):
                     _download_unzip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(self.ADDON_INSTALL_PATH))
                     self.open_msg_dialog(f'Blender Addon installed. Please restart Daemon.')
                 loading.Stop()
+                self.open_confirm_dialog('Installation Complete', 'Metavinci must restart.')
                 self.restart()
             else:
                 self.open_msg_dialog('Blender not found.', 'Please install blender first')
@@ -728,7 +730,9 @@ class Metavinci(QMainWindow):
         if install == True:
             loading = self.loading_indicator('Installing Heavymeta Press')
             loading.Play()
-            _subprocess('curl -L https://raw.githubusercontent.com/inviti8/hvym_press/refs/heads/main/install.sh | bash')
+            self._subprocess('curl -L https://raw.githubusercontent.com/inviti8/hvym_press/refs/heads/main/install.sh | bash')
+            self.open_confirm_dialog('Installation Complete', 'Metavinci must restart.')
+            self.restart()
             loading.Stop()
 
     def _delete_press(self):
