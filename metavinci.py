@@ -180,9 +180,6 @@ class Metavinci(QMainWindow):
         ckBTC_balance_action = QAction("ckBTC Balance", self)
         ckBTC_balance_action.triggered.connect(self.get_ckBTC_balance)
 
-        install_dfx_action = QAction(self.install_icon, "Install dfx", self)
-        install_dfx_action.triggered.connect(self._install_dfx)
-
         install_hvym_action = QAction(self.install_icon, "Install hvym", self)
         install_hvym_action.triggered.connect(self._install_hvym)
 
@@ -228,7 +225,7 @@ class Metavinci(QMainWindow):
 
         tray_menu = QMenu()
 
-        if self.HVYM.is_file() and self.DFX.is_file():
+        if self.HVYM.is_file():
             tray_accounts_menu = tray_menu.addMenu("Accounts")
             tray_ic_accounts_menu = tray_accounts_menu.addMenu("IC")
             tray_ic_accounts_menu.addAction(icp_principal_action)
@@ -236,9 +233,6 @@ class Metavinci(QMainWindow):
             tray_ic_accounts_menu.addAction(icp_new_account_action)
             tray_ic_accounts_menu.addAction(icp_change_account_action)
             tray_ic_accounts_menu.addAction(icp_remove_account_action)
-
-        if not self.DFX.is_file():
-            tray_menu.addAction(install_dfx_action)
 
         tray_tools_menu = tray_menu.addMenu("Tools")
 
@@ -259,7 +253,7 @@ class Metavinci(QMainWindow):
 
         tray_tools_menu.addAction(update_tools_action)
 
-        if self.HVYM.is_file() and self.DFX.is_file():
+        if self.HVYM.is_file():
             tray_balances_menu = tray_ic_accounts_menu.addMenu("Balances")
             tray_balances_menu.addAction(icp_balance_action)
             tray_balances_menu.addAction(oro_balance_action)
@@ -627,7 +621,7 @@ class Metavinci(QMainWindow):
             output = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT)
             return output.decode('utf-8')
         except Exception as e:
-            return e
+            return None
 
     def splash(self):
         return(self._subprocess(f'{str(self.HVYM)} splash'))
@@ -649,15 +643,6 @@ class Metavinci(QMainWindow):
 
     def hvym_check(self):
         return(self._subprocess(f'{str(self.HVYM)} check'))
-
-    def _install_dfx(self):
-        install = self.open_confirm_dialog('Install dfx?')
-        if install == True:
-            loading = self.loading_indicator('INSTALLING DFX...')
-            loading.Play()
-            installed = self._subprocess('sh -ci "$(curl -fsSL https://internetcomputer.org/install.sh)"')
-            loading.Stop()
-            self.open_msg_dialog(f"{installed}")
 
     def update_tools(self):
         update = self.open_confirm_dialog('You want to update Heavymeta Tools?')
@@ -689,9 +674,9 @@ class Metavinci(QMainWindow):
             if installed != None and check != None and check.strip() == 'ONE-TWO':
                 print('hvym is on path')
                 print(str(self.HVYM))
-                installed = self._subprocess(f'{str(self.HVYM)} up')
+                self._subprocess(f'{str(self.HVYM)} up')
                 self._subprocess('. ~/.bashrc')
-                self.open_msg_dialog(f"{installed}")
+                self.open_confirm_dialog('Installation Complete', 'You can now use the cli')
             else:
                 print('hvym not installed.')
             loading.Stop()
@@ -743,9 +728,8 @@ class Metavinci(QMainWindow):
         if install == True:
             loading = self.loading_indicator('Installing Heavymeta Press')
             loading.Play()
-            installed = _subprocess('curl -L https://raw.githubusercontent.com/inviti8/hvym_press/refs/heads/main/install.sh | bash')
+            _subprocess('curl -L https://raw.githubusercontent.com/inviti8/hvym_press/refs/heads/main/install.sh | bash')
             loading.Stop()
-            self.open_msg_dialog(f"{installed}")
 
     def _delete_press(self):
         if self.PRESS.is_file():
