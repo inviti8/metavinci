@@ -66,6 +66,7 @@ class Metavinci(QMainWindow):
         self.ENC_KEY = self.PATH / 'encryption_key.key'
         self.DFX = Path.home() / '.local'/ 'share'/ 'dfx'/ 'bin' / 'dfx'
         self.HVYM = Path.home() / '.local'/ 'share'/ 'heavymeta-cli'/ 'hvym'
+        self.DIDC = Path.home() / '.local'/ 'share'/ 'didc'/ 'didc'
         self.PRESS = Path.home() / '.local' / 'share' / 'heavymeta-press' / 'hvym_press'
         self.BLENDER_PATH = Path.home() / '.config' / 'blender'
         self.BLENDER_VERSIONS = []
@@ -201,6 +202,9 @@ class Metavinci(QMainWindow):
         update_addon_action = QAction(self.update_icon, "Update Blender Addon", self)
         update_addon_action.triggered.connect(self._update_blender_addon)
 
+        install_didc_action = QAction(self.install_icon, "Install didc", self)
+        install_didc_action.triggered.connect(self.hvym_install_didc)
+
         update_tools_action = QAction(self.update_icon, "Update All Tools", self)
         update_tools_action.triggered.connect(self.update_tools)
 
@@ -225,6 +229,12 @@ class Metavinci(QMainWindow):
 
         start_daemon_action = QAction("Start Daemon", self)
         start_daemon_action.triggered.connect(self.authorization_loop)
+
+        candid_js_action = QAction("Generate Candid Js Interface", self)
+        candid_js_action.triggered.connect(self.hvym_gen_candid_js)
+
+        candid_ts_action = QAction("Generate Candid Ts Interface", self)
+        candid_ts_action.triggered.connect(self.hvym_gen_candid_ts)
 
         tray_menu = QMenu()
 
@@ -261,6 +271,8 @@ class Metavinci(QMainWindow):
 
         if self.HVYM.is_file():
             tray_tools_update_menu.addAction(update_tools_action)
+            if not self.DIDC.is_file():
+                tray_tools_update_menu.addAction(install_didc_action)
 
             tray_balances_menu = tray_ic_accounts_menu.addMenu("Balances")
             tray_balances_menu.addAction(icp_balance_action)
@@ -277,6 +289,10 @@ class Metavinci(QMainWindow):
         tray_tasks_menu.addAction(import_keypair_action)
         tray_tasks_menu.addAction(gen_token_action)
         tray_tasks_menu.addAction(start_daemon_action)
+        if self.DIDC.is_file():
+            tray_tasks_menu.addAction(candid_js_action)
+            tray_tasks_menu.addAction(candid_ts_action)
+            
 
         tray_menu.addAction(quit_action)
 
@@ -651,6 +667,15 @@ class Metavinci(QMainWindow):
 
     def hvym_check(self):
         return(self._subprocess(f'{str(self.HVYM)} check'))
+    
+    def hvym_install_didc(self):
+        return(self._subprocess(f'{str(self.HVYM)} didc-install'))
+    
+    def hvym_gen_candid_js(self):
+        return(self._subprocess(f'{str(self.HVYM)} didc-bind-js-popup'))
+    
+    def hvym_gen_candid_ts(self):
+        return(self._subprocess(f'{str(self.HVYM)} didc-bind-ts-popup'))
 
     def update_tools(self):
         update = self.open_confirm_dialog('You want to update Heavymeta Tools?')
