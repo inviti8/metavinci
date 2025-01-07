@@ -290,8 +290,9 @@ class Metavinci(QMainWindow):
         tray_tasks_menu.addAction(gen_token_action)
         tray_tasks_menu.addAction(start_daemon_action)
         if self.DIDC.is_file():
-            tray_tasks_menu.addAction(candid_js_action)
-            tray_tasks_menu.addAction(candid_ts_action)
+            tray_tools_menu_ic = tray_tools_menu.addMenu("IC")
+            tray_tools_menu_ic.addAction(candid_js_action)
+            tray_tools_menu_ic.addAction(candid_ts_action)
             
 
         tray_menu.addAction(quit_action)
