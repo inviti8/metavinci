@@ -80,10 +80,11 @@ class Metavinci(QMainWindow):
         self.UPDATE_IMG = os.path.join(self.FILE_PATH, 'images', 'update.png')
         self.INSTALL_IMG = os.path.join(self.FILE_PATH, 'images', 'install.png')
         self.ICP_LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_logo.png')
-        self.ICP_ADD_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_add.png')
-        self.ICP_TEST_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_test.png')
-        self.ICP_SELECT_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_select.png')
-        self.ICP_REMOVE_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_remove.png')
+        self.STELLAR_LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'stellar_logo.png')
+        self.ADD_IMG = os.path.join(self.FILE_PATH, 'images', 'add.png')
+        self.TEST_IMG = os.path.join(self.FILE_PATH, 'images', 'test.png')
+        self.SELECT_IMG = os.path.join(self.FILE_PATH, 'images', 'select.png')
+        self.REMOVE_IMG = os.path.join(self.FILE_PATH, 'images', 'remove.png')
         self.STYLE_SHEET = os.path.join(self.FILE_PATH, 'data', 'style.qss')
         self.DB_SRC = os.path.join(self.FILE_PATH, 'data', 'db.json')
         self.DB_PATH = self.BIN_PATH /'db.json'
@@ -99,10 +100,11 @@ class Metavinci(QMainWindow):
         self.update_icon = QIcon(self.UPDATE_IMG)
         self.install_icon = QIcon(self.INSTALL_IMG)
         self.ic_icon = QIcon(self.ICP_LOGO_IMG)
-        self.ic_add_icon = QIcon(self.ICP_ADD_IMG)
-        self.ic_test_icon = QIcon(self.ICP_TEST_IMG)
-        self.ic_select_icon = QIcon(self.ICP_SELECT_IMG)
-        self.ic_remove_icon = QIcon(self.ICP_REMOVE_IMG)
+        self.stellar_icon = QIcon(self.STELLAR_LOGO_IMG)
+        self.add_icon = QIcon(self.ADD_IMG)
+        self.test_icon = QIcon(self.TEST_IMG)
+        self.select_icon = QIcon(self.SELECT_IMG)
+        self.remove_icon = QIcon(self.REMOVE_IMG)
         self.publik_key = None
         self.private_key = None
         self.refresh_interval = 8 * 60 * 60  # 8 hours in seconds
@@ -154,19 +156,28 @@ class Metavinci(QMainWindow):
         post_init_action = QAction(self.icon, "Initialize", self)
         post_init_action.triggered.connect(self.init_post)
 
+        stellar_new_account_action = QAction(self.add_icon, "New Account", self)
+        stellar_new_account_action.triggered.connect(self.new_stellar_account)
+
+        stellar_change_account_action = QAction(self.select_icon, "Change Account", self)
+        stellar_change_account_action.triggered.connect(self.change_stellar_account)
+
+        stellar_remove_account_action = QAction(self.remove_icon, "Remove Account", self)
+        stellar_remove_account_action.triggered.connect(self.remove_stellar_account)
+
         icp_principal_action = QAction(self.ic_icon, "Get Principal", self)
         icp_principal_action.triggered.connect(self.get_ic_principal)
 
-        icp_new_account_action = QAction(self.ic_add_icon, "New Account", self)
+        icp_new_account_action = QAction(self.add_icon, "New Account", self)
         icp_new_account_action.triggered.connect(self.new_ic_account)
 
-        icp_new_test_account_action = QAction(self.ic_test_icon, "New Test Account", self)
+        icp_new_test_account_action = QAction(self.test_icon, "New Test Account", self)
         icp_new_test_account_action.triggered.connect(self.new_ic_test_account)
 
-        icp_change_account_action = QAction(self.ic_select_icon, "Change Account", self)
+        icp_change_account_action = QAction(self.select_icon, "Change Account", self)
         icp_change_account_action.triggered.connect(self.change_ic_account)
 
-        icp_remove_account_action = QAction(self.ic_remove_icon, "Remove Account", self)
+        icp_remove_account_action = QAction(self.remove_icon, "Remove Account", self)
         icp_remove_account_action.triggered.connect(self.remove_ic_account)
 
         icp_balance_action = QAction("ICP Balance", self)
@@ -202,8 +213,8 @@ class Metavinci(QMainWindow):
         update_addon_action = QAction(self.update_icon, "Update Blender Addon", self)
         update_addon_action.triggered.connect(self._update_blender_addon)
 
-        install_didc_action = QAction(self.install_icon, "Install didc", self)
-        install_didc_action.triggered.connect(self.hvym_install_didc)
+        # install_didc_action = QAction(self.install_icon, "Install didc", self)
+        # install_didc_action.triggered.connect(self.hvym_install_didc)
 
         update_tools_action = QAction(self.update_icon, "Update All Tools", self)
         update_tools_action.triggered.connect(self.update_tools)
@@ -240,12 +251,16 @@ class Metavinci(QMainWindow):
 
         if self.HVYM.is_file():
             tray_accounts_menu = tray_menu.addMenu("Accounts")
-            tray_ic_accounts_menu = tray_accounts_menu.addMenu("IC")
-            tray_ic_accounts_menu.addAction(icp_principal_action)
-            tray_ic_accounts_menu.addAction(icp_new_test_account_action)
-            tray_ic_accounts_menu.addAction(icp_new_account_action)
-            tray_ic_accounts_menu.addAction(icp_change_account_action)
-            tray_ic_accounts_menu.addAction(icp_remove_account_action)
+            tray_stellar_accounts_menu = tray_accounts_menu.addMenu("Stellar")
+            tray_stellar_accounts_menu.addAction(stellar_new_account_action)
+            tray_stellar_accounts_menu.addAction(stellar_change_account_action)
+            tray_stellar_accounts_menu.addAction(stellar_remove_account_action)
+            # tray_ic_accounts_menu = tray_accounts_menu.addMenu("IC")
+            # tray_ic_accounts_menu.addAction(icp_principal_action)
+            # tray_ic_accounts_menu.addAction(icp_new_test_account_action)
+            # tray_ic_accounts_menu.addAction(icp_new_account_action)
+            # tray_ic_accounts_menu.addAction(icp_change_account_action)
+            # tray_ic_accounts_menu.addAction(icp_remove_account_action)
 
         tray_tools_menu = tray_menu.addMenu("Tools")
 
@@ -274,11 +289,11 @@ class Metavinci(QMainWindow):
             if not self.DIDC.is_file():
                 tray_tools_update_menu.addAction(install_didc_action)
 
-            tray_balances_menu = tray_ic_accounts_menu.addMenu("Balances")
-            tray_balances_menu.addAction(icp_balance_action)
-            tray_balances_menu.addAction(oro_balance_action)
-            tray_balances_menu.addAction(ckETH_balance_action)
-            tray_balances_menu.addAction(ckBTC_balance_action)
+            # tray_balances_menu = tray_ic_accounts_menu.addMenu("Balances")
+            # tray_balances_menu.addAction(icp_balance_action)
+            # tray_balances_menu.addAction(oro_balance_action)
+            # tray_balances_menu.addAction(ckETH_balance_action)
+            # tray_balances_menu.addAction(ckBTC_balance_action)
 
         tray_keys_menu = tray_menu.addMenu("Keys")
         tray_keys_menu.addAction(gen_keys_action)
@@ -650,6 +665,15 @@ class Metavinci(QMainWindow):
 
     def splash(self):
         return(self._subprocess(f'{str(self.HVYM)} splash'))
+    
+    def new_stellar_account(self):
+        return(self._subprocess(f'{str(self.HVYM)} stellar-new-account'))
+
+    def change_stellar_account(self):
+        return(self._subprocess(f'{str(self.HVYM)} stellar-set-account'))
+
+    def remove_stellar_account(self):
+        return(self._subprocess(f'{str(self.HVYM)} stellar-remove-account'))
 
     def new_ic_account(self):
         return(self._subprocess(f'{str(self.HVYM)} icp-new-account'))
