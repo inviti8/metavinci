@@ -96,7 +96,8 @@ class Metavinci(QMainWindow):
         self.user_pid = 'disabled'
         self.DB.update({'INITIALIZED': True, 'principal': self.user_pid}, self.QUERY.type == 'app_data')
         self.INITIALIZED = (len(self.DB.search(self.QUERY.INITIALIZED == True)) > 0)
-        self.PINTHEON_INSTALLED = (len(self.DB.search(self.QUERY.pintheon_dir == "")) > 0)
+        self.PINTHEON_INSTALLED = (len(self.DB.search(self.QUERY.pintheon_installed == False)) > 0)
+        self.PINTHEON_ACTIVE = False
         self.win_icon = QIcon(self.HVYM_IMG)
         self.icon = QIcon(self.LOGO_IMG)
         self.update_icon = QIcon(self.UPDATE_IMG)
@@ -206,6 +207,9 @@ class Metavinci(QMainWindow):
         run_pintheon_action = QAction(self.icon, "Start Pintheon", self)
         run_pintheon_action.triggered.connect(self._start_pintheon)
 
+        stop_pintheon_action = QAction(self.icon, "Stop Pintheon", self)
+        stop_pintheon_action.triggered.connect(self._stop_pintheon)
+
         install_pintheon_action = QAction(self.install_icon, "Install Pintheon", self)
         install_pintheon_action.triggered.connect(self._install_pintheon)
 
@@ -285,8 +289,11 @@ class Metavinci(QMainWindow):
         else:
             tray_tools_update_menu.addAction(update_hvym_action)
             if self.PINTHEON_INSTALLED:
-                tray_tools_menu.addAction(run_pintheon_action)
-                tray_tools_menu.addAction(expose_pintheon_action)
+                if self.PINTHEON_ACTIVE:
+                    tray_tools_menu.addAction(stop_pintheon_action)
+                    tray_tools_menu.addAction(expose_pintheon_action)
+                else:
+                    tray_tools_menu.addAction(run_pintheon_action)
             else:
                 tray_tools_update_menu.addAction(install_pintheon_action)
 
@@ -720,10 +727,13 @@ class Metavinci(QMainWindow):
         return(self._subprocess(f'{str(self.HVYM)} didc-bind-ts-popup'))
     
     def hvym_setup_pintheon(self):
-        return(self._subprocess(f'{str(self.HVYM)} pintheon-setup-popup'))
+        return(self._subprocess(f'{str(self.HVYM)} pintheon-setup'))
     
     def hvym_start_pintheon(self):
         return(self._subprocess(f'{str(self.HVYM)} pintheon-start'))
+    
+    def hvym_stop_pintheon(self):
+        return(self._subprocess(f'{str(self.HVYM)} pintheon-stop'))
     
     def hvym_expose_pintheon(self):
         return(self._subprocess(f'{str(self.HVYM)} pintheon-tunnel'))
@@ -809,13 +819,20 @@ class Metavinci(QMainWindow):
     def _install_pintheon(self):
         install = self.open_confirm_dialog('Install Pintheon?')
         if install == True:
-            path = self.hvym_setup_pintheon()
-            self.DB.update({'pintheon_dir': path}, self.QUERY.type == 'app_data')
+            self.hvym_setup_pintheon()
+            self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
 
     def _start_pintheon(self):
         start = self.open_confirm_dialog('Start Pintheon Gateway?')
         if start == True:
             self.hvym_start_pintheon()
+            self.PINTHEON_ACTIVE = True
+
+    def _stop_pintheon(self):
+        start = self.open_confirm_dialog('Stop Pintheon Gateway?')
+        if start == True:
+            self.hvym_stop_pintheon()
+            self.PINTHEON_ACTIVE = False
 
     def _expose_pintheon(self):
         expose = self.open_confirm_dialog('Expose Pintheon Gateway to the Internet?')
