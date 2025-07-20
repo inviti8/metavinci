@@ -23,7 +23,7 @@ def test_platform_detection():
     print(f"Is Windows: {pm.is_windows}")
     print(f"Is macOS: {pm.is_macos}")
     print(f"Is Linux: {pm.is_linux}")
-    print("✓ Platform detection working")
+    print("[OK] Platform detection working")
 
 
 def test_path_resolution():
@@ -43,7 +43,7 @@ def test_path_resolution():
     blender_path = pm.get_blender_path()
     print(f"Blender path: {blender_path}")
     
-    print("✓ Path resolution working")
+    print("[OK] Path resolution working")
 
 
 def test_file_operations():
@@ -66,7 +66,7 @@ def test_file_operations():
     # Cleanup
     test_file.unlink()
     test_dir.rmdir()
-    print("✓ File operations working")
+    print("[OK] File operations working")
 
 
 def test_download_utils():
@@ -80,11 +80,11 @@ def test_download_utils():
         if result:
             print(f"Downloaded test file: {result}")
             os.unlink(result)  # Cleanup
-            print("✓ Download utilities working")
+            print("[OK] Download utilities working")
         else:
-            print("✗ Download failed")
+            print("[FAIL] Download failed")
     except Exception as e:
-        print(f"✗ Download test failed: {e}")
+        print(f"[FAIL] Download test failed: {e}")
 
 
 def main():
@@ -103,7 +103,7 @@ def main():
         print("Cross-platform compatibility appears to be working.")
         
     except Exception as e:
-        print(f"\n✗ Test failed: {e}")
+        print(f"\n[FAIL] Test failed: {e}")
         sys.exit(1)
 
 
