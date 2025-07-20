@@ -78,7 +78,7 @@ jobs:
         python build_cross_platform.py --platform ${{ matrix.platform == 'ubuntu-latest' && 'linux' || matrix.platform == 'windows-latest' && 'windows' || 'macos' }}
 
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: metavinci-${{ matrix.platform }}-py${{ matrix.python-version }}
         path: |
@@ -96,7 +96,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Download all artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         path: artifacts
 
@@ -127,7 +127,7 @@ jobs:
         ls -la release-assets/ >> release-assets/README.md
 
     - name: Upload release assets
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: release-assets
         path: release-assets/
@@ -152,7 +152,7 @@ jobs:
         pip install -r requirements.txt
 
     - name: Download Linux build
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: metavinci-ubuntu-latest-py3.11
         path: linux-build
