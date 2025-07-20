@@ -102,65 +102,18 @@ class CrossPlatformBuilder:
         # Ensure dist directory exists
         dist_dir.mkdir(parents=True, exist_ok=True)
         
-        # Build PyInstaller command with conservative optimizations
+        # Build PyInstaller command with minimal exclusions
         pyinstaller_cmd = [
             'pyinstaller',
             '--noconsole',
             '--onefile',
             '--strip',  # Strip debug symbols
             f'--distpath={dist_dir}',
-            # Exclude only clearly unnecessary modules
+            # Only exclude modules that are definitely not needed
             '--exclude-module', 'tkinter',
-            '--exclude-module', 'matplotlib',
-            '--exclude-module', 'numpy',
-            '--exclude-module', 'scipy',
-            '--exclude-module', 'pandas',
-            '--exclude-module', 'IPython',
-            '--exclude-module', 'jupyter',
-            '--exclude-module', 'notebook',
             '--exclude-module', 'pytest',
             '--exclude-module', 'unittest',
             '--exclude-module', 'doctest',
-            '--exclude-module', 'pdb',
-            '--exclude-module', 'profile',
-            '--exclude-module', 'cProfile',
-            '--exclude-module', 'trace',
-            '--exclude-module', 'pstats',
-            '--exclude-module', 'timeit',
-            '--exclude-module', 'dis',
-            '--exclude-module', 'pickletools',
-            '--exclude-module', 'tabnanny',
-            '--exclude-module', 'py_compile',
-            '--exclude-module', 'compileall',
-            '--exclude-module', 'ensurepip',
-            '--exclude-module', 'venv',
-            '--exclude-module', 'virtualenv',
-            '--exclude-module', 'pip',
-            '--exclude-module', 'setuptools',
-            '--exclude-module', 'wheel',
-            '--exclude-module', 'distutils',
-            '--exclude-module', 'email',
-            '--exclude-module', 'html',
-            '--exclude-module', 'http',
-            '--exclude-module', 'xml',
-            '--exclude-module', 'xmlrpc',
-            '--exclude-module', 'multiprocessing',
-            '--exclude-module', 'concurrent',
-            '--exclude-module', 'asyncio',
-            '--exclude-module', 'locale',
-            '--exclude-module', 'gettext',
-            '--exclude-module', 'readline',
-            '--exclude-module', 'rlcompleter',
-            '--exclude-module', 'code',
-            '--exclude-module', 'codeop',
-            '--exclude-module', 'pyclbr',
-            '--exclude-module', 'inspect',
-            '--exclude-module', 'ast',
-            '--exclude-module', 'symtable',
-            '--exclude-module', 'token',
-            '--exclude-module', 'tokenize',
-            '--exclude-module', 'keyword',
-            '--exclude-module', 'parser',
             'metavinci.py'
         ]
         
@@ -206,6 +159,21 @@ class CrossPlatformBuilder:
                     print(f"[SIZE] Moderate executable size ({size_mb:.2f} MB)")
                 else:
                     print(f"[OK] Good executable size ({size_mb:.2f} MB)")
+                
+                # Test if the binary is executable by calling --help
+                print(f"Testing if the built binary runs with --help...")
+                try:
+                    result = subprocess.run([str(executable_path), '--help'], capture_output=True, text=True, timeout=10)
+                    print("--- Binary --help output ---")
+                    print(result.stdout)
+                    print(result.stderr)
+                    print("--- End of output ---")
+                    if result.returncode == 0:
+                        print("[OK] Binary ran successfully with --help")
+                    else:
+                        print(f"[WARN] Binary exited with code {result.returncode}")
+                except Exception as e:
+                    print(f"[FAIL] Could not run binary: {e}")
             else:
                 print(f"Build completed but executable not found at {executable_path}")
             
