@@ -113,6 +113,7 @@ class CrossPlatformBuilder:
             '--exclude-module', 'pytest',
             '--exclude-module', 'unittest',
             '--exclude-module', 'doctest',
+            '--collect-all', 'PyQt5.Qt',
             'metavinci.py'
         ]
         

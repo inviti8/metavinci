@@ -28,6 +28,17 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
+    - name: Install system Qt libraries (Linux only)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qt5-default qtbase5-dev qtbase5-dev-tools libqt5gui5 libqt5core5a libqt5widgets5 libxcb-xinerama0
+
+    - name: Ensure PyQt5 and Qt plugins are installed
+      run: |
+        pip install --force-reinstall --upgrade --no-cache-dir PyQt5 PyQt5-Qt5 PyQt5-sip
+        python -c "import PyQt5, os; print('Qt plugins:', os.path.join(os.path.dirname(PyQt5.__file__), 'Qt', 'plugins', 'platforms')); import glob; print('Files:', glob.glob(os.path.join(os.path.dirname(PyQt5.__file__), 'Qt', 'plugins', 'platforms', '*')))"
+
     - name: Run tests
       run: |
         python test_cross_platform.py
