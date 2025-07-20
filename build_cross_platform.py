@@ -128,6 +128,18 @@ class CrossPlatformBuilder:
             pyinstaller_cmd.extend(['--add-data', 'data:data'])
             pyinstaller_cmd.extend(['--add-data', 'service:service'])
         
+        # Add PyQt5 Qt platforms plugin directory
+        try:
+            import PyQt5
+            import os as _os
+            qt_plugins = _os.path.join(_os.path.dirname(PyQt5.__file__), 'Qt', 'plugins', 'platforms')
+            if target_platform == 'windows' or (target_platform is None and self.platform_manager.is_windows):
+                pyinstaller_cmd.extend(['--add-data', f'{qt_plugins};PyQt5/Qt/plugins/platforms'])
+            else:
+                pyinstaller_cmd.extend(['--add-data', f'{qt_plugins}:PyQt5/Qt/plugins/platforms'])
+        except Exception as e:
+            print(f"[WARN] Could not add PyQt5 Qt platforms: {e}")
+        
         # Add icon if it exists
         if icon_file.exists():
             pyinstaller_cmd.insert(3, f'--icon={str(icon_file)}')
