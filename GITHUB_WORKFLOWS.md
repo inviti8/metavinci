@@ -73,11 +73,13 @@ Supported formats:
 - **macOS**: `metavinci-macos` (executable)
 
 ### Release Assets
-When creating a GitHub release, the workflow automatically:
+When pushing a version tag, the workflow automatically:
 1. Downloads all build artifacts
 2. Creates a release package
 3. Includes installation instructions
 4. Uploads as release assets
+
+**Note**: The release package is created automatically when you push a tag. You can then manually create a GitHub release and attach these assets if desired.
 
 ## Platform-Specific Notes
 
