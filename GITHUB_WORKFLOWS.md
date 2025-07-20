@@ -1,28 +1,10 @@
 # GitHub Actions Workflows
 
-This repository includes GitHub Actions workflows for automated cross-platform building and testing.
+This repository includes a GitHub Actions workflow for automated cross-platform building and testing.
 
-## Available Workflows
+## Available Workflow
 
-### 1. `build.yml` - Comprehensive Cross-Platform Build
-**File**: `.github/workflows/build.yml`
-
-**Features:**
-- Builds for Linux, Windows, and macOS
-- Multiple Python versions (3.9, 3.10, 3.11)
-- Matrix strategy for comprehensive testing
-- Automatic artifact upload
-- Release asset creation
-
-**Triggers:**
-- Push of version tags (e.g., `v0.01`, `v1.0.0`, `v2.1.3`)
-- Manual workflow dispatch
-
-**Output:**
-- Individual artifacts for each platform/Python combination
-- Combined release assets when creating a release
-
-### 2. `build-simple.yml` - Simple Cross-Platform Build
+### `build-simple.yml` - Cross-Platform Build
 **File**: `.github/workflows/build-simple.yml`
 
 **Features:**
@@ -30,6 +12,7 @@ This repository includes GitHub Actions workflows for automated cross-platform b
 - Single Python version (3.11)
 - Separate jobs for each platform
 - Automatic release package creation
+- Cross-platform compatibility testing
 
 **Triggers:**
 - Push of version tags (e.g., `v0.01`, `v1.0.0`, `v2.1.3`)
@@ -39,15 +22,15 @@ This repository includes GitHub Actions workflows for automated cross-platform b
 - Individual platform builds
 - Combined release package with README
 
-## Workflow Comparison
+## Workflow Details
 
-| Feature | build.yml | build-simple.yml |
-|---------|-----------|------------------|
-| Python Versions | 3.9, 3.10, 3.11 | 3.11 only |
-| Build Time | ~15-20 minutes | ~8-12 minutes |
-| Complexity | High | Low |
-| Artifacts | Many individual files | Single release package |
-| Testing | Basic executable test | Cross-platform tests |
+| Feature | Details |
+|---------|---------|
+| Python Version | 3.11 only |
+| Build Time | ~8-12 minutes |
+| Complexity | Low |
+| Artifacts | Single release package |
+| Testing | Cross-platform tests |
 
 ## Usage
 
@@ -154,7 +137,7 @@ When creating a GitHub release, the workflow automatically:
 ## Customization
 
 ### Adding New Platforms
-1. Add platform to matrix strategy
+1. Add platform to workflow jobs
 2. Update build commands
 3. Add platform-specific paths
 4. Test locally first
@@ -179,9 +162,9 @@ You can add environment variables for:
    - Use appropriate cache keys
 
 2. **Optimize Build Time**
-   - Exclude unnecessary Python versions
    - Use parallel jobs when possible
    - Minimize dependency installation
+   - Keep builds focused
 
 3. **Security**
    - Don't commit secrets to workflows
