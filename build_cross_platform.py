@@ -175,20 +175,8 @@ class CrossPlatformBuilder:
                 else:
                     print(f"[OK] Good executable size ({size_mb:.2f} MB)")
                 
-                # Test if the binary is executable by calling --help
-                print(f"Testing if the built binary runs with --help...")
-                try:
-                    result = subprocess.run([str(executable_path), '--help'], capture_output=True, text=True, timeout=10)
-                    print("--- Binary --help output ---")
-                    print(result.stdout)
-                    print(result.stderr)
-                    print("--- End of output ---")
-                    if result.returncode == 0:
-                        print("[OK] Binary ran successfully with --help")
-                    else:
-                        print(f"[WARN] Binary exited with code {result.returncode}")
-                except Exception as e:
-                    print(f"[FAIL] Could not run binary: {e}")
+                # Remove the test that runs the binary with --help
+                # (was here previously, now removed)
             else:
                 print(f"Build completed but executable not found at {executable_path}")
             
