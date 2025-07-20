@@ -102,12 +102,66 @@ class CrossPlatformBuilder:
         # Ensure dist directory exists
         dist_dir.mkdir(parents=True, exist_ok=True)
         
-        # Build PyInstaller command
+        # Build PyInstaller command with conservative optimizations
         pyinstaller_cmd = [
             'pyinstaller',
             '--noconsole',
             '--onefile',
+            '--strip',  # Strip debug symbols
+            '--optimize=2',  # Python optimization level
             f'--distpath={dist_dir}',
+            # Exclude only clearly unnecessary modules
+            '--exclude-module', 'tkinter',
+            '--exclude-module', 'matplotlib',
+            '--exclude-module', 'numpy',
+            '--exclude-module', 'scipy',
+            '--exclude-module', 'pandas',
+            '--exclude-module', 'IPython',
+            '--exclude-module', 'jupyter',
+            '--exclude-module', 'notebook',
+            '--exclude-module', 'pytest',
+            '--exclude-module', 'unittest',
+            '--exclude-module', 'doctest',
+            '--exclude-module', 'pdb',
+            '--exclude-module', 'profile',
+            '--exclude-module', 'cProfile',
+            '--exclude-module', 'trace',
+            '--exclude-module', 'pstats',
+            '--exclude-module', 'timeit',
+            '--exclude-module', 'dis',
+            '--exclude-module', 'pickletools',
+            '--exclude-module', 'tabnanny',
+            '--exclude-module', 'py_compile',
+            '--exclude-module', 'compileall',
+            '--exclude-module', 'ensurepip',
+            '--exclude-module', 'venv',
+            '--exclude-module', 'virtualenv',
+            '--exclude-module', 'pip',
+            '--exclude-module', 'setuptools',
+            '--exclude-module', 'wheel',
+            '--exclude-module', 'distutils',
+            '--exclude-module', 'email',
+            '--exclude-module', 'html',
+            '--exclude-module', 'http',
+            '--exclude-module', 'xml',
+            '--exclude-module', 'xmlrpc',
+            '--exclude-module', 'multiprocessing',
+            '--exclude-module', 'concurrent',
+            '--exclude-module', 'asyncio',
+            '--exclude-module', 'locale',
+            '--exclude-module', 'gettext',
+            '--exclude-module', 'readline',
+            '--exclude-module', 'rlcompleter',
+            '--exclude-module', 'code',
+            '--exclude-module', 'codeop',
+            '--exclude-module', 'pyclbr',
+            '--exclude-module', 'inspect',
+            '--exclude-module', 'ast',
+            '--exclude-module', 'symtable',
+            '--exclude-module', 'token',
+            '--exclude-module', 'tokenize',
+            '--exclude-module', 'keyword',
+            '--exclude-module', 'parser',
             'metavinci.py'
         ]
         
@@ -134,7 +188,28 @@ class CrossPlatformBuilder:
         
         try:
             subprocess.run(pyinstaller_cmd, cwd=str(self.build_dir), check=True)
-            print(f"Build completed successfully!")
+            
+            # Analyze the built executable size
+            executable_name = 'metavinci'
+            if target_platform == 'windows' or (target_platform is None and self.platform_manager.is_windows):
+                executable_name += '.exe'
+            
+            executable_path = dist_dir / executable_name
+            if executable_path.exists():
+                size_mb = executable_path.stat().st_size / (1024 * 1024)
+                print(f"Build completed successfully!")
+                print(f"Executable size: {size_mb:.2f} MB")
+                
+                # Provide size analysis
+                if size_mb > 50:
+                    print(f"⚠️  Large executable size ({size_mb:.2f} MB) - consider optimizing dependencies")
+                elif size_mb > 30:
+                    print(f"📦 Moderate executable size ({size_mb:.2f} MB)")
+                else:
+                    print(f"✅ Good executable size ({size_mb:.2f} MB)")
+            else:
+                print(f"Build completed but executable not found at {executable_path}")
+            
             return True
         except subprocess.CalledProcessError as e:
             print(f"Build failed: {e}")
