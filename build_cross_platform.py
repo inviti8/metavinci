@@ -134,10 +134,13 @@ class CrossPlatformBuilder:
             import PyQt5
             import os as _os
             qt_plugins = _os.path.join(_os.path.dirname(PyQt5.__file__), 'Qt', 'plugins', 'platforms')
-            if target_platform == 'windows' or (target_platform is None and self.platform_manager.is_windows):
-                pyinstaller_cmd.extend(['--add-data', f'{qt_plugins};PyQt5/Qt/plugins/platforms'])
+            if _os.path.exists(qt_plugins) and _os.listdir(qt_plugins):
+                if target_platform == 'windows' or (target_platform is None and self.platform_manager.is_windows):
+                    pyinstaller_cmd.extend(['--add-data', f'{qt_plugins};PyQt5/Qt/plugins/platforms'])
+                else:
+                    pyinstaller_cmd.extend(['--add-data', f'{qt_plugins}:PyQt5/Qt/plugins/platforms'])
             else:
-                pyinstaller_cmd.extend(['--add-data', f'{qt_plugins}:PyQt5/Qt/plugins/platforms'])
+                print(f"[INFO] Qt platforms directory not found or empty, skipping --add-data for platforms.")
         except Exception as e:
             print(f"[WARN] Could not add PyQt5 Qt platforms: {e}")
         
