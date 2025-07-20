@@ -22,6 +22,18 @@ import sys
 from platform_manager import PlatformManager
 from download_utils import download_and_execute_script, download_and_extract_zip
 from file_utils import set_secure_permissions, create_secure_directory, ensure_config_directory
+import platform
+import urllib.request
+import tempfile
+import os
+import tarfile
+import zipfile
+import shutil
+import requests
+
+
+# Remove HVYM_VERSION
+# HVYM_VERSION = 'v0.00'
 
 
 def _download_unzip(url, out_path):
@@ -59,6 +71,57 @@ class HVYM_SeedVault(TinyDB):
         TinyDB.__init__(self, encryption_key, path, storage)
         self.HOME = os.path.expanduser('~')
         self.PATH = self.HVYM = Path.home() / '.metavinci'
+
+
+def get_latest_hvym_release_asset_url():
+    api_url = "https://api.github.com/repos/inviti8/heavymeta-cli-dev/releases/latest"
+    response = requests.get(api_url, timeout=10)
+    response.raise_for_status()
+    data = response.json()
+    assets = {asset['name']: asset['browser_download_url'] for asset in data['assets']}
+    system = platform.system().lower()
+    if system == "linux":
+        asset_name = "hvym-linux.tar.gz"
+    elif system == "darwin":
+        asset_name = "hvym-macos.tar.gz"
+    elif system == "windows":
+        asset_name = "hvym-windows.zip"
+    else:
+        raise Exception("Unsupported platform")
+    url = assets.get(asset_name)
+    if not url:
+        raise Exception(f"Asset {asset_name} not found in latest release")
+    return url
+
+def download_and_install_hvym_cli(dest_dir):
+    """Download and install the latest hvym CLI for the current platform."""
+    url = get_latest_hvym_release_asset_url()
+    print(f"Downloading {url} ...")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        asset = os.path.basename(url)
+        archive_path = os.path.join(tmpdir, asset)
+        urllib.request.urlretrieve(url, archive_path)
+        # Extract
+        if asset.endswith('.tar.gz'):
+            with tarfile.open(archive_path, "r:gz") as tar:
+                tar.extractall(path=tmpdir)
+        elif asset.endswith('.zip'):
+            with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                zip_ref.extractall(tmpdir)
+        else:
+            raise Exception("Unknown archive format")
+        # Find the hvym binary
+        for root, dirs, files in os.walk(tmpdir):
+            for file in files:
+                if file.startswith("hvym"):
+                    src = os.path.join(root, file)
+                    dst = os.path.join(dest_dir, file)
+                    shutil.move(src, dst)
+                    if platform.system().lower() != "windows":
+                        os.chmod(dst, 0o755)
+                    print(f"hvym installed at {dst}")
+                    return dst
+        raise Exception("hvym binary not found in archive")
 
 
 class Metavinci(QMainWindow):
@@ -859,36 +922,38 @@ class Metavinci(QMainWindow):
     def _install_hvym(self):
         install = self.open_confirm_dialog('Install Heavymeta cli?')
         if install == True:
-            loading = self.loading_indicator('UPDATING HVYM')
+            loading = self.loading_indicator('INSTALLING HVYM')
             loading.Play()
-            
-            # Use cross-platform script download and execution
-            script_url = self.platform_manager.get_install_script_url()
-            installed = download_and_execute_script(script_url, self.platform_manager)
-            
-            check = self.hvym_check()
-            if installed and check != None and check.strip() == 'ONE-TWO':
-                print('hvym is on path')
-                print(str(self.HVYM))
-                self._subprocess(f'{str(self.HVYM)} up')
-                # Update shell environment based on platform
-                if self.platform_manager.is_windows:
-                    self._subprocess('refreshenv')  # Windows equivalent
-                else:
-                    self._subprocess('. ~/.bashrc')
-            else:
-                print('hvym not installed.')
+            try:
+                bin_dir = os.path.dirname(str(self.HVYM))
+                if not os.path.exists(bin_dir):
+                    os.makedirs(bin_dir, exist_ok=True)
+                hvym_path = download_and_install_hvym_cli(bin_dir)
+                print(f"hvym installed at {hvym_path}")
+                self.open_msg_dialog(f"hvym installed at {hvym_path}")
+            except Exception as e:
+                print(e)
+                self.open_msg_dialog(f"Error installing hvym: {e}")
             loading.Stop()
             self.restart()
 
     def _update_hvym(self):
         update = self.open_confirm_dialog('Update Heavymeta cli?')
         if update == True:
-            loading = self.loading_indicator('UPDATING')
+            loading = self.loading_indicator('UPDATING HVYM')
             loading.Play()
-            self._delete_hvym()
-            self._install_hvym()
+            try:
+                bin_dir = os.path.dirname(str(self.HVYM))
+                if not os.path.exists(bin_dir):
+                    os.makedirs(bin_dir, exist_ok=True)
+                hvym_path = download_and_install_hvym_cli(bin_dir)
+                print(f"hvym updated at {hvym_path}")
+                self.open_msg_dialog(f"hvym updated at {hvym_path}")
+            except Exception as e:
+                print(e)
+                self.open_msg_dialog(f"Error updating hvym: {e}")
             loading.Stop()
+            self.restart()
 
     def _delete_hvym(self):
         if self.HVYM.is_file():
