@@ -81,6 +81,11 @@ class CrossPlatformBuilder:
     
     def install_dependencies(self):
         """Install Python dependencies"""
+        # Skip dependency installation in CI/CD environment
+        if os.environ.get('CI') == 'true':
+            print("Skipping dependency installation in CI environment")
+            return
+            
         requirements_file = self.build_dir / 'requirements.txt'
         if requirements_file.exists():
             print("Installing dependencies...")
@@ -103,11 +108,20 @@ class CrossPlatformBuilder:
             '--noconsole',
             '--onefile',
             f'--distpath={dist_dir}',
-            '--add-data', 'images:images',
-            '--add-data', 'data:data',
-            '--add-data', 'service:service',
             'metavinci.py'
         ]
+        
+        # Add data files with platform-specific separators
+        if target_platform == 'windows' or (target_platform is None and self.platform_manager.is_windows):
+            # Windows uses semicolon separator
+            pyinstaller_cmd.extend(['--add-data', 'images;images'])
+            pyinstaller_cmd.extend(['--add-data', 'data;data'])
+            pyinstaller_cmd.extend(['--add-data', 'service;service'])
+        else:
+            # Unix systems use colon separator
+            pyinstaller_cmd.extend(['--add-data', 'images:images'])
+            pyinstaller_cmd.extend(['--add-data', 'data:data'])
+            pyinstaller_cmd.extend(['--add-data', 'service:service'])
         
         # Add icon if it exists
         if icon_file.exists():
@@ -178,9 +192,9 @@ class CrossPlatformBuilder:
             results[platform] = success
             
             if success:
-                print(f"✓ {platform} build successful")
+                print(f"[OK] {platform} build successful")
             else:
-                print(f"✗ {platform} build failed")
+                print(f"[FAIL] {platform} build failed")
         
         return results
 
@@ -210,7 +224,7 @@ def main():
         print("\n" + "="*50)
         print("Build Summary:")
         for platform, success in results.items():
-            status = "✓ SUCCESS" if success else "✗ FAILED"
+            status = "[OK] SUCCESS" if success else "[FAIL] FAILED"
             print(f"{platform}: {status}")
         return
     
@@ -227,11 +241,11 @@ def main():
         builder.install_to_local(target_platform)
     
     if success:
-        print(f"\n✓ Build completed successfully for {target_platform or 'current platform'}")
+        print(f"\n[OK] Build completed successfully for {target_platform or 'current platform'}")
         if args.install:
-            print("✓ Executable installed to local directory")
+            print("[OK] Executable installed to local directory")
     else:
-        print(f"\n✗ Build failed for {target_platform or 'current platform'}")
+        print(f"\n[FAIL] Build failed for {target_platform or 'current platform'}")
         sys.exit(1)
 
 
