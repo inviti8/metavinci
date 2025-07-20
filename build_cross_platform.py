@@ -110,7 +110,6 @@ class CrossPlatformBuilder:
             '--strip',  # Strip debug symbols
             f'--distpath={dist_dir}',
             # Only exclude modules that are definitely not needed
-            '--exclude-module', 'tkinter',
             '--exclude-module', 'pytest',
             '--exclude-module', 'unittest',
             '--exclude-module', 'doctest',
