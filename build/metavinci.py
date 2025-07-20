@@ -6,6 +6,7 @@ import subprocess
 import os
 from urllib.request import urlopen
 from zipfile import ZipFile
+from io import BytesIO
 from tinydb import TinyDB, Query
 import tinydb_encrypted_jsonstorage as enc_json
 import shutil
@@ -18,25 +19,34 @@ from gifanimus import GifAnimation
 import time
 import threading
 import sys
+from platform_manager import PlatformManager
+from download_utils import download_and_execute_script, download_and_extract_zip
+from file_utils import set_secure_permissions, create_secure_directory, ensure_config_directory
 
 
 def _download_unzip(url, out_path):
-      with urlopen(url) as zipresp:
-          with ZipFile(BytesIO(zipresp.read())) as zfile:
-              zfile.extractall(out_path)
+    """Cross-platform download and extract ZIP file"""
+    return download_and_extract_zip(url, out_path)
 
 
-def _subprocess(command):
+def _subprocess(self, command):
         try:
-            output = subprocess.check_output(command, stderr=subprocess.STDOUT)
+            # Use platform-specific shell command
+            shell_cmd = self.platform_manager.get_shell_command(command)
+            output = subprocess.check_output(shell_cmd, stderr=subprocess.STDOUT)
             return output.decode('utf-8')
         except Exception as e:
             return None
 
 
-def _run(command):
-    output = subprocess.run(command, shell=True, capture_output=True, text=True)
-    return output.stdout
+def _run(self, command):
+    try:
+        # Use platform-specific shell command
+        shell_cmd = self.platform_manager.get_shell_command(command)
+        output = subprocess.run(shell_cmd, capture_output=True, text=True)
+        return output.stdout
+    except Exception as e:
+        return None
 
 
 class HVYM_SeedVault(TinyDB):
@@ -59,16 +69,20 @@ class Metavinci(QMainWindow):
     def __init__(self):
         # Be sure to call the super class method
         QMainWindow.__init__(self)
+        
+        # Initialize platform manager
+        self.platform_manager = PlatformManager()
+        
         self.HOME = os.path.expanduser('~')
-        self.PATH = self.HVYM = Path.home() / '.metavinci'
-        self.BIN_PATH = self.PATH / 'bin'
+        self.PATH = self.platform_manager.get_config_path()
+        self.BIN_PATH = self.platform_manager.get_bin_path()
         self.KEYSTORE = self.PATH / 'keystore.enc'
         self.ENC_KEY = self.PATH / 'encryption_key.key'
-        self.DFX = Path.home() / '.local'/ 'share'/ 'dfx'/ 'bin' / 'dfx'
-        self.HVYM = Path.home() / '.local'/ 'share'/ 'heavymeta-cli'/ 'hvym'
-        self.DIDC = Path.home() / '.local'/ 'share'/ 'didc'/ 'didc'
-        self.PRESS = Path.home() / '.local' / 'share' / 'heavymeta-press' / 'hvym_press'
-        self.BLENDER_PATH = Path.home() / '.config' / 'blender'
+        self.DFX = self.platform_manager.get_dfx_path()
+        self.HVYM = self.platform_manager.get_hvym_path()
+        self.DIDC = self.platform_manager.get_didc_path()
+        self.PRESS = self.platform_manager.get_press_path()
+        self.BLENDER_PATH = self.platform_manager.get_blender_path()
         self.BLENDER_VERSIONS = []
         self.BLENDER_VERSION = None
         self.ADDON_INSTALL_PATH = self.BLENDER_PATH / str(self.BLENDER_VERSION) / 'scripts' / 'addons'
@@ -92,6 +106,8 @@ class Metavinci(QMainWindow):
         self.DB_SRC = os.path.join(self.FILE_PATH, 'data', 'db.json')
         self.DB_PATH = self.BIN_PATH /'db.json'
         if not self.DB_PATH.exists():
+            # Ensure the bin directory exists
+            ensure_config_directory(self.BIN_PATH)
             shutil.copyfile(self.DB_SRC, str(self.DB_PATH))
         self.DB = TinyDB(str(self.DB_PATH))
         self.QUERY = Query()
@@ -366,7 +382,7 @@ class Metavinci(QMainWindow):
         
 
     def init_post(self):
-        self.user_pid = str(_run('dfx identity get-principal')).strip()
+        self.user_pid = str(self._run('dfx identity get-principal')).strip()
         self.DB.update({'INITIALIZED': True, 'principal': self.user_pid}, self.QUERY.type == 'app_data')
         self._installation_check()
         msg = QMessageBox(self)
@@ -481,7 +497,7 @@ class Metavinci(QMainWindow):
             # print("key generated & stored : ",serialized_keys)
             # locate .metavinci directory in user's home directory
             if not self.PATH.exists():
-                self.PATH.mkdir(mode=0o700)  # Create directory with secure permissions
+                create_secure_directory(self.PATH)  # Create directory with secure permissions
 
             # # Generate a symmetric encryption key
             encryption_key = Fernet.generate_key()
@@ -505,7 +521,7 @@ class Metavinci(QMainWindow):
                     # # # Write the private key securely (restrict access to owner)
                     with open(keystore_path, 'wb') as keystore_file:
                         keystore_file.write(encrpted_keys)
-                    os.chmod(keystore_path, 0o600)
+                    set_secure_permissions(keystore_path)
 
         except Exception as e:
             # Show error message
@@ -523,7 +539,7 @@ class Metavinci(QMainWindow):
         try:
             # locate .metavinci directory in user's home directory
             if not self.PATH.exists():
-                self.PATH.mkdir(mode=0o700)
+                create_secure_directory(self.PATH)
             
             # Read the encrypted keys
             keystore_path = str(self.KEYSTORE)
@@ -649,7 +665,7 @@ class Metavinci(QMainWindow):
             # Write the token securely (restrict access to owner)
             with open(token_path, 'wb') as token_file:
                 token_file.write(serialized_token)
-            os.chmod(token_path, 0o600)
+            set_secure_permissions(token_path)
 
         except Exception as e:
             # Show error message
@@ -845,13 +861,21 @@ class Metavinci(QMainWindow):
         if install == True:
             loading = self.loading_indicator('UPDATING HVYM')
             loading.Play()
-            installed = self._subprocess('curl -L https://github.com/inviti8/hvym/raw/main/install.sh | bash')
+            
+            # Use cross-platform script download and execution
+            script_url = self.platform_manager.get_install_script_url()
+            installed = download_and_execute_script(script_url, self.platform_manager)
+            
             check = self.hvym_check()
-            if installed != None and check != None and check.strip() == 'ONE-TWO':
+            if installed and check != None and check.strip() == 'ONE-TWO':
                 print('hvym is on path')
                 print(str(self.HVYM))
                 self._subprocess(f'{str(self.HVYM)} up')
-                self._subprocess('. ~/.bashrc')
+                # Update shell environment based on platform
+                if self.platform_manager.is_windows:
+                    self._subprocess('refreshenv')  # Windows equivalent
+                else:
+                    self._subprocess('. ~/.bashrc')
             else:
                 print('hvym not installed.')
             loading.Stop()
@@ -877,8 +901,12 @@ class Metavinci(QMainWindow):
                 loading = self.loading_indicator('Installing Blender Addon')
                 loading.Play()
                 if not self.ADDON_PATH.exists():
-                    _download_unzip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(self.ADDON_INSTALL_PATH))
-                    self.open_msg_dialog(f'Blender Addon installed. Please restart Daemon.')
+                    # Use cross-platform download and extract
+                    success = download_and_extract_zip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(self.ADDON_INSTALL_PATH))
+                    if success:
+                        self.open_msg_dialog(f'Blender Addon installed. Please restart Daemon.')
+                    else:
+                        self.open_msg_dialog('Failed to install Blender Addon')
                 loading.Stop()
                 self.restart()
             else:
@@ -941,8 +969,15 @@ class Metavinci(QMainWindow):
         if install == True:
             loading = self.loading_indicator('Installing Heavymeta Press')
             loading.Play()
-            self._subprocess('curl -L https://raw.githubusercontent.com/inviti8/hvym_press/refs/heads/main/install.sh | bash')
-            self.restart()
+            
+            # Use cross-platform script download and execution
+            script_url = self.platform_manager.get_press_install_script_url()
+            installed = download_and_execute_script(script_url, self.platform_manager)
+            
+            if installed:
+                self.restart()
+            else:
+                self.open_msg_dialog('Failed to install Heavymeta Press')
             loading.Stop()
 
     def _delete_press(self):
