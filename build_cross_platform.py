@@ -108,7 +108,6 @@ class CrossPlatformBuilder:
             '--noconsole',
             '--onefile',
             '--strip',  # Strip debug symbols
-            '--optimize=2',  # Python optimization level
             f'--distpath={dist_dir}',
             # Exclude only clearly unnecessary modules
             '--exclude-module', 'tkinter',
