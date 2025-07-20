@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QComboBox, QDialogButtonBox, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp, QVBoxLayout, QPushButton, QDialog, QDesktopWidget, QFileDialog, QMessageBox
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QLineEdit, QWidgetAction, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QComboBox, QDialogButtonBox, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp, QVBoxLayout, QPushButton, QDialog, QDesktopWidget, QFileDialog, QMessageBox
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QIcon, QPixmap
 from pathlib import Path
@@ -76,6 +76,7 @@ class Metavinci(QMainWindow):
         self.FILE_PATH = Path(__file__).parent
         self.HVYM_IMG = os.path.join(self.FILE_PATH, 'images', 'metavinci.png')
         self.LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'hvym_logo_64.png')
+        self.LOGO_IMG_ACTIVE = os.path.join(self.FILE_PATH, 'images', 'hvym_logo_64_active.png')
         self.LOADING_GIF = os.path.join(self.FILE_PATH, 'images', 'loading.gif')
         self.UPDATE_IMG = os.path.join(self.FILE_PATH, 'images', 'update.png')
         self.INSTALL_IMG = os.path.join(self.FILE_PATH, 'images', 'install.png')
@@ -85,6 +86,8 @@ class Metavinci(QMainWindow):
         self.TEST_IMG = os.path.join(self.FILE_PATH, 'images', 'test.png')
         self.SELECT_IMG = os.path.join(self.FILE_PATH, 'images', 'select.png')
         self.REMOVE_IMG = os.path.join(self.FILE_PATH, 'images', 'remove.png')
+        self.OFF_IMG = os.path.join(self.FILE_PATH, 'images', 'switch_off.png')
+        self.ON_IMG = os.path.join(self.FILE_PATH, 'images', 'switch_on.png')
         self.STYLE_SHEET = os.path.join(self.FILE_PATH, 'data', 'style.qss')
         self.DB_SRC = os.path.join(self.FILE_PATH, 'data', 'db.json')
         self.DB_PATH = self.BIN_PATH /'db.json'
@@ -96,7 +99,12 @@ class Metavinci(QMainWindow):
         self.user_pid = 'disabled'
         self.DB.update({'INITIALIZED': True, 'principal': self.user_pid}, self.QUERY.type == 'app_data')
         self.INITIALIZED = (len(self.DB.search(self.QUERY.INITIALIZED == True)) > 0)
-        self.PINTHEON_INSTALLED = (len(self.DB.search(self.QUERY.pintheon_installed == False)) > 0)
+        if not self.HVYM.is_file():
+            self.PINTHEON_INSTALLED = (len(self.DB.search(self.QUERY.pintheon_installed == False)) > 0)
+            self.TUNNEL_TOKEN = ''
+        else:
+            self.PINTHEON_INSTALLED = self.hvym_pintheon_exists()
+            self.TUNNEL_TOKEN = self.hvym_tunnel_token_exists()
         self.PINTHEON_ACTIVE = False
         self.win_icon = QIcon(self.HVYM_IMG)
         self.icon = QIcon(self.LOGO_IMG)
@@ -107,7 +115,11 @@ class Metavinci(QMainWindow):
         self.add_icon = QIcon(self.ADD_IMG)
         self.test_icon = QIcon(self.TEST_IMG)
         self.select_icon = QIcon(self.SELECT_IMG)
-        self.remove_icon = QIcon(self.REMOVE_IMG)
+        self.remove_icon = QIcon(self.LOGO_IMG)
+        self.press_icon = QIcon(self.OFF_IMG)
+        self.pintheon_icon = QIcon(self.OFF_IMG)
+        self.tunnel_icon = QIcon(self.OFF_IMG)
+        self.tunnel_token_icon = QIcon(self.SELECT_IMG)
         self.publik_key = None
         self.private_key = None
         self.refresh_interval = 8 * 60 * 60  # 8 hours in seconds
@@ -201,19 +213,28 @@ class Metavinci(QMainWindow):
         update_hvym_action = QAction(self.update_icon, "Update hvym", self)
         update_hvym_action.triggered.connect(self._update_hvym)
 
-        expose_pintheon_action = QAction(self.icon, "Expose Pintheon", self)
-        expose_pintheon_action.triggered.connect(self._expose_pintheon)
+        self.open_tunnel_action = QAction(self.tunnel_icon, "Open Tunnel", self)
+        self.open_tunnel_action.triggered.connect(self._open_tunnel)
+        self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE)
 
-        run_pintheon_action = QAction(self.icon, "Start Pintheon", self)
-        run_pintheon_action.triggered.connect(self._start_pintheon)
+        self.set_tunnel_token_action = QAction(self.tunnel_token_icon, "Set Pinggy Token", self)
+        self.set_tunnel_token_action.triggered.connect(self._set_tunnel_token)
+        self.set_tunnel_token_action.setVisible(True)
 
-        stop_pintheon_action = QAction(self.icon, "Stop Pintheon", self)
-        stop_pintheon_action.triggered.connect(self._stop_pintheon)
+        self.run_pintheon_action = QAction(self.pintheon_icon, "Start Pintheon", self)
+        self.run_pintheon_action.triggered.connect(self._start_pintheon)
+
+        self.stop_pintheon_action = QAction(self.pintheon_icon, "Stop Pintheon", self)
+        self.stop_pintheon_action.triggered.connect(self._stop_pintheon)
+        
+        # Set initial visibility based on PINTHEON_ACTIVE state
+        self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
+        self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
 
         install_pintheon_action = QAction(self.install_icon, "Install Pintheon", self)
         install_pintheon_action.triggered.connect(self._install_pintheon)
 
-        run_press_action = QAction(self.icon, "Run press", self)
+        run_press_action = QAction(self.press_icon, "Run press", self)
         run_press_action.triggered.connect(self.run_press)
 
         install_press_action = QAction(self.install_icon, "Install press", self)
@@ -289,11 +310,14 @@ class Metavinci(QMainWindow):
         else:
             tray_tools_update_menu.addAction(update_hvym_action)
             if self.PINTHEON_INSTALLED:
-                if self.PINTHEON_ACTIVE:
-                    tray_tools_menu.addAction(stop_pintheon_action)
-                    tray_tools_menu.addAction(expose_pintheon_action)
-                else:
-                    tray_tools_menu.addAction(run_pintheon_action)
+                tray_pintheon_menu = tray_tools_menu.addMenu("Pintheon")
+
+                pintheon_settings_menu = tray_pintheon_menu.addMenu("Settings")
+                pintheon_settings_menu.addAction(self.set_tunnel_token_action)
+                
+                tray_pintheon_menu.addAction(self.run_pintheon_action)
+                tray_pintheon_menu.addAction(self.stop_pintheon_action)
+                tray_pintheon_menu.addAction(self.open_tunnel_action)
             else:
                 tray_tools_update_menu.addAction(install_pintheon_action)
 
@@ -728,15 +752,73 @@ class Metavinci(QMainWindow):
     
     def hvym_setup_pintheon(self):
         return(self._subprocess(f'{str(self.HVYM)} pintheon-setup'))
+
+    def hvym_pintheon_exists(self):
+        return(self._subprocess(f'{str(self.HVYM)} pintheon-image-exists'))
+
+    def hvym_tunnel_token_exists(self):
+        return(self._subprocess(f'{str(self.HVYM)} pinggy-token'))
     
     def hvym_start_pintheon(self):
+        # Update the pintheon icon variable
+        self.pintheon_icon = QIcon(self.ON_IMG)
+        # Update the actual tray icon
+        self.tray_icon.setIcon(QIcon(self.LOGO_IMG_ACTIVE))
+        # Update the menu action icons
+        self.run_pintheon_action.setIcon(self.pintheon_icon)
+        self.stop_pintheon_action.setIcon(self.pintheon_icon)
+
+        # Hide start action, show stop action
+        self.run_pintheon_action.setVisible(False)
+        self.stop_pintheon_action.setVisible(True)
+
+        if len(self.TUNNEL_TOKEN) < 7:
+            self.open_tunnel_action.setVisible(False)
+        else:
+            self.open_tunnel_action.setVisible(True)
+        
         return(self._subprocess(f'{str(self.HVYM)} pintheon-start'))
     
     def hvym_stop_pintheon(self):
+        # Update the pintheon icon variable
+        self.pintheon_icon = QIcon(self.OFF_IMG)
+        # Update the actual tray icon
+        self.tray_icon.setIcon(QIcon(self.LOGO_IMG))
+        # Update the menu action icons
+        self.run_pintheon_action.setIcon(self.pintheon_icon)
+        self.stop_pintheon_action.setIcon(self.pintheon_icon)
+        # Show start action, hide stop action
+        self.run_pintheon_action.setVisible(True)
+        self.stop_pintheon_action.setVisible(False)
+        self.open_tunnel_action.setVisible(False)
+
         return(self._subprocess(f'{str(self.HVYM)} pintheon-stop'))
     
-    def hvym_expose_pintheon(self):
-        return(self._subprocess(f'{str(self.HVYM)} pintheon-tunnel'))
+    def hvym_open_tunnel(self):
+        # Update the pintheon icon variable
+        self.tunnel_icon = QIcon(self.OFF_IMG)
+
+        # Update the menu action icons
+        self.open_tunnel_action.setIcon(self.tunnel_icon)
+        # Hide start action, show stop action
+        self.open_tunnel_action.setVisible(False)
+        return(self._subprocess(f'{str(self.HVYM)} pintheon-tunnel-open'))
+
+    def hvym_close_tunnel(self):
+        # Update the pintheon icon variable
+        self.tunnel_icon = QIcon(self.ON_IMG)
+
+        # Update the menu action icons
+        self.open_tunnel_action.setIcon(self.tunnel_icon)
+        # Hide start action, show stop action
+        self.open_tunnel_action.setVisible(True)
+        return(self._subprocess(f'{str(self.HVYM)} pintheon-tunnel-close'))
+    
+    def hvym_set_tunnel_token(self):
+        return(self._subprocess(f'{str(self.HVYM)} pinggy-set-token'))
+
+    def hvym_is_tunnel_open(self):
+        return(self._subprocess(f'{str(self.HVYM)} is-pintheon-tunnel-open'))
 
     def update_tools(self):
         update = self.open_confirm_dialog('You want to update Heavymeta Tools?')
@@ -834,10 +916,25 @@ class Metavinci(QMainWindow):
             self.hvym_stop_pintheon()
             self.PINTHEON_ACTIVE = False
 
-    def _expose_pintheon(self):
+    def _open_tunnel(self):
         expose = self.open_confirm_dialog('Expose Pintheon Gateway to the Internet?')
         if expose == True:
-            self.hvym_expose_pintheon()
+            self.hvym_open_tunnel()
+            self.open_tunnel_action.setVisible(False)
+
+    def _close_tunnel(self):
+        close = self.open_confirm_dialog('Close Pintheon Tunnel?')
+        if close == True:
+            self.hvym_close_tunnel()
+            self.open_tunnel_action.setVisible(True)
+
+    def _set_tunnel_token(self):
+        self.hvym_set_tunnel_token()
+        self.TUNNEL_TOKEN = self.hvym_tunnel_token_exists()
+        if len(self.TUNNEL_TOKEN) < 7:
+            self.open_tunnel_action.setVisible(False)
+        else:
+            self.open_tunnel_action.setVisible(True)
 
     def _install_press(self):
         install = self.open_confirm_dialog('Install Heavymeta Press?')
