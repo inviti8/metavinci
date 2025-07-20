@@ -201,11 +201,11 @@ class CrossPlatformBuilder:
                 
                 # Provide size analysis
                 if size_mb > 50:
-                    print(f"⚠️  Large executable size ({size_mb:.2f} MB) - consider optimizing dependencies")
+                    print(f"[WARN] Large executable size ({size_mb:.2f} MB) - consider optimizing dependencies")
                 elif size_mb > 30:
-                    print(f"📦 Moderate executable size ({size_mb:.2f} MB)")
+                    print(f"[SIZE] Moderate executable size ({size_mb:.2f} MB)")
                 else:
-                    print(f"✅ Good executable size ({size_mb:.2f} MB)")
+                    print(f"[OK] Good executable size ({size_mb:.2f} MB)")
             else:
                 print(f"Build completed but executable not found at {executable_path}")
             
