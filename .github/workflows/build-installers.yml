@@ -101,20 +101,16 @@ jobs:
         echo "Listing contents of build/dist/mac/:"
         ls -lR build/dist/mac/
 
-    - name: Check for 'metavinci_desktop' without .app
-      run: |
-        if [ -e build/dist/mac/metavinci_desktop ]; then
-          echo "Found 'metavinci_desktop' (no .app suffix) in build/dist/mac/"
-          file build/dist/mac/metavinci_desktop
-          ls -l build/dist/mac/metavinci_desktop
-        else
-          echo "No 'metavinci_desktop' file or directory found in build/dist/mac/"
-        fi
-
-    - name: Rename app folder if needed
+    - name: Ensure .app bundle exists
       run: |
         if [ -d build/dist/mac/metavinci_desktop ] && [ ! -d build/dist/mac/metavinci_desktop.app ]; then
+          echo "Renaming 'metavinci_desktop' to 'metavinci_desktop.app'"
           mv build/dist/mac/metavinci_desktop build/dist/mac/metavinci_desktop.app
+        elif [ -d build/dist/mac/metavinci_desktop.app ]; then
+          echo "'metavinci_desktop.app' already exists."
+        else
+          echo "No 'metavinci_desktop' or 'metavinci_desktop.app' found in build/dist/mac/"
+          exit 1
         fi
 
     - name: Create DMG from .app bundle
