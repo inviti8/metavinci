@@ -29,14 +29,14 @@ def _clean_dir(dir):
                 shutil.rmtree(item)
 
 def build_linux_installer(version):
-    bin_name = 'metavinci_desktop'
+    bin_name = 'metavinci'
     cwd = Path.cwd()
     build_dir = cwd / "build"
     dist_dir = cwd / "dist"
     release_dir = cwd / "release"
     release_linux_dir = release_dir / "linux"
     src_bin = dist_dir / bin_name
-    src_icon = cwd / f'{bin_name}.png'
+    src_icon = cwd / 'metavinci_desktop.png'
     src_ctrl = cwd / 'linux' / 'control'
     src_desktop = cwd / 'linux' / 'metavinci.desktop'
     pkg_dir = cwd / f'metavinci_desktop_{version}'
@@ -51,10 +51,10 @@ def build_linux_installer(version):
     icon_apps_dir = icon_size_dir / 'apps'
     dest_ctrl = deb_dir / 'control'
     dest_desktop = app_dir / 'metavinci.desktop'
-    dest_bin = bin_dir / bin_name
+    dest_bin = bin_dir / 'metavinci_desktop'
     deb = cwd / f'metavinci_desktop_{version}.deb'
     dest_deb = release_linux_dir / f'metavinci-desktop_{version}_amd64.deb'
-    dest_icon = icon_apps_dir / f'{bin_name}.png'
+    dest_icon = icon_apps_dir / 'metavinci_desktop.png'
 
     # Clean and prepare directories
     _clean_dir(pkg_dir)
