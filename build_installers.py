@@ -131,7 +131,11 @@ def build_macos_installer(version):
         zip_path.unlink()
 
     # Collect files
-    files = [(app_path, f'metavinci_desktop.app')]
+    files = []
+    if app_path.exists() and app_path.is_dir():
+        files.append((app_path, f'metavinci_desktop.app'))
+    else:
+        print(f"Warning: .app bundle not found at {app_path} or is not a directory. It will not be included in the ZIP.")
     if icns_path.exists():
         files.append((icns_path, 'metavinci_desktop.icns'))
     if readme.exists():
