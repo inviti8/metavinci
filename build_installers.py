@@ -165,7 +165,7 @@ def main():
     run_generate_icons()
 
     # Build the cross-platform binary first
-    subprocess.run([sys.executable, 'build_cross_platform.py', args.platform], check=True)
+    subprocess.run([sys.executable, 'build_cross_platform.py', '--platform', args.platform], check=True)
 
     if args.platform == 'linux':
         build_linux_installer(args.version)
