@@ -43,9 +43,9 @@ setup(
         },
         "bdist_msi": {
             "add_to_path": False,
-            "initial_target_dir": r"[ProgramFilesFolder]\\Metavinci",
+            "initial_target_dir": r"[LocalAppDataFolder]\\Programs\\Metavinci",
             "upgrade_code": upgrade_code,
-            "all_users": True,
+            "all_users": False,
             "install_icon": "metavinci_desktop.ico",
         }
     },
