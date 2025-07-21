@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+from io import BytesIO
 
 try:
     from PIL import Image
@@ -21,9 +22,21 @@ def make_icns(png_path, out_path):
         sys.exit(1)
     img = Image.open(png_path)
     icns = IcnsFile()
-    for size in [16, 32, 64, 128, 256, 512, 1024]:
+    size_code_map = [
+        (16, "icp4"),
+        (32, "icp5"),
+        (64, "icp6"),
+        (128, "ic07"),
+        (256, "ic08"),
+        (512, "ic09"),
+        (1024, "ic10"),
+    ]
+    for size, code in size_code_map:
         icon = img.resize((size, size), Image.LANCZOS)
-        icns.add_icon(icon, size)
+        buf = BytesIO()
+        icon.save(buf, format="PNG")
+        buf.seek(0)
+        icns.add_media(buf, code)
     with open(out_path, 'wb') as f:
         icns.write(f)
 
