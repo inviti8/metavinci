@@ -111,6 +111,12 @@ jobs:
           echo "No 'metavinci_desktop' file or directory found in build/dist/mac/"
         fi
 
+    - name: Rename app folder if needed
+      run: |
+        if [ -d build/dist/mac/metavinci_desktop ] && [ ! -d build/dist/mac/metavinci_desktop.app ]; then
+          mv build/dist/mac/metavinci_desktop build/dist/mac/metavinci_desktop.app
+        fi
+
     - name: Create DMG from .app bundle
       run: |
         APP_BUNDLE=$(ls build/dist/mac/*.app 2>/dev/null | head -n 1)

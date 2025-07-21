@@ -1,7 +1,7 @@
 from cx_Freeze import setup, Executable
 
 exe_name = "metavinci.exe"
-publisher = "Metavinci Project"
+publisher = "Heavymeta"
 upgrade_code = "{12345678-1234-1234-1234-1234567890AB}"  # Replace with a real GUID for production
 
 shortcut_table = [
@@ -47,12 +47,6 @@ setup(
             "upgrade_code": upgrade_code,
             "all_users": True,
             "install_icon": "metavinci_desktop.ico",
-            "msi_properties": [
-                ("ARPPRODUCTICON", "MetavinciIcon"),
-                ("ARPCONTACT", publisher),
-                ("ARPCOMMENTS", "Metavinci Desktop App"),
-                ("ARPPUBLISHER", publisher),
-            ]
         }
     },
     msi_data=msi_data,
