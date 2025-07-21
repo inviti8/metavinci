@@ -109,15 +109,14 @@ class CrossPlatformBuilder:
                 '--windowed',
                 '--name', 'metavinci_desktop',
                 f'--distpath={dist_dir}',
-                '--icon', str(icon_file) if icon_file.exists() else '',
                 '--exclude-module', 'pytest',
                 '--exclude-module', 'unittest',
                 '--exclude-module', 'doctest',
                 '--collect-all', 'PyQt5.Qt',
                 'metavinci.py'
             ]
-            # Remove empty icon argument if icon doesn't exist
-            pyinstaller_cmd = [arg for arg in pyinstaller_cmd if arg != '']
+            if icon_file.exists():
+                pyinstaller_cmd.extend(['--icon', str(icon_file)])
         else:
             pyinstaller_cmd = [
                 'pyinstaller',
@@ -125,14 +124,14 @@ class CrossPlatformBuilder:
                 '--onefile',
                 '--strip',  # Strip debug symbols
                 f'--distpath={dist_dir}',
-                '--icon', str(icon_file) if icon_file.exists() else '',
                 '--exclude-module', 'pytest',
                 '--exclude-module', 'unittest',
                 '--exclude-module', 'doctest',
                 '--collect-all', 'PyQt5.Qt',
                 'metavinci.py'
             ]
-            pyinstaller_cmd = [arg for arg in pyinstaller_cmd if arg != '']
+            if icon_file.exists():
+                pyinstaller_cmd.extend(['--icon', str(icon_file)])
         
         # Add data files with platform-specific separators
         if target_platform == 'windows' or (target_platform is None and self.platform_manager.is_windows):
