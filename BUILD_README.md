@@ -157,7 +157,7 @@ A dedicated workflow, `.github/workflows/build-installers.yml`, builds and publi
 ### Installer Outputs
 
 - **Linux**: `.deb` package in `release/linux/`
-- **Windows**: `.zip` archive in `release/windows/`
+- **Windows**: `.msi` installer in `dist/` (creates Start Menu and Desktop shortcuts)
 - **macOS**: `.zip` archive in `release/mac/`
 
 All installers are uploaded as release assets on GitHub.
@@ -168,8 +168,8 @@ To build installers locally for a specific platform and version:
 
 ```bash
 python build_installers.py --platform linux --version v0.01
-python build_installers.py --platform windows --version v0.01
+python setup.py bdist_msi  # for Windows MSI
 python build_installers.py --platform macos --version v0.01
 ```
 
-This will generate the appropriate installer in the `release/` subdirectory. 
+This will generate the appropriate installer in the `release/` (Linux/macOS) or `dist/` (Windows MSI) subdirectory. 

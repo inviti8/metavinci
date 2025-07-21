@@ -75,17 +75,6 @@ jobs:
         path: dist/*.msi
         retention-days: 30
 
-    - name: Build Windows installer
-      run: |
-        python build_installers.py --platform windows --version ${{ github.ref_name }}
-
-    - name: Upload Windows installer
-      uses: actions/upload-artifact@v4
-      with:
-        name: metavinci-windows-installer
-        path: release/windows/*.zip
-        retention-days: 30
-
   build-macos-installer:
     runs-on: macos-latest
     steps:
@@ -131,7 +120,7 @@ jobs:
       run: |
         mkdir -p release
         cp installers/metavinci-linux-installer/*.deb release/
-        cp installers/metavinci-windows-installer/*.zip release/
+        cp installers/metavinci-windows-msi-installer/*.msi release/
         cp installers/metavinci-macos-installer/*.zip release/
 
     - name: Upload release assets
