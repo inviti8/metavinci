@@ -32,7 +32,7 @@ def build_linux_installer(version):
     bin_name = 'metavinci'
     cwd = Path.cwd()
     build_dir = cwd / "build"
-    dist_dir = cwd / "dist"
+    dist_dir = cwd / "build" / "dist" / "linux"
     release_dir = cwd / "release"
     release_linux_dir = release_dir / "linux"
     src_bin = dist_dir / bin_name
