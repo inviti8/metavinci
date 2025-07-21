@@ -118,6 +118,14 @@ jobs:
         echo "Listing contents of build/dist/mac/metavinci_desktop.app:"
         ls -lR build/dist/mac/metavinci_desktop.app || echo "No .app bundle found"
 
+    - name: List contents of MacOS directory
+      run: |
+        ls -l build/dist/mac/metavinci_desktop.app/Contents/MacOS || echo "No MacOS directory"
+
+    - name: List contents of Resources directory
+      run: |
+        ls -l build/dist/mac/metavinci_desktop.app/Contents/Resources || echo "No Resources directory"
+
     - name: Create DMG from .app bundle
       run: |
         APP_BUNDLE=$(ls build/dist/mac/*.app 2>/dev/null | head -n 1)
