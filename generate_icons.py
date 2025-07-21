@@ -41,25 +41,33 @@ def make_icns(png_path, out_path):
         icns.write(str(out_path))
 
 def main():
-    png_path = Path('metavinci_desktop.png')
-    ico_path = Path('metavinci_desktop.ico')
-    icns_path = Path('metavinci_desktop.icns')
-
-    if not png_path.exists():
-        print(f"App icon PNG not found: {png_path}")
+    # Try to use 'metavinci_desktop.png' as the source, else fallback to 'hvym_logo_64.png'
+    png_candidates = [Path('metavinci_desktop.png'), Path('hvym_logo_64.png')]
+    png_path = None
+    for candidate in png_candidates:
+        if candidate.exists():
+            png_path = candidate
+            break
+    if not png_path:
+        print("App icon PNG not found: metavinci_desktop.png or hvym_logo_64.png")
         sys.exit(1)
 
-    if not ico_path.exists():
-        print(f"Generating {ico_path}...")
-        make_ico(png_path, ico_path)
-    else:
-        print(f"{ico_path} already exists.")
+    # List of icon outputs to generate (name, function)
+    icon_targets = [
+        (Path('hvym_logo_64.ico'), make_ico),
+        (Path('hvym_logo_64.icns'), make_icns),
+        (Path('hvym_logo_64.png'), lambda src, out: Image.open(src).save(out)),
+        (Path('metavinci_desktop.ico'), make_ico),
+        (Path('metavinci_desktop.icns'), make_icns),
+        (Path('metavinci_desktop.png'), lambda src, out: Image.open(src).save(out)),
+    ]
 
-    if not icns_path.exists():
-        print(f"Generating {icns_path}...")
-        make_icns(png_path, icns_path)
-    else:
-        print(f"{icns_path} already exists.")
+    for out_path, func in icon_targets:
+        if not out_path.exists():
+            print(f"Generating {out_path}...")
+            func(png_path, out_path)
+        else:
+            print(f"{out_path} already exists.")
 
     print("Icon generation complete.")
 
