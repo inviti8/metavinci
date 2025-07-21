@@ -38,8 +38,7 @@ def make_icns(png_path, out_path):
             tmp_png = Path(tmpdir) / f"icon_{size}x{size}.png"
             icon.save(tmp_png, format="PNG")
             icns.add_media(code, file=str(tmp_png))
-        with open(out_path, 'wb') as f:
-            icns.write(f)
+        icns.write(str(out_path))
 
 def main():
     png_path = Path('metavinci_desktop.png')
