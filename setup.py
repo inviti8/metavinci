@@ -1,12 +1,14 @@
 from cx_Freeze import setup, Executable
 
+exe_name = "metavinci.exe"
+
 shortcut_table = [
     (
         "DesktopShortcut",        # Shortcut
         "DesktopFolder",          # Directory_
         "Metavinci",              # Name
         "TARGETDIR",              # Component_
-        "[TARGETDIR]metavinci.exe", # Target
+        f"[TARGETDIR]{exe_name}", # Target
         None,                     # Arguments
         "Metavinci Desktop App",  # Description
         None,                     # Hotkey
@@ -20,7 +22,7 @@ shortcut_table = [
         "ProgramMenuFolder",      # Directory_
         "Metavinci",              # Name
         "TARGETDIR",              # Component_
-        "[TARGETDIR]metavinci.exe", # Target
+        f"[TARGETDIR]{exe_name}", # Target
         None,                     # Arguments
         "Metavinci Desktop App",  # Description
         None,                     # Hotkey
@@ -39,7 +41,7 @@ setup(
     name="Metavinci",
     version="0.1",
     description="Metavinci Desktop App",
-    executables=[Executable("metavinci.py", base="Win32GUI", icon="metavinci_desktop.ico")],
+    executables=[Executable("metavinci.py", base="Win32GUI", icon="metavinci_desktop.ico", target_name=exe_name)],
     options={
         "build_exe": {
             "include_files": ["images", "data", "service"],

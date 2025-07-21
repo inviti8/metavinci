@@ -79,46 +79,41 @@ def build_linux_installer(version):
     print(f"Debian package moved to {dest_deb}")
 
 def build_windows_installer(version):
-    bin_name = 'metavinci_desktop.exe'
     cwd = Path.cwd()
-    dist_dir = cwd / "dist"
     release_dir = cwd / "release"
     release_win_dir = release_dir / "windows"
-    exe_path = dist_dir / bin_name
-    ico_path = cwd / 'metavinci_desktop.ico'
-    readme = cwd / 'README.md'
-    license_file = cwd / 'LICENSE' if (cwd / 'LICENSE').exists() else None
-    zip_name = f'metavinci-desktop_{version}_win64.zip'
-    zip_path = release_win_dir / zip_name
-
-    # Clean and prepare directories
     release_win_dir.mkdir(parents=True, exist_ok=True)
-    if zip_path.exists():
-        zip_path.unlink()
 
-    # Collect files
-    files = [(exe_path, bin_name), (ico_path, 'metavinci_desktop.ico')]
-    if readme.exists():
-        files.append((readme, 'README.md'))
-    if license_file and license_file.exists():
-        files.append((license_file, 'LICENSE'))
+    # Build the MSI installer using setup.py
+    print("Building Windows MSI installer...")
+    subprocess.run([sys.executable, 'setup.py', 'bdist_msi'], check=True)
 
-    # Create ZIP
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as z:
-        for src, arc in files:
-            if not src.exists():
-                print(f"Warning: {src} not found, skipping.")
-                continue
-            z.write(src, arc)
-    print(f"Windows ZIP installer created: {zip_path}")
+    # Find the generated MSI file in dist/
+    dist_dir = cwd / "dist"
+    msi_files = list(dist_dir.glob('*.msi'))
+    if not msi_files:
+        print("Error: No MSI file found in dist/ after build.")
+        return
+    msi_path = msi_files[0]
+    dest_msi = release_win_dir / f'metavinci-desktop_{version}_win64.msi'
+    shutil.copy(msi_path, dest_msi)
+    print(f"Windows MSI installer created: {dest_msi}")
 
 def build_macos_installer(version):
-    bin_name = 'metavinci_desktop.app'
     cwd = Path.cwd()
     dist_dir = cwd / "build" / "dist" / "mac"
     release_dir = cwd / "release"
     release_mac_dir = release_dir / "mac"
-    app_path = dist_dir / bin_name
+    # Automatically detect the .app bundle
+    app_path = None
+    for item in dist_dir.iterdir():
+        if item.suffix == ".app" and item.is_dir():
+            app_path = item
+            break
+    if app_path is None:
+        print(f"Warning: No .app bundle found in {dist_dir}. It will not be included in the ZIP.")
+    else:
+        print(f"Found .app bundle: {app_path}")
     icns_path = cwd / 'metavinci_desktop.icns'
     readme = cwd / 'README.md'
     license_file = cwd / 'LICENSE' if (cwd / 'LICENSE').exists() else None
@@ -132,10 +127,8 @@ def build_macos_installer(version):
 
     # Collect files
     files = []
-    if app_path.exists() and app_path.is_dir():
-        files.append((app_path, f'metavinci_desktop.app'))
-    else:
-        print(f"Warning: .app bundle not found at {app_path} or is not a directory. It will not be included in the ZIP.")
+    if app_path and app_path.exists() and app_path.is_dir():
+        files.append((app_path, app_path.name))
     if icns_path.exists():
         files.append((icns_path, 'metavinci_desktop.icns'))
     if readme.exists():

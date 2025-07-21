@@ -96,11 +96,17 @@ jobs:
       run: |
         python build_installers.py --platform macos --version ${{ github.ref_name }}
 
-    - name: Upload macOS installer
+    - name: Create DMG from .app bundle
+      run: |
+        APP_BUNDLE=$(ls build/dist/mac/*.app | head -n 1)
+        mkdir -p release/mac
+        hdiutil create -volname "Metavinci" -srcfolder "$APP_BUNDLE" -ov -format UDZO "release/mac/metavinci_desktop_${{ github.ref_name }}.dmg"
+
+    - name: Upload macOS DMG installer
       uses: actions/upload-artifact@v4
       with:
         name: metavinci-macos-installer
-        path: release/mac/*.zip
+        path: release/mac/*.dmg
         retention-days: 30
 
   create-release:
