@@ -2,6 +2,7 @@ import os
 import sys
 from pathlib import Path
 from io import BytesIO
+import tempfile
 
 try:
     from PIL import Image
@@ -31,14 +32,14 @@ def make_icns(png_path, out_path):
         (512, "ic09"),
         (1024, "ic10"),
     ]
-    for size, code in size_code_map:
-        icon = img.resize((size, size), Image.LANCZOS)
-        buf = BytesIO()
-        icon.save(buf, format="PNG")
-        buf.seek(0)
-        icns.add_media(buf, typecode=code)
-    with open(out_path, 'wb') as f:
-        icns.write(f)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for size, code in size_code_map:
+            icon = img.resize((size, size), Image.LANCZOS)
+            tmp_png = Path(tmpdir) / f"icon_{size}x{size}.png"
+            icon.save(tmp_png, format="PNG")
+            icns.add_media(code, file=str(tmp_png))
+        with open(out_path, 'wb') as f:
+            icns.write(f)
 
 def main():
     png_path = Path('metavinci_desktop.png')
