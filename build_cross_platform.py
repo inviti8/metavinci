@@ -103,19 +103,36 @@ class CrossPlatformBuilder:
         dist_dir.mkdir(parents=True, exist_ok=True)
         
         # Build PyInstaller command with minimal exclusions
-        pyinstaller_cmd = [
-            'pyinstaller',
-            '--noconsole',
-            '--onefile',
-            '--strip',  # Strip debug symbols
-            f'--distpath={dist_dir}',
-            # Only exclude modules that are definitely not needed
-            '--exclude-module', 'pytest',
-            '--exclude-module', 'unittest',
-            '--exclude-module', 'doctest',
-            '--collect-all', 'PyQt5.Qt',
-            'metavinci.py'
-        ]
+        if target_platform == 'macos':
+            pyinstaller_cmd = [
+                'pyinstaller',
+                '--windowed',
+                '--name', 'metavinci_desktop',
+                f'--distpath={dist_dir}',
+                '--icon', str(icon_file) if icon_file.exists() else '',
+                '--exclude-module', 'pytest',
+                '--exclude-module', 'unittest',
+                '--exclude-module', 'doctest',
+                '--collect-all', 'PyQt5.Qt',
+                'metavinci.py'
+            ]
+            # Remove empty icon argument if icon doesn't exist
+            pyinstaller_cmd = [arg for arg in pyinstaller_cmd if arg != '']
+        else:
+            pyinstaller_cmd = [
+                'pyinstaller',
+                '--noconsole',
+                '--onefile',
+                '--strip',  # Strip debug symbols
+                f'--distpath={dist_dir}',
+                '--icon', str(icon_file) if icon_file.exists() else '',
+                '--exclude-module', 'pytest',
+                '--exclude-module', 'unittest',
+                '--exclude-module', 'doctest',
+                '--collect-all', 'PyQt5.Qt',
+                'metavinci.py'
+            ]
+            pyinstaller_cmd = [arg for arg in pyinstaller_cmd if arg != '']
         
         # Add data files with platform-specific separators
         if target_platform == 'windows' or (target_platform is None and self.platform_manager.is_windows):
@@ -156,30 +173,34 @@ class CrossPlatformBuilder:
         try:
             subprocess.run(pyinstaller_cmd, cwd=str(self.build_dir), check=True)
             
-            # Analyze the built executable size
-            executable_name = 'metavinci'
-            if target_platform == 'windows' or (target_platform is None and self.platform_manager.is_windows):
-                executable_name += '.exe'
-            
-            executable_path = dist_dir / executable_name
-            if executable_path.exists():
-                size_mb = executable_path.stat().st_size / (1024 * 1024)
-                print(f"Build completed successfully!")
-                print(f"Executable size: {size_mb:.2f} MB")
-                
-                # Provide size analysis
-                if size_mb > 50:
-                    print(f"[WARN] Large executable size ({size_mb:.2f} MB) - consider optimizing dependencies")
-                elif size_mb > 30:
-                    print(f"[SIZE] Moderate executable size ({size_mb:.2f} MB)")
+            # Analyze the built executable or .app size
+            if target_platform == 'macos':
+                app_path = dist_dir / 'metavinci_desktop.app'
+                if app_path.exists():
+                    size_mb = sum(f.stat().st_size for f in app_path.rglob('*')) / (1024 * 1024)
+                    print(f"Build completed successfully!")
+                    print(f".app bundle size: {size_mb:.2f} MB")
                 else:
-                    print(f"[OK] Good executable size ({size_mb:.2f} MB)")
-                
-                # Remove the test that runs the binary with --help
-                # (was here previously, now removed)
+                    print(f"Build completed but .app bundle not found at {app_path}")
+                    return False
             else:
-                print(f"Build completed but executable not found at {executable_path}")
-            
+                executable_name = 'metavinci'
+                if target_platform == 'windows' or (target_platform is None and self.platform_manager.is_windows):
+                    executable_name += '.exe'
+                executable_path = dist_dir / executable_name
+                if executable_path.exists():
+                    size_mb = executable_path.stat().st_size / (1024 * 1024)
+                    print(f"Build completed successfully!")
+                    print(f"Executable size: {size_mb:.2f} MB")
+                    if size_mb > 50:
+                        print(f"[WARN] Large executable size ({size_mb:.2f} MB) - consider optimizing dependencies")
+                    elif size_mb > 30:
+                        print(f"[SIZE] Moderate executable size ({size_mb:.2f} MB)")
+                    else:
+                        print(f"[OK] Good executable size ({size_mb:.2f} MB)")
+                else:
+                    print(f"Build completed but executable not found at {executable_path}")
+                    return False
             return True
         except subprocess.CalledProcessError as e:
             print(f"Build failed: {e}")

@@ -115,7 +115,7 @@ def build_windows_installer(version):
 def build_macos_installer(version):
     bin_name = 'metavinci_desktop.app'
     cwd = Path.cwd()
-    dist_dir = cwd / "dist"
+    dist_dir = cwd / "build" / "dist" / "mac"
     release_dir = cwd / "release"
     release_mac_dir = release_dir / "mac"
     app_path = dist_dir / bin_name
