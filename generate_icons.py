@@ -36,7 +36,7 @@ def make_icns(png_path, out_path):
         buf = BytesIO()
         icon.save(buf, format="PNG")
         buf.seek(0)
-        icns.add_media(buf, code)
+        icns.add_media(buf, typecode=code)
     with open(out_path, 'wb') as f:
         icns.write(f)
 
