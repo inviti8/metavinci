@@ -65,11 +65,15 @@ jobs:
     - name: Install cx_Freeze
       run: pip install cx_Freeze
 
-    - name: List files in project root before MSI build
+    - name: Generate icons
+      run: python generate_icons.py
+
+    - name: List files after icon generation
       run: |
-        echo "==================== PROJECT ROOT FILES (BEFORE MSI BUILD) ===================="
+        echo "==================== PROJECT ROOT FILES (AFTER ICON GENERATION) ===================="
         dir
         echo "==============================================================================="
+
     - name: Build MSI installer
       run: python setup.py bdist_msi
 
