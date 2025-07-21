@@ -163,7 +163,7 @@ class CrossPlatformBuilder:
         
         # Add icon if it exists
         if icon_file.exists():
-            pyinstaller_cmd.insert(3, f'--icon={str(icon_file)}')
+            pyinstaller_cmd.extend(['--icon', str(icon_file)])
         else:
             print(f"Warning: Icon file {icon_file} not found")
         
