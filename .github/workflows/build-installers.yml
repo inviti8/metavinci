@@ -62,6 +62,19 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller Pillow icnsutil
 
+    - name: Install cx_Freeze
+      run: pip install cx_Freeze
+
+    - name: Build MSI installer
+      run: python setup.py bdist_msi
+
+    - name: Upload Windows MSI installer
+      uses: actions/upload-artifact@v4
+      with:
+        name: metavinci-windows-msi-installer
+        path: dist/*.msi
+        retention-days: 30
+
     - name: Build Windows installer
       run: |
         python build_installers.py --platform windows --version ${{ github.ref_name }}

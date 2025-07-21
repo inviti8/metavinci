@@ -48,3 +48,4 @@ typing_extensions==4.10.0
 urllib3==2.4.0
 wrapt==1.16.0
 zipp==3.18.1
+cx_Freeze>=7.0
