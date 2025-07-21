@@ -113,10 +113,10 @@ class CrossPlatformBuilder:
                 '--exclude-module', 'unittest',
                 '--exclude-module', 'doctest',
                 '--collect-all', 'PyQt5.Qt',
-                'metavinci.py'
             ]
             if icon_file.exists():
                 pyinstaller_cmd.extend(['--icon', str(icon_file)])
+            pyinstaller_cmd.append('metavinci.py')
             # DO NOT add '--onefile' for macOS
         else:
             pyinstaller_cmd = [
@@ -129,10 +129,10 @@ class CrossPlatformBuilder:
                 '--exclude-module', 'unittest',
                 '--exclude-module', 'doctest',
                 '--collect-all', 'PyQt5.Qt',
-                'metavinci.py'
             ]
             if icon_file.exists():
                 pyinstaller_cmd.extend(['--icon', str(icon_file)])
+            pyinstaller_cmd.append('metavinci.py')
         
         # Add data files with platform-specific separators
         if target_platform == 'windows' or (target_platform is None and self.platform_manager.is_windows):
