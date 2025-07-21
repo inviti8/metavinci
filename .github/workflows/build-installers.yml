@@ -126,11 +126,18 @@ jobs:
       run: |
         ls -l build/dist/mac/metavinci_desktop.app/Contents/Resources || echo "No Resources directory"
 
+    - name: Final check for .app bundle (absolute path)
+      run: |
+        APP_BUNDLE="$(pwd)/build/dist/mac/metavinci_desktop.app"
+        echo "Absolute path: $APP_BUNDLE"
+        ls -ld "$APP_BUNDLE"
+        ls -l "$APP_BUNDLE"
+
     - name: Create DMG from .app bundle
       run: |
-        APP_BUNDLE=$(ls build/dist/mac/*.app 2>/dev/null | head -n 1)
-        if [ -z "$APP_BUNDLE" ]; then
-          echo "No .app bundle found in build/dist/mac/"
+        APP_BUNDLE="$(pwd)/build/dist/mac/metavinci_desktop.app"
+        if [ ! -d "$APP_BUNDLE" ]; then
+          echo "No .app bundle found at $APP_BUNDLE"
           exit 1
         fi
         mkdir -p release/mac
