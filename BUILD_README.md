@@ -143,3 +143,33 @@ python test_cross_platform.py
 ```
 
 This will verify that the platform detection and path resolution work correctly. 
+
+## GitHub Installer Build & Release
+
+A dedicated workflow, `.github/workflows/build-installers.yml`, builds and publishes platform-specific installers for each release.
+
+### Workflow Triggers
+
+- **Version tags**: Any tag matching `v0.00`, `v0.01`, etc.
+- **Keyword**: Any tag containing `installers`
+- **Manual**: Can be triggered manually from the GitHub Actions tab.
+
+### Installer Outputs
+
+- **Linux**: `.deb` package in `release/linux/`
+- **Windows**: `.zip` archive in `release/windows/`
+- **macOS**: `.zip` archive in `release/mac/`
+
+All installers are uploaded as release assets on GitHub.
+
+### Local Installer Build
+
+To build installers locally for a specific platform and version:
+
+```bash
+python build_installers.py --platform linux --version v0.01
+python build_installers.py --platform windows --version v0.01
+python build_installers.py --platform macos --version v0.01
+```
+
+This will generate the appropriate installer in the `release/` subdirectory. 

@@ -1,0 +1,8 @@
+Package: com.metavinci.desktop
+Version: 0.1-0
+Section: base
+Priority: optional
+Architecture: amd64
+Maintainer: Fibo Metavinci<metavinci@heavymeta.art>
+Description: Heavymeta Toolkit Daemon
+
