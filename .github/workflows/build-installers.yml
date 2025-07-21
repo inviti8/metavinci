@@ -66,7 +66,10 @@ jobs:
       run: pip install cx_Freeze
 
     - name: List files in project root before MSI build
-      run: dir
+      run: |
+        echo "==================== PROJECT ROOT FILES (BEFORE MSI BUILD) ===================="
+        dir
+        echo "==============================================================================="
     - name: Build MSI installer
       run: python setup.py bdist_msi
 
