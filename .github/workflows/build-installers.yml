@@ -65,6 +65,8 @@ jobs:
     - name: Install cx_Freeze
       run: pip install cx_Freeze
 
+    - name: List files in project root before MSI build
+      run: dir
     - name: Build MSI installer
       run: python setup.py bdist_msi
 
