@@ -96,9 +96,18 @@ jobs:
       run: |
         python build_installers.py --platform macos --version ${{ github.ref_name }}
 
+    - name: List .app bundles
+      run: |
+        echo "Listing contents of build/dist/mac/:"
+        ls -lR build/dist/mac/
+
     - name: Create DMG from .app bundle
       run: |
-        APP_BUNDLE=$(ls build/dist/mac/*.app | head -n 1)
+        APP_BUNDLE=$(ls build/dist/mac/*.app 2>/dev/null | head -n 1)
+        if [ -z "$APP_BUNDLE" ]; then
+          echo "No .app bundle found in build/dist/mac/"
+          exit 1
+        fi
         mkdir -p release/mac
         hdiutil create -volname "Metavinci" -srcfolder "$APP_BUNDLE" -ov -format UDZO "release/mac/metavinci_desktop_${{ github.ref_name }}.dmg"
 
