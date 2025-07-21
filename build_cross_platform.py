@@ -117,6 +117,7 @@ class CrossPlatformBuilder:
             ]
             if icon_file.exists():
                 pyinstaller_cmd.extend(['--icon', str(icon_file)])
+            # DO NOT add '--onefile' for macOS
         else:
             pyinstaller_cmd = [
                 'pyinstaller',

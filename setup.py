@@ -1,35 +1,29 @@
 from cx_Freeze import setup, Executable
 
 exe_name = "metavinci.exe"
+publisher = "Metavinci Project"
+upgrade_code = "{12345678-1234-1234-1234-1234567890AB}"  # Replace with a real GUID for production
 
 shortcut_table = [
     (
-        "DesktopShortcut",        # Shortcut
-        "DesktopFolder",          # Directory_
-        "Metavinci",              # Name
-        "TARGETDIR",              # Component_
-        f"[TARGETDIR]{exe_name}", # Target
-        None,                     # Arguments
-        "Metavinci Desktop App",  # Description
-        None,                     # Hotkey
-        None,                     # Icon
-        None,                     # IconIndex
-        None,                     # ShowCmd
-        'TARGETDIR'               # WkDir
+        "DesktopShortcut",
+        "DesktopFolder",
+        "Metavinci",
+        "TARGETDIR",
+        f"[TARGETDIR]{exe_name}",
+        None,
+        "Metavinci Desktop App",
+        None, None, None, None, 'TARGETDIR'
     ),
     (
-        "StartMenuShortcut",      # Shortcut
-        "ProgramMenuFolder",      # Directory_
-        "Metavinci",              # Name
-        "TARGETDIR",              # Component_
-        f"[TARGETDIR]{exe_name}", # Target
-        None,                     # Arguments
-        "Metavinci Desktop App",  # Description
-        None,                     # Hotkey
-        None,                     # Icon
-        None,                     # IconIndex
-        None,                     # ShowCmd
-        'TARGETDIR'               # WkDir
+        "StartMenuShortcut",
+        "ProgramMenuFolder",
+        "Metavinci",
+        "TARGETDIR",
+        f"[TARGETDIR]{exe_name}",
+        None,
+        "Metavinci Desktop App",
+        None, None, None, None, 'TARGETDIR'
     ),
 ]
 
@@ -41,14 +35,24 @@ setup(
     name="Metavinci",
     version="0.1",
     description="Metavinci Desktop App",
+    author=publisher,
     executables=[Executable("metavinci.py", base="Win32GUI", icon="metavinci_desktop.ico", target_name=exe_name)],
     options={
         "build_exe": {
-            "include_files": ["images", "data", "service"],
+            "include_files": ["images", "data", "service", "metavinci_desktop.ico"],
         },
         "bdist_msi": {
             "add_to_path": False,
             "initial_target_dir": r"[ProgramFilesFolder]\\Metavinci",
+            "upgrade_code": upgrade_code,
+            "all_users": True,
+            "install_icon": "metavinci_desktop.ico",
+            "msi_properties": [
+                ("ARPPRODUCTICON", "MetavinciIcon"),
+                ("ARPCONTACT", publisher),
+                ("ARPCOMMENTS", "Metavinci Desktop App"),
+                ("ARPPUBLISHER", publisher),
+            ]
         }
     },
     msi_data=msi_data,
