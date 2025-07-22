@@ -89,9 +89,9 @@ jobs:
 
     - name: List MSI tables and contents
       run: |
-        for f in dist/*.msi; do
-          echo "Listing tables for $f"
-          ./lessmsi/lessmsi.exe l "$f"
+        for file in dist/*.msi; do
+          echo "Listing tables for $file"
+          ./lessmsi/lessmsi.exe l "$file"
         done
 
     - name: Upload Windows MSI installer
