@@ -203,12 +203,13 @@ jobs:
         mkdir -p release
         cp installers/metavinci-linux-installer/*.deb release/
         cp installers/metavinci-windows-msi-installer/*.msi release/
-        cp installers/metavinci-macos-installer/*.dmg release/
+        cp installers/metavinci-macos-installer-amd64/*.dmg release/
+        cp installers/metavinci-macos-installer-arm64/*.dmg release/
 
     - name: Upload release assets
       uses: actions/upload-artifact@v4
       with:
-        name: metavinci-installers-release
+        name: metavinci-release
         path: release/
         retention-days: 90
 
@@ -217,10 +218,20 @@ jobs:
       with:
         files: release/*
         tag_name: ${{ github.ref_name }}
-        name: Installers Release ${{ github.ref_name }}
+        name: Release ${{ github.ref_name }}
         body: |
-          ## Metavinci Installers ${{ github.ref_name }}
-          Cross-platform installers for Linux (.deb), Windows (.zip), and macOS (.zip).
-          See included README or documentation for installation instructions.
+          ## Metavinci ${{ github.ref_name }}
+          
+          Cross-platform release with executables for Linux, Windows, and macOS.
+          
+          ### Downloads
+          - **Linux**: `.deb` package (x86_64)
+          - **Windows**: `.msi` installer (x86_64)
+          - **macOS (Intel/AMD)**: `.dmg` installer labeled `amd64`
+          - **macOS (Apple Silicon)**: `.dmg` installer labeled `arm64`
+          
+          Please download the correct DMG for your Mac architecture.
+          
+          See README.md in the release for installation instructions.
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
