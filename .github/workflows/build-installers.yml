@@ -87,13 +87,6 @@ jobs:
         curl -L -o lessmsi.zip https://github.com/activescott/lessmsi/releases/download/v1.10.0/lessmsi-v1.10.0.zip
         tar -xf lessmsi.zip
 
-    - name: List MSI tables and contents
-      run: |
-        for file in dist/*.msi; do
-          echo "Listing tables for $file"
-          ./lessmsi/lessmsi.exe l "$file"
-        done
-
     - name: Upload Windows MSI installer
       uses: actions/upload-artifact@v4
       with:
