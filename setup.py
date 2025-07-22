@@ -47,7 +47,7 @@ setup(
             "upgrade_code": upgrade_code,
             "all_users": False,
             "install_icon": "metavinci_desktop.ico",
+            "msi_data": msi_data,
         }
     },
-    msi_data=msi_data,
 ) 
