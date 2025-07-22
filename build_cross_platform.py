@@ -118,12 +118,26 @@ class CrossPlatformBuilder:
                 pyinstaller_cmd.extend(['--icon', str(icon_file)])
             pyinstaller_cmd.append('metavinci.py')
             # DO NOT add '--onefile' for macOS
+        elif target_platform == 'windows' or (target_platform is None and self.platform_manager.is_windows):
+            pyinstaller_cmd = [
+                'pyinstaller',
+                '--noconsole',
+                '--onefile',
+                f'--distpath={dist_dir}',
+                '--exclude-module', 'pytest',
+                '--exclude-module', 'unittest',
+                '--exclude-module', 'doctest',
+                '--collect-all', 'PyQt5.Qt',
+            ]
+            if icon_file.exists():
+                pyinstaller_cmd.extend(['--icon', str(icon_file)])
+            pyinstaller_cmd.append('metavinci.py')
         else:
             pyinstaller_cmd = [
                 'pyinstaller',
                 '--noconsole',
                 '--onefile',
-                '--strip',  # Strip debug symbols
+                '--strip',  # Strip debug symbols (only for non-Windows)
                 f'--distpath={dist_dir}',
                 '--exclude-module', 'pytest',
                 '--exclude-module', 'unittest',

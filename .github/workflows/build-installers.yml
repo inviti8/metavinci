@@ -79,8 +79,8 @@ jobs:
         python -c "import cx_Freeze; print('cx_Freeze version:', cx_Freeze.__version__); print('cx_Freeze location:', cx_Freeze.__file__)"
         python -c "import setuptools; print('setuptools location:', setuptools.__file__)"
 
-    - name: Build MSI installer
-      run: python setup.py bdist_msi
+    - name: Build Windows installer (PyInstaller + cx_Freeze)
+      run: python build_installers.py --platform windows --version ${{ github.ref_name }}
 
     - name: Download lessmsi
       run: |

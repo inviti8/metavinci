@@ -4,14 +4,16 @@ exe_name = "metavinci.exe"
 publisher = "Heavymeta"
 upgrade_code = "{12345678-1234-1234-1234-1234567890AB}"  # Replace with a real GUID for production
 
+executables = [Executable("dummy.py", base=None, target_name="dummy.exe")]
+
 shortcut_table = [
     (
         "DesktopShortcut",
         "DesktopFolder",
         "Metavinci",
         "TARGETDIR",
-        f"[TARGETDIR]{exe_name}",
-        None,
+        "[TARGETDIR]metavinci.exe",  # Points to PyInstaller EXE
+        "metavinci_desktop.ico",
         "Metavinci Desktop App",
         None, None, None, None, 'TARGETDIR'
     ),
@@ -20,10 +22,10 @@ shortcut_table = [
         "ProgramMenuFolder",
         "Metavinci",
         "TARGETDIR",
-        f"[TARGETDIR]{exe_name}",
-        None,
+        "[TARGETDIR]metavinci.exe",  # Points to PyInstaller EXE
+        "metavinci_desktop.ico",
         "Metavinci Desktop App",
-        None, None, None, None, 'TARGETDIR'
+        None, None, None, None, 'Metavinci'
     ),
 ]
 
@@ -36,10 +38,13 @@ setup(
     version="0.1",
     description="Metavinci Desktop App",
     author=publisher,
-    executables=[Executable("metavinci.py", base="Win32GUI", icon="metavinci_desktop.ico", target_name=exe_name)],
+    executables=executables,
     options={
         "build_exe": {
-            "include_files": ["images", "data", "service", "metavinci_desktop.ico", "build\\dist\\metavinci.exe"],
+            "include_files": [
+                "images", "data", "service", "metavinci_desktop.ico",
+                "build\\dist\\windows\\metavinci.exe"
+            ],
         },
         "bdist_msi": {
             "add_to_path": False,
@@ -47,6 +52,7 @@ setup(
             "upgrade_code": upgrade_code,
             "all_users": False,
             "install_icon": "metavinci_desktop.ico",
+            "data": msi_data,
         }
     },
 ) 
