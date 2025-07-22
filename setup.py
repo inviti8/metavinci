@@ -39,7 +39,7 @@ setup(
     executables=[Executable("metavinci.py", base="Win32GUI", icon="metavinci_desktop.ico", target_name=exe_name)],
     options={
         "build_exe": {
-            "include_files": ["images", "data", "service", "metavinci_desktop.ico"],
+            "include_files": ["images", "data", "service", "metavinci_desktop.ico", "build\\dist\\metavinci.exe"],
         },
         "bdist_msi": {
             "add_to_path": False,
@@ -47,7 +47,6 @@ setup(
             "upgrade_code": upgrade_code,
             "all_users": False,
             "install_icon": "metavinci_desktop.ico",
-            "msi_data": msi_data,
         }
     },
 ) 
