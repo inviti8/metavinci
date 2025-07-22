@@ -74,8 +74,25 @@ jobs:
         dir
         echo "==============================================================================="
 
+    - name: Check cx_Freeze version and location
+      run: |
+        python -c "import cx_Freeze; print('cx_Freeze version:', cx_Freeze.__version__); print('cx_Freeze location:', cx_Freeze.__file__)"
+        python -c "import setuptools; print('setuptools location:', setuptools.__file__)"
+
     - name: Build MSI installer
       run: python setup.py bdist_msi
+
+    - name: Download lessmsi
+      run: |
+        curl -L -o lessmsi.zip https://github.com/activescott/lessmsi/releases/download/v1.10.0/lessmsi-v1.10.0.zip
+        tar -xf lessmsi.zip
+
+    - name: List MSI tables and contents
+      run: |
+        for f in dist/*.msi; do
+          echo "Listing tables for $f"
+          ./lessmsi/lessmsi.exe l "$f"
+        done
 
     - name: Upload Windows MSI installer
       uses: actions/upload-artifact@v4

@@ -84,6 +84,12 @@ def build_windows_installer(version):
     release_win_dir = release_dir / "windows"
     release_win_dir.mkdir(parents=True, exist_ok=True)
 
+    # Debug: Print cx_Freeze and setuptools version/location
+    import subprocess, sys
+    print("Checking cx_Freeze and setuptools version/location...")
+    subprocess.run([sys.executable, '-c', 'import cx_Freeze; print("cx_Freeze version:", cx_Freeze.__version__); print("cx_Freeze location:", cx_Freeze.__file__)'])
+    subprocess.run([sys.executable, '-c', 'import setuptools; print("setuptools location:", setuptools.__file__)'])
+
     # Build the MSI installer using setup.py
     print("Building Windows MSI installer...")
     subprocess.run([sys.executable, 'setup.py', 'bdist_msi'], check=True)
