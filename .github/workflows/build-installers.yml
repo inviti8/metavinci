@@ -85,95 +85,105 @@ jobs:
         retention-days: 30
 
   build-macos-installer:
-    runs-on: macos-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - runner: macos-13
+            arch: amd64
+          - runner: macos-latest
+            arch: arm64
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v4
-      with:
-        python-version: 3.11
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller Pillow icnsutil
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller Pillow icnsutil
 
-    - name: Build macOS installer
-      run: |
-        python build_installers.py --platform macos --version ${{ github.ref_name }}
+      - name: Build macOS installer
+        run: |
+          python build_installers.py --platform macos --version ${{ github.ref_name }}
 
-    - name: List .app bundles
-      run: |
-        echo "Listing contents of build/dist/mac/:"
-        ls -lR build/dist/mac/
+      - name: List .app bundles
+        run: |
+          echo "Listing contents of build/dist/mac/:"
+          ls -lR build/dist/mac/
 
-    - name: Ensure .app bundle exists
-      run: |
-        if [ -d build/dist/mac/metavinci_desktop ] && [ ! -d build/dist/mac/metavinci_desktop.app ]; then
-          echo "Renaming 'metavinci_desktop' to 'metavinci_desktop.app'"
-          mv build/dist/mac/metavinci_desktop build/dist/mac/metavinci_desktop.app
-        elif [ -d build/dist/mac/metavinci_desktop.app ]; then
-          echo "'metavinci_desktop.app' already exists."
-        else
-          echo "No 'metavinci_desktop' or 'metavinci_desktop.app' found in build/dist/mac/"
-          exit 1
-        fi
+      - name: Ensure .app bundle exists
+        run: |
+          if [ -d build/dist/mac/metavinci_desktop ] && [ ! -d build/dist/mac/metavinci_desktop.app ]; then
+            echo "Renaming 'metavinci_desktop' to 'metavinci_desktop.app'"
+            mv build/dist/mac/metavinci_desktop build/dist/mac/metavinci_desktop.app
+          elif [ -d build/dist/mac/metavinci_desktop.app ]; then
+            echo "'metavinci_desktop.app' already exists."
+          else
+            echo "No 'metavinci_desktop' or 'metavinci_desktop.app' found in build/dist/mac/"
+            exit 1
+          fi
 
-    - name: List contents of .app bundle
-      run: |
-        echo "Listing contents of build/dist/mac/metavinci_desktop.app:"
-        ls -lR build/dist/mac/metavinci_desktop.app || echo "No .app bundle found"
+      - name: List contents of .app bundle
+        run: |
+          echo "Listing contents of build/dist/mac/metavinci_desktop.app:"
+          ls -lR build/dist/mac/metavinci_desktop.app || echo "No .app bundle found"
 
-    - name: List contents of MacOS directory
-      run: |
-        ls -l build/dist/mac/metavinci_desktop.app/Contents/MacOS || echo "No MacOS directory"
+      - name: List contents of MacOS directory
+        run: |
+          ls -l build/dist/mac/metavinci_desktop.app/Contents/MacOS || echo "No MacOS directory"
 
-    - name: List contents of Resources directory
-      run: |
-        ls -l build/dist/mac/metavinci_desktop.app/Contents/Resources || echo "No Resources directory"
+      - name: List contents of Resources directory
+        run: |
+          ls -l build/dist/mac/metavinci_desktop.app/Contents/Resources || echo "No Resources directory"
 
-    - name: Final check for .app bundle (absolute path)
-      run: |
-        APP_BUNDLE="$(pwd)/build/dist/mac/metavinci_desktop.app"
-        echo "Absolute path: $APP_BUNDLE"
-        ls -ld "$APP_BUNDLE"
-        ls -l "$APP_BUNDLE"
+      - name: Final check for .app bundle (absolute path)
+        run: |
+          APP_BUNDLE="$(pwd)/build/dist/mac/metavinci_desktop.app"
+          echo "Absolute path: $APP_BUNDLE"
+          ls -ld "$APP_BUNDLE"
+          ls -l "$APP_BUNDLE"
 
-    - name: Create DMG from .app bundle
-      run: |
-        APP_BUNDLE="$(pwd)/build/dist/mac/metavinci_desktop.app"
-        if [ ! -d "$APP_BUNDLE" ]; then
-          echo "No .app bundle found at $APP_BUNDLE"
-          exit 1
-        fi
-        mkdir -p release/mac
-        hdiutil create -volname "Metavinci" -srcfolder "$APP_BUNDLE" -ov -format UDZO "release/mac/metavinci_desktop_${{ github.ref_name }}.dmg"
-    - name: Verify DMG integrity
-      run: |
-        DMG_PATH="release/mac/metavinci_desktop_${{ github.ref_name }}.dmg"
-        echo "Verifying DMG at $DMG_PATH"
-        hdiutil verify "$DMG_PATH"
-        echo "Attempting to mount DMG..."
-        MOUNT_OUTPUT=$(hdiutil attach "$DMG_PATH" -nobrowse -readonly)
-        echo "$MOUNT_OUTPUT"
-        MOUNT_POINT=$(echo "$MOUNT_OUTPUT" | grep Volumes | awk '{print $3}')
-        if [ -z "$MOUNT_POINT" ]; then
-          echo "Failed to mount DMG."
-          exit 1
-        fi
-        echo "Mounted at $MOUNT_POINT"
-        ls -lR "$MOUNT_POINT"
-        hdiutil detach "$MOUNT_POINT"
+      - name: Create DMG from .app bundle
+        run: |
+          APP_BUNDLE="$(pwd)/build/dist/mac/metavinci_desktop.app"
+          if [ ! -d "$APP_BUNDLE" ]; then
+            echo "No .app bundle found at $APP_BUNDLE"
+            exit 1
+          fi
+          mkdir -p release/mac
+          ARCH="${{ matrix.arch }}"
+          hdiutil create -volname "Metavinci" -srcfolder "$APP_BUNDLE" -ov -format UDZO "release/mac/metavinci_desktop_${{ github.ref_name }}_${ARCH}.dmg"
 
-    - name: Upload macOS DMG installer
-      uses: actions/upload-artifact@v4
-      with:
-        name: metavinci-macos-installer
-        path: release/mac/*.dmg
-        retention-days: 30
+      - name: Verify DMG integrity
+        run: |
+          ARCH="${{ matrix.arch }}"
+          DMG_PATH="release/mac/metavinci_desktop_${{ github.ref_name }}_${ARCH}.dmg"
+          echo "Verifying DMG at $DMG_PATH"
+          hdiutil verify "$DMG_PATH"
+          echo "Attempting to mount DMG..."
+          MOUNT_OUTPUT=$(hdiutil attach "$DMG_PATH" -nobrowse -readonly)
+          echo "$MOUNT_OUTPUT"
+          MOUNT_POINT=$(echo "$MOUNT_OUTPUT" | grep Volumes | awk '{print $3}')
+          if [ -z "$MOUNT_POINT" ]; then
+            echo "Failed to mount DMG."
+            exit 1
+          fi
+          echo "Mounted at $MOUNT_POINT"
+          ls -lR "$MOUNT_POINT"
+          hdiutil detach "$MOUNT_POINT"
+
+      - name: Upload macOS DMG installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: metavinci-macos-installer-${{ matrix.arch }}
+          path: release/mac/*.dmg
+          retention-days: 30
 
   create-release:
     runs-on: ubuntu-latest
