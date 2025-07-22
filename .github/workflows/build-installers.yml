@@ -151,6 +151,22 @@ jobs:
         fi
         mkdir -p release/mac
         hdiutil create -volname "Metavinci" -srcfolder "$APP_BUNDLE" -ov -format UDZO "release/mac/metavinci_desktop_${{ github.ref_name }}.dmg"
+    - name: Verify DMG integrity
+      run: |
+        DMG_PATH="release/mac/metavinci_desktop_${{ github.ref_name }}.dmg"
+        echo "Verifying DMG at $DMG_PATH"
+        hdiutil verify "$DMG_PATH"
+        echo "Attempting to mount DMG..."
+        MOUNT_OUTPUT=$(hdiutil attach "$DMG_PATH" -nobrowse -readonly)
+        echo "$MOUNT_OUTPUT"
+        MOUNT_POINT=$(echo "$MOUNT_OUTPUT" | grep Volumes | awk '{print $3}')
+        if [ -z "$MOUNT_POINT" ]; then
+          echo "Failed to mount DMG."
+          exit 1
+        fi
+        echo "Mounted at $MOUNT_POINT"
+        ls -lR "$MOUNT_POINT"
+        hdiutil detach "$MOUNT_POINT"
 
     - name: Upload macOS DMG installer
       uses: actions/upload-artifact@v4
