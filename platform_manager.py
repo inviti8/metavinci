@@ -41,7 +41,7 @@ class PlatformManager:
     def get_hvym_path(self):
         """Get Heavymeta CLI path"""
         if self.is_windows:
-            return Path.home() / 'AppData' / 'Local' / 'heavymeta-cli' / 'hvym-win.exe'
+            return Path.home() / 'AppData' / 'Local' / 'heavymeta-cli' / 'hvym-windows.exe'
         elif self.is_macos:
             return Path.home() / '.local' / 'share' / 'heavymeta-cli' / 'hvym-macos'
         else:  # Linux - maintain existing pattern
@@ -59,7 +59,7 @@ class PlatformManager:
     def get_press_path(self):
         """Get Heavymeta Press path"""
         if self.is_windows:
-            return Path.home() / 'AppData' / 'Local' / 'heavymeta-press' / 'hvym-press-win.exe'
+            return Path.home() / 'AppData' / 'Local' / 'heavymeta-press' / 'hvym-press-windows.exe'
         elif self.is_macos:
             return Path.home() / '.local' / 'share' / 'heavymeta-press' / 'hvym-press-macos'
         else:  # Linux - maintain existing pattern
