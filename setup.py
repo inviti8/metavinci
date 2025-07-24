@@ -30,7 +30,6 @@ shortcut_table = [
 ]
 
 property_table = [
-    ("TARGETDIR", "test"),
     ("MANUFACTURER", "HEAVYMETA®"),
     ("PUBLISHER", "HEAVYMETA®"),
 ]
