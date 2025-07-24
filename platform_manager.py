@@ -41,11 +41,11 @@ class PlatformManager:
     def get_hvym_path(self):
         """Get Heavymeta CLI path"""
         if self.is_windows:
-            return Path.home() / 'AppData' / 'Local' / 'heavymeta-cli' / 'hvym.exe'
+            return Path.home() / 'AppData' / 'Local' / 'heavymeta-cli' / 'hvym-win.exe'
         elif self.is_macos:
-            return Path.home() / '.local' / 'share' / 'heavymeta-cli' / 'hvym'
+            return Path.home() / '.local' / 'share' / 'heavymeta-cli' / 'hvym-macos'
         else:  # Linux - maintain existing pattern
-            return Path.home() / '.local' / 'share' / 'heavymeta-cli' / 'hvym'
+            return Path.home() / '.local' / 'share' / 'heavymeta-cli' / 'hvym-linux'
     
     def get_didc_path(self):
         """Get DIDC binary path"""
@@ -59,11 +59,11 @@ class PlatformManager:
     def get_press_path(self):
         """Get Heavymeta Press path"""
         if self.is_windows:
-            return Path.home() / 'AppData' / 'Local' / 'heavymeta-press' / 'hvym_press.exe'
+            return Path.home() / 'AppData' / 'Local' / 'heavymeta-press' / 'hvym-press-win.exe'
         elif self.is_macos:
-            return Path.home() / '.local' / 'share' / 'heavymeta-press' / 'hvym_press'
+            return Path.home() / '.local' / 'share' / 'heavymeta-press' / 'hvym-press-macos'
         else:  # Linux - maintain existing pattern
-            return Path.home() / '.local' / 'share' / 'heavymeta-press' / 'hvym_press'
+            return Path.home() / '.local' / 'share' / 'heavymeta-press' / 'hvym-press-linux'
     
     def get_blender_path(self):
         """Get Blender configuration path"""

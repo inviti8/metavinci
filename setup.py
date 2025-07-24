@@ -29,8 +29,15 @@ shortcut_table = [
     ),
 ]
 
+property_table = [
+    ("TARGETDIR", "test"),
+    ("MANUFACTURER", "HEAVYMETA®"),
+    ("PUBLISHER", "HEAVYMETA®"),
+]
+
 msi_data = {
     "Shortcut": shortcut_table,
+    "Property": property_table,
 }
 
 setup(
