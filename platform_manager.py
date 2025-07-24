@@ -18,7 +18,7 @@ class PlatformManager:
     def get_config_path(self):
         """Get the main configuration directory path"""
         if self.is_windows:
-            return Path.home() / 'AppData' / 'Local' / 'Metavinci'
+            return Path.home() / 'AppData' / 'Local' / 'Programs' / 'Metavinci'
         elif self.is_macos:
             return Path.home() / 'Library' / 'Application Support' / 'Metavinci'
         else:  # Linux - maintain existing pattern
