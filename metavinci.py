@@ -160,6 +160,7 @@ class Metavinci(QMainWindow):
         self.ICP_LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_logo.png')
         self.STELLAR_LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'stellar_logo.png')
         self.ADD_IMG = os.path.join(self.FILE_PATH, 'images', 'add.png')
+        self.REMOVE_IMG = os.path.join(self.FILE_PATH, 'images', 'remove.png')
         self.TEST_IMG = os.path.join(self.FILE_PATH, 'images', 'test.png')
         self.SELECT_IMG = os.path.join(self.FILE_PATH, 'images', 'select.png')
         self.REMOVE_IMG = os.path.join(self.FILE_PATH, 'images', 'remove.png')
@@ -178,6 +179,7 @@ class Metavinci(QMainWindow):
         self.user_pid = 'disabled'
         self.DB.update({'INITIALIZED': True, 'principal': self.user_pid}, self.QUERY.type == 'app_data')
         self.INITIALIZED = (len(self.DB.search(self.QUERY.INITIALIZED == True)) > 0)
+        print(self.HVYM)
         if not self.HVYM.is_file():
             self.PINTHEON_INSTALLED = (len(self.DB.search(self.QUERY.pintheon_installed == False)) > 0)
             self.TUNNEL_TOKEN = ''
@@ -192,9 +194,9 @@ class Metavinci(QMainWindow):
         self.ic_icon = QIcon(self.ICP_LOGO_IMG)
         self.stellar_icon = QIcon(self.STELLAR_LOGO_IMG)
         self.add_icon = QIcon(self.ADD_IMG)
+        self.remove_icon = QIcon(self.REMOVE_IMG)
         self.test_icon = QIcon(self.TEST_IMG)
         self.select_icon = QIcon(self.SELECT_IMG)
-        self.remove_icon = QIcon(self.LOGO_IMG)
         self.press_icon = QIcon(self.OFF_IMG)
         self.pintheon_icon = QIcon(self.OFF_IMG)
         self.tunnel_icon = QIcon(self.OFF_IMG)
