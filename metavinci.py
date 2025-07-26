@@ -181,10 +181,10 @@ class Metavinci(QMainWindow):
         self.INITIALIZED = (len(self.DB.search(self.QUERY.INITIALIZED == True)) > 0)
 
         if not self.HVYM.is_file():
-            self.PINTHEON_INSTALLED = self.hvym_pintheon_exists().rstrip().strip()
+            self.PINTHEON_INSTALLED = self.hvym_pintheon_exists()
             self.TUNNEL_TOKEN = ''
         else:
-            self.PINTHEON_INSTALLED = self.hvym_pintheon_exists().rstrip().strip()
+            self.PINTHEON_INSTALLED = self.hvym_pintheon_exists()
             self.TUNNEL_TOKEN = self.hvym_tunnel_token_exists()
 
         self.PINTHEON_ACTIVE = False
