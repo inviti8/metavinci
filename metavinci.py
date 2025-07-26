@@ -179,12 +179,12 @@ class Metavinci(QMainWindow):
         self.user_pid = 'disabled'
         self.DB.update({'INITIALIZED': True, 'principal': self.user_pid}, self.QUERY.type == 'app_data')
         self.INITIALIZED = (len(self.DB.search(self.QUERY.INITIALIZED == True)) > 0)
-        print(self.HVYM)
+
         if not self.HVYM.is_file():
-            self.PINTHEON_INSTALLED = self.hvym_pintheon_exists()
+            self.PINTHEON_INSTALLED = self.hvym_pintheon_exists().rstrip().strip()
             self.TUNNEL_TOKEN = ''
         else:
-            self.PINTHEON_INSTALLED = self.hvym_pintheon_exists()
+            self.PINTHEON_INSTALLED = self.hvym_pintheon_exists().rstrip().strip()
             self.TUNNEL_TOKEN = self.hvym_tunnel_token_exists()
 
         self.PINTHEON_ACTIVE = False
@@ -391,7 +391,7 @@ class Metavinci(QMainWindow):
             tray_tools_update_menu.addAction(install_hvym_action)
         else:
             tray_tools_update_menu.addAction(update_hvym_action)
-            if self.hvym_pintheon_exists():
+            if self.PINTHEON_INSTALLED == "True":
                 tray_pintheon_menu = tray_tools_menu.addMenu("Pintheon")
 
                 pintheon_settings_menu = tray_pintheon_menu.addMenu("Settings")
