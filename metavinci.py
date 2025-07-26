@@ -186,6 +186,7 @@ class Metavinci(QMainWindow):
         else:
             self.PINTHEON_INSTALLED = self.hvym_pintheon_exists()
             self.TUNNEL_TOKEN = self.hvym_tunnel_token_exists()
+
         self.PINTHEON_ACTIVE = False
         self.win_icon = QIcon(self.HVYM_IMG)
         self.icon = QIcon(self.LOGO_IMG)
@@ -390,7 +391,7 @@ class Metavinci(QMainWindow):
             tray_tools_update_menu.addAction(install_hvym_action)
         else:
             tray_tools_update_menu.addAction(update_hvym_action)
-            if self.PINTHEON_INSTALLED:
+            if self.PINTHEON_INSTALLED == True:
                 tray_pintheon_menu = tray_tools_menu.addMenu("Pintheon")
 
                 pintheon_settings_menu = tray_pintheon_menu.addMenu("Settings")
