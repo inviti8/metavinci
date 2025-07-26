@@ -381,34 +381,34 @@ class Metavinci(QMainWindow):
             # tray_ic_accounts_menu.addAction(icp_change_account_action)
             # tray_ic_accounts_menu.addAction(icp_remove_account_action)
 
-        tray_tools_menu = tray_menu.addMenu("Tools")
+        self.tray_tools_menu = tray_menu.addMenu("Tools")
 
         if self.PRESS.is_file():
-            tray_tools_menu.addAction(run_press_action)
+            self.tray_tools_menu.addAction(run_press_action)
 
-        tray_tools_update_menu = tray_tools_menu.addMenu("Installations")
+        self.tray_tools_update_menu = self.tray_tools_menu.addMenu("Installations")
 
         if not self.HVYM.is_file():
-            tray_tools_update_menu.addAction(install_hvym_action)
+            self.tray_tools_update_menu.addAction(install_hvym_action)
         else:
-            tray_tools_update_menu.addAction(update_hvym_action)
+            self.tray_tools_update_menu.addAction(update_hvym_action)
             if self.PINTHEON_INSTALLED == "True":
-                tray_pintheon_menu = tray_tools_menu.addMenu("Pintheon")
+                self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
 
-                pintheon_settings_menu = tray_pintheon_menu.addMenu("Settings")
-                pintheon_settings_menu.addAction(self.set_tunnel_token_action)
+                self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
+                self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
                 
-                tray_pintheon_menu.addAction(self.run_pintheon_action)
-                tray_pintheon_menu.addAction(self.stop_pintheon_action)
-                tray_pintheon_menu.addAction(self.open_tunnel_action)
+                self.tray_pintheon_menu.addAction(self.run_pintheon_action)
+                self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
+                self.tray_pintheon_menu.addAction(self.open_tunnel_action)
             else:
-                tray_tools_update_menu.addAction(install_pintheon_action)
+                self.tray_tools_update_menu.addAction(install_pintheon_action)
 
 
         if not self.PRESS.is_file():
-            tray_tools_update_menu.addAction(install_press_action)
+            self.tray_tools_update_menu.addAction(install_press_action)
         else:
-            tray_tools_update_menu.addAction(update_press_action)
+            self.tray_tools_update_menu.addAction(update_press_action)
 
         # if not self.ADDON_PATH.exists():
         #     tray_tools_update_menu.addAction(install_addon_action)
@@ -999,18 +999,14 @@ class Metavinci(QMainWindow):
         install = self.open_confirm_dialog('Install Pintheon?')
         if install == True:
             self.hvym_setup_pintheon()
-            # Update the menu action icons
-            self.run_pintheon_action.setIcon(self.pintheon_icon)
-            self.stop_pintheon_action.setIcon(self.pintheon_icon)
+            self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
 
-            # Hide start action, show stop action
-            self.run_pintheon_action.setVisible(True)
-            self.stop_pintheon_action.setVisible(False)
-
-            if len(self.TUNNEL_TOKEN) < 7:
-                self.open_tunnel_action.setVisible(False)
-            else:
-                self.open_tunnel_action.setVisible(True)
+            self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
+            self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
+                
+            self.tray_pintheon_menu.addAction(self.run_pintheon_action)
+            self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
+            self.tray_pintheon_menu.addAction(self.open_tunnel_action)
             self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
 
     def _start_pintheon(self):
