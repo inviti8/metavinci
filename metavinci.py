@@ -314,8 +314,8 @@ class Metavinci(QMainWindow):
         self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
         self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
 
-        install_pintheon_action = QAction(self.install_icon, "Install Pintheon", self)
-        install_pintheon_action.triggered.connect(self._install_pintheon)
+        self.install_pintheon_action = QAction(self.install_icon, "Install Pintheon", self)
+        self.install_pintheon_action.triggered.connect(self._install_pintheon)
 
         run_press_action = QAction(self.press_icon, "Run press", self)
         run_press_action.triggered.connect(self.run_press)
@@ -402,7 +402,7 @@ class Metavinci(QMainWindow):
                 self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
                 self.tray_pintheon_menu.addAction(self.open_tunnel_action)
             else:
-                self.tray_tools_update_menu.addAction(install_pintheon_action)
+                self.tray_tools_update_menu.addAction(self.install_pintheon_action)
 
 
         if not self.PRESS.is_file():
@@ -1001,6 +1001,7 @@ class Metavinci(QMainWindow):
             self.hvym_setup_pintheon()
             self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
 
+            self.install_pintheon_action.setVisible(False)
             self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
             self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
                 
