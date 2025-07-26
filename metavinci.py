@@ -155,6 +155,8 @@ class Metavinci(QMainWindow):
         self.LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'hvym_logo_64.png')
         self.LOGO_IMG_ACTIVE = os.path.join(self.FILE_PATH, 'images', 'hvym_logo_64_active.png')
         self.LOADING_GIF = os.path.join(self.FILE_PATH, 'images', 'loading.gif')
+        loading = self.loading_indicator('STARTING METAVINCI')
+        loading.Play()
         self.UPDATE_IMG = os.path.join(self.FILE_PATH, 'images', 'update.png')
         self.INSTALL_IMG = os.path.join(self.FILE_PATH, 'images', 'install.png')
         self.ICP_LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_logo.png')
@@ -290,11 +292,11 @@ class Metavinci(QMainWindow):
         ckBTC_balance_action = QAction("ckBTC Balance", self)
         ckBTC_balance_action.triggered.connect(self.get_ckBTC_balance)
 
-        install_hvym_action = QAction(self.install_icon, "Install hvym", self)
-        install_hvym_action.triggered.connect(self._install_hvym)
+        self.install_hvym_action = QAction(self.install_icon, "Install hvym", self)
+        self.install_hvym_action.triggered.connect(self._install_hvym)
 
-        update_hvym_action = QAction(self.update_icon, "Update hvym", self)
-        update_hvym_action.triggered.connect(self._update_hvym)
+        self.update_hvym_action = QAction(self.update_icon, "Update hvym", self)
+        self.update_hvym_action.triggered.connect(self._update_hvym)
 
         self.open_tunnel_action = QAction(self.tunnel_icon, "Open Tunnel", self)
         self.open_tunnel_action.triggered.connect(self._open_tunnel)
@@ -389,9 +391,9 @@ class Metavinci(QMainWindow):
         self.tray_tools_update_menu = self.tray_tools_menu.addMenu("Installations")
 
         if not self.HVYM.is_file():
-            self.tray_tools_update_menu.addAction(install_hvym_action)
+            self.tray_tools_update_menu.addAction(self.install_hvym_action)
         else:
-            self.tray_tools_update_menu.addAction(update_hvym_action)
+            self.tray_tools_update_menu.addAction(self.update_hvym_action)
             if self.PINTHEON_INSTALLED == "True":
                 self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
 
@@ -446,6 +448,7 @@ class Metavinci(QMainWindow):
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
         self.setStyleSheet(Path(str(self.STYLE_SHEET)).read_text())
+        loading.Stop()
         
 
     def init_post(self):
@@ -938,8 +941,10 @@ class Metavinci(QMainWindow):
             except Exception as e:
                 print(e)
                 self.open_msg_dialog(f"Error installing hvym: {e}")
+            self.install_hvym_action.setVisible(False)
+            self.update_hvym_action.setVisible(True)
             loading.Stop()
-            self.restart()
+            # self.restart()
 
     def _update_hvym(self):
         update = self.open_confirm_dialog('Update Heavymeta cli?')
@@ -956,8 +961,10 @@ class Metavinci(QMainWindow):
             except Exception as e:
                 print(e)
                 self.open_msg_dialog(f"Error updating hvym: {e}")
+                self.install_hvym_action.setVisible(False)
+                self.update_hvym_action.setVisible(True)
             loading.Stop()
-            self.restart()
+            # self.restart()
 
     def _delete_hvym(self):
         if self.HVYM.is_file():
@@ -977,7 +984,7 @@ class Metavinci(QMainWindow):
                     else:
                         self.open_msg_dialog('Failed to install Blender Addon')
                 loading.Stop()
-                self.restart()
+                # self.restart()
             else:
                 self.open_msg_dialog('Blender not found. Please install blender first')
 
