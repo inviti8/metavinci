@@ -155,11 +155,14 @@ class Metavinci(QMainWindow):
         self.LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'hvym_logo_64.png')
         self.LOGO_IMG_ACTIVE = os.path.join(self.FILE_PATH, 'images', 'hvym_logo_64_active.png')
         self.LOADING_GIF = os.path.join(self.FILE_PATH, 'images', 'loading.gif')
+        loading = self.loading_indicator('STARTING METAVINCI')
+        loading.Play()
         self.UPDATE_IMG = os.path.join(self.FILE_PATH, 'images', 'update.png')
         self.INSTALL_IMG = os.path.join(self.FILE_PATH, 'images', 'install.png')
         self.ICP_LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_logo.png')
         self.STELLAR_LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'stellar_logo.png')
         self.ADD_IMG = os.path.join(self.FILE_PATH, 'images', 'add.png')
+        self.REMOVE_IMG = os.path.join(self.FILE_PATH, 'images', 'remove.png')
         self.TEST_IMG = os.path.join(self.FILE_PATH, 'images', 'test.png')
         self.SELECT_IMG = os.path.join(self.FILE_PATH, 'images', 'select.png')
         self.REMOVE_IMG = os.path.join(self.FILE_PATH, 'images', 'remove.png')
@@ -178,12 +181,15 @@ class Metavinci(QMainWindow):
         self.user_pid = 'disabled'
         self.DB.update({'INITIALIZED': True, 'principal': self.user_pid}, self.QUERY.type == 'app_data')
         self.INITIALIZED = (len(self.DB.search(self.QUERY.INITIALIZED == True)) > 0)
+        self.PINTHEON_INSTALLED = self.hvym_pintheon_exists()
+        if self.PINTHEON_INSTALLED != None:
+            self.PINTHEON_INSTALLED = self.PINTHEON_INSTALLED.rstrip().strip()
+
         if not self.HVYM.is_file():
-            self.PINTHEON_INSTALLED = (len(self.DB.search(self.QUERY.pintheon_installed == False)) > 0)
             self.TUNNEL_TOKEN = ''
         else:
-            self.PINTHEON_INSTALLED = self.hvym_pintheon_exists()
             self.TUNNEL_TOKEN = self.hvym_tunnel_token_exists()
+
         self.PINTHEON_ACTIVE = False
         self.win_icon = QIcon(self.HVYM_IMG)
         self.icon = QIcon(self.LOGO_IMG)
@@ -192,9 +198,9 @@ class Metavinci(QMainWindow):
         self.ic_icon = QIcon(self.ICP_LOGO_IMG)
         self.stellar_icon = QIcon(self.STELLAR_LOGO_IMG)
         self.add_icon = QIcon(self.ADD_IMG)
+        self.remove_icon = QIcon(self.REMOVE_IMG)
         self.test_icon = QIcon(self.TEST_IMG)
         self.select_icon = QIcon(self.SELECT_IMG)
-        self.remove_icon = QIcon(self.LOGO_IMG)
         self.press_icon = QIcon(self.OFF_IMG)
         self.pintheon_icon = QIcon(self.OFF_IMG)
         self.tunnel_icon = QIcon(self.OFF_IMG)
@@ -259,6 +265,9 @@ class Metavinci(QMainWindow):
         stellar_remove_account_action = QAction(self.remove_icon, "Remove Account", self)
         stellar_remove_account_action.triggered.connect(self.remove_stellar_account)
 
+        stellar_testnet_account_action = QAction(self.add_icon, "Testnet Account", self)
+        stellar_testnet_account_action.triggered.connect(self.new_stellar_testnet_account)
+
         icp_principal_action = QAction(self.ic_icon, "Get Principal", self)
         icp_principal_action.triggered.connect(self.get_ic_principal)
 
@@ -286,11 +295,11 @@ class Metavinci(QMainWindow):
         ckBTC_balance_action = QAction("ckBTC Balance", self)
         ckBTC_balance_action.triggered.connect(self.get_ckBTC_balance)
 
-        install_hvym_action = QAction(self.install_icon, "Install hvym", self)
-        install_hvym_action.triggered.connect(self._install_hvym)
+        self.install_hvym_action = QAction(self.install_icon, "Install hvym", self)
+        self.install_hvym_action.triggered.connect(self._install_hvym)
 
-        update_hvym_action = QAction(self.update_icon, "Update hvym", self)
-        update_hvym_action.triggered.connect(self._update_hvym)
+        self.update_hvym_action = QAction(self.update_icon, "Update hvym", self)
+        self.update_hvym_action.triggered.connect(self._update_hvym)
 
         self.open_tunnel_action = QAction(self.tunnel_icon, "Open Tunnel", self)
         self.open_tunnel_action.triggered.connect(self._open_tunnel)
@@ -310,8 +319,8 @@ class Metavinci(QMainWindow):
         self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
         self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
 
-        install_pintheon_action = QAction(self.install_icon, "Install Pintheon", self)
-        install_pintheon_action.triggered.connect(self._install_pintheon)
+        self.install_pintheon_action = QAction(self.install_icon, "Install Pintheon", self)
+        self.install_pintheon_action.triggered.connect(self._install_pintheon)
 
         run_press_action = QAction(self.press_icon, "Run press", self)
         run_press_action.triggered.connect(self.run_press)
@@ -370,6 +379,7 @@ class Metavinci(QMainWindow):
             tray_stellar_accounts_menu.addAction(stellar_new_account_action)
             tray_stellar_accounts_menu.addAction(stellar_change_account_action)
             tray_stellar_accounts_menu.addAction(stellar_remove_account_action)
+            # tray_stellar_accounts_menu.addAction(stellar_testnet_account_action)
             # tray_ic_accounts_menu = tray_accounts_menu.addMenu("IC")
             # tray_ic_accounts_menu.addAction(icp_principal_action)
             # tray_ic_accounts_menu.addAction(icp_new_test_account_action)
@@ -377,34 +387,34 @@ class Metavinci(QMainWindow):
             # tray_ic_accounts_menu.addAction(icp_change_account_action)
             # tray_ic_accounts_menu.addAction(icp_remove_account_action)
 
-        tray_tools_menu = tray_menu.addMenu("Tools")
+        self.tray_tools_menu = tray_menu.addMenu("Tools")
 
         if self.PRESS.is_file():
-            tray_tools_menu.addAction(run_press_action)
+            self.tray_tools_menu.addAction(run_press_action)
 
-        tray_tools_update_menu = tray_tools_menu.addMenu("Installations")
+        self.tray_tools_update_menu = self.tray_tools_menu.addMenu("Installations")
 
         if not self.HVYM.is_file():
-            tray_tools_update_menu.addAction(install_hvym_action)
+            self.tray_tools_update_menu.addAction(self.install_hvym_action)
         else:
-            tray_tools_update_menu.addAction(update_hvym_action)
-            if self.PINTHEON_INSTALLED:
-                tray_pintheon_menu = tray_tools_menu.addMenu("Pintheon")
+            self.tray_tools_update_menu.addAction(self.update_hvym_action)
+            if self.PINTHEON_INSTALLED == "True":
+                self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
 
-                pintheon_settings_menu = tray_pintheon_menu.addMenu("Settings")
-                pintheon_settings_menu.addAction(self.set_tunnel_token_action)
+                self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
+                self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
                 
-                tray_pintheon_menu.addAction(self.run_pintheon_action)
-                tray_pintheon_menu.addAction(self.stop_pintheon_action)
-                tray_pintheon_menu.addAction(self.open_tunnel_action)
+                self.tray_pintheon_menu.addAction(self.run_pintheon_action)
+                self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
+                self.tray_pintheon_menu.addAction(self.open_tunnel_action)
             else:
-                tray_tools_update_menu.addAction(install_pintheon_action)
+                self.tray_tools_update_menu.addAction(self.install_pintheon_action)
 
 
         if not self.PRESS.is_file():
-            tray_tools_update_menu.addAction(install_press_action)
+            self.tray_tools_update_menu.addAction(install_press_action)
         else:
-            tray_tools_update_menu.addAction(update_press_action)
+            self.tray_tools_update_menu.addAction(update_press_action)
 
         # if not self.ADDON_PATH.exists():
         #     tray_tools_update_menu.addAction(install_addon_action)
@@ -442,6 +452,7 @@ class Metavinci(QMainWindow):
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
         self.setStyleSheet(Path(str(self.STYLE_SHEET)).read_text())
+        loading.Stop()
         
 
     def init_post(self):
@@ -801,6 +812,9 @@ class Metavinci(QMainWindow):
 
     def remove_stellar_account(self):
         return(self._subprocess(f'{str(self.HVYM)} stellar-remove-account'))
+    
+    def new_stellar_testnet_account(self):
+        return(self._subprocess(f'{str(self.HVYM)} stellar-new-testnet-account'))
 
     def new_ic_account(self):
         return(self._subprocess(f'{str(self.HVYM)} icp-new-account'))
@@ -934,8 +948,9 @@ class Metavinci(QMainWindow):
             except Exception as e:
                 print(e)
                 self.open_msg_dialog(f"Error installing hvym: {e}")
+            self.install_hvym_action.setVisible(False)
+            self.update_hvym_action.setVisible(True)
             loading.Stop()
-            self.restart()
 
     def _update_hvym(self):
         update = self.open_confirm_dialog('Update Heavymeta cli?')
@@ -952,8 +967,9 @@ class Metavinci(QMainWindow):
             except Exception as e:
                 print(e)
                 self.open_msg_dialog(f"Error updating hvym: {e}")
+                self.install_hvym_action.setVisible(False)
+                self.update_hvym_action.setVisible(True)
             loading.Stop()
-            self.restart()
 
     def _delete_hvym(self):
         if self.HVYM.is_file():
@@ -973,7 +989,7 @@ class Metavinci(QMainWindow):
                     else:
                         self.open_msg_dialog('Failed to install Blender Addon')
                 loading.Stop()
-                self.restart()
+                # self.restart()
             else:
                 self.open_msg_dialog('Blender not found. Please install blender first')
 
@@ -995,7 +1011,17 @@ class Metavinci(QMainWindow):
         install = self.open_confirm_dialog('Install Pintheon?')
         if install == True:
             self.hvym_setup_pintheon()
-            self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
+            time.sleep(0.1)
+            if self.hvym_pintheon_exists() == 'True':
+                self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
+                self.install_pintheon_action.setVisible(False)
+                self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
+                self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
+                    
+                self.tray_pintheon_menu.addAction(self.run_pintheon_action)
+                self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
+                self.tray_pintheon_menu.addAction(self.open_tunnel_action)
+                self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
 
     def _start_pintheon(self):
         start = self.open_confirm_dialog('Start Pintheon Gateway?')

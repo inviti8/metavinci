@@ -265,6 +265,9 @@ class Metavinci(QMainWindow):
         stellar_remove_account_action = QAction(self.remove_icon, "Remove Account", self)
         stellar_remove_account_action.triggered.connect(self.remove_stellar_account)
 
+        stellar_testnet_account_action = QAction(self.add_icon, "Testnet Account", self)
+        stellar_testnet_account_action.triggered.connect(self.new_stellar_testnet_account)
+
         icp_principal_action = QAction(self.ic_icon, "Get Principal", self)
         icp_principal_action.triggered.connect(self.get_ic_principal)
 
@@ -376,6 +379,7 @@ class Metavinci(QMainWindow):
             tray_stellar_accounts_menu.addAction(stellar_new_account_action)
             tray_stellar_accounts_menu.addAction(stellar_change_account_action)
             tray_stellar_accounts_menu.addAction(stellar_remove_account_action)
+            # tray_stellar_accounts_menu.addAction(stellar_testnet_account_action)
             # tray_ic_accounts_menu = tray_accounts_menu.addMenu("IC")
             # tray_ic_accounts_menu.addAction(icp_principal_action)
             # tray_ic_accounts_menu.addAction(icp_new_test_account_action)
@@ -808,6 +812,9 @@ class Metavinci(QMainWindow):
 
     def remove_stellar_account(self):
         return(self._subprocess(f'{str(self.HVYM)} stellar-remove-account'))
+    
+    def new_stellar_testnet_account(self):
+        return(self._subprocess(f'{str(self.HVYM)} stellar-new-testnet-account'))
 
     def new_ic_account(self):
         return(self._subprocess(f'{str(self.HVYM)} icp-new-account'))
@@ -944,7 +951,6 @@ class Metavinci(QMainWindow):
             self.install_hvym_action.setVisible(False)
             self.update_hvym_action.setVisible(True)
             loading.Stop()
-            # self.restart()
 
     def _update_hvym(self):
         update = self.open_confirm_dialog('Update Heavymeta cli?')
@@ -964,7 +970,6 @@ class Metavinci(QMainWindow):
                 self.install_hvym_action.setVisible(False)
                 self.update_hvym_action.setVisible(True)
             loading.Stop()
-            # self.restart()
 
     def _delete_hvym(self):
         if self.HVYM.is_file():
@@ -1006,16 +1011,17 @@ class Metavinci(QMainWindow):
         install = self.open_confirm_dialog('Install Pintheon?')
         if install == True:
             self.hvym_setup_pintheon()
-            self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
-
-            self.install_pintheon_action.setVisible(False)
-            self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
-            self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
-                
-            self.tray_pintheon_menu.addAction(self.run_pintheon_action)
-            self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
-            self.tray_pintheon_menu.addAction(self.open_tunnel_action)
-            self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
+            time.sleep(0.1)
+            if self.hvym_pintheon_exists() == 'True':
+                self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
+                self.install_pintheon_action.setVisible(False)
+                self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
+                self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
+                    
+                self.tray_pintheon_menu.addAction(self.run_pintheon_action)
+                self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
+                self.tray_pintheon_menu.addAction(self.open_tunnel_action)
+                self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
 
     def _start_pintheon(self):
         start = self.open_confirm_dialog('Start Pintheon Gateway?')
