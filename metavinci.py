@@ -1,5 +1,6 @@
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QLineEdit, QWidgetAction, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QComboBox, QDialogButtonBox, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp, QVBoxLayout, QPushButton, QDialog, QDesktopWidget, QFileDialog, QMessageBox
-from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QLineEdit, QWidgetAction, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QComboBox, QDialogButtonBox, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp, QVBoxLayout, QPushButton, QDialog, QDesktopWidget, QFileDialog, QMessageBox, QSplashScreen
+from PyQt5.QtCore import Qt, QSize, QTimer, QByteArray, QThread
+from PyQt5.QtGui import QMovie
 from PyQt5.QtGui import QIcon, QPixmap
 from pathlib import Path
 import subprocess
@@ -15,7 +16,6 @@ from cryptography.fernet import Fernet
 import json
 import re
 from datetime import datetime, timedelta, timezone
-from gifanimus import GifAnimation
 import time
 import threading
 import sys
@@ -30,6 +30,139 @@ import tarfile
 import zipfile
 import shutil
 import requests
+
+
+class LoadingWindow(QWidget):
+    """
+    A non-blocking loading indicator window without title bar.
+    """
+    def __init__(self, parent, prompt):
+        super().__init__(parent)
+        # Use window flags for a top-level window that stays on top
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Window)
+        self.setFixedSize(400, 150)
+        
+        # Create layout
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        
+        # Create and configure label
+        self.label = QLabel(prompt)
+        self.label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.label)
+        
+        # Center the window
+        self.center_window()
+        
+        # Ensure window is visible and on top
+        self.raise_()
+        self.activateWindow()
+        
+    def center_window(self):
+        """Center the window on screen using the same method as the main window."""
+        qr = self.frameGeometry()
+        cp = QDesktopWidget().availableGeometry().center()
+        qr.moveCenter(cp)
+        self.move(qr.topLeft())
+
+
+
+
+
+class AnimatedLoadingWindow(QWidget):
+    """
+    A non-blocking animated loading indicator window with GIF animation.
+    """
+    def __init__(self, parent, prompt, gif_path):
+        super().__init__(parent)
+        # Use window flags for a top-level window that stays on top
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Window)
+        
+        # Create layout
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        
+        # Create and configure animated label
+        self.animated_label = QLabel()
+        self.animated_label.setAlignment(Qt.AlignCenter)
+        self.animated_label.setMinimumSize(64, 64)  # Ensure minimum size for visibility
+        layout.addWidget(self.animated_label)
+        
+        # Create and configure text label
+        self.text_label = QLabel(prompt)
+        self.text_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.text_label)
+        
+        # Set up the GIF animation - create only ONE instance
+        self.movie = QMovie(gif_path, QByteArray(), self)
+        self.movie.setCacheMode(QMovie.CacheAll)
+        
+        # Debug: Check the original frame count and speed
+        print(f"GIF file: {gif_path}")
+        print(f"Movie frame count: {self.movie.frameCount()}")
+        
+        # Set up the label with the movie
+        self.animated_label.setMovie(self.movie)
+        
+        # Load the movie to get size info, then stop it
+        self.movie.start()
+        self.movie.stop()  # Stop it so we can control when it starts
+        
+        # Size the window based on the GIF dimensions
+        self.size_window_to_gif()
+        
+        # Center the window
+        self.center_window()
+        
+        # Ensure window is visible and on top
+        self.raise_()
+        self.activateWindow()
+        
+    def size_window_to_gif(self):
+        """Size the window based on the GIF dimensions plus padding for text."""
+        # Get the GIF size
+        gif_size = self.movie.currentPixmap().size()
+        
+        if gif_size.isValid() and gif_size.width() > 0 and gif_size.height() > 0:
+            # Add padding for text label and margins
+            window_width = gif_size.width() + 80  # 20px padding on each side
+            window_height = gif_size.height() + 200  # Extra space for text label
+            self.setFixedSize(window_width, window_height)
+        else:
+            # Fallback size if GIF size can't be determined
+            self.setFixedSize(300, 200)
+        
+    def center_window(self):
+        """Center the window on screen using the same method as the main window."""
+        qr = self.frameGeometry()
+        cp = QDesktopWidget().availableGeometry().center()
+        qr.moveCenter(cp)
+        self.move(qr.topLeft())
+    
+    def start_animation(self):
+        """Start the GIF animation."""
+        self.movie.setSpeed(120)
+        self.movie.start()
+
+    def stop_animation(self):
+        """Stop the GIF animation."""
+        self.movie.stop()
+    
+    def set_animation_speed(self, speed_percent):
+        """
+        Set the animation speed as a percentage.
+        100 = normal speed
+        > 100 = faster (e.g., 200 = 2x speed)
+        < 100 = slower (e.g., 50 = half speed)
+        """
+        self.movie.setSpeed(speed_percent)
+    
+    def ensure_animation_running(self):
+        """
+        Call this method periodically to ensure the animation continues running.
+        This is needed because QMovie requires regular event processing.
+        """
+        QApplication.processEvents()
 
 
 # Remove HVYM_VERSION
@@ -107,8 +240,8 @@ class Metavinci(QMainWindow):
     def __init__(self):
         # Be sure to call the super class method
         QMainWindow.__init__(self)
-        
-        # Initialize platform manager
+        self.setWindowFlag(Qt.FramelessWindowHint)
+                # Initialize platform manager
         self.platform_manager = PlatformManager()
         
         self.HOME = os.path.expanduser('~')
@@ -128,10 +261,11 @@ class Metavinci(QMainWindow):
         self.FILE_PATH = Path(__file__).parent
         self.HVYM_IMG = os.path.join(self.FILE_PATH, 'images', 'metavinci.png')
         self.LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'hvym_logo_64.png')
+        
+        # Show splash screen during initialization
+        splash = self.splash_window()
         self.LOGO_IMG_ACTIVE = os.path.join(self.FILE_PATH, 'images', 'hvym_logo_64_active.png')
         self.LOADING_GIF = os.path.join(self.FILE_PATH, 'images', 'loading.gif')
-        loading = self.loading_indicator('STARTING METAVINCI')
-        loading.Play()
         self.UPDATE_IMG = os.path.join(self.FILE_PATH, 'images', 'update.png')
         self.INSTALL_IMG = os.path.join(self.FILE_PATH, 'images', 'install.png')
         self.ICP_LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_logo.png')
@@ -192,9 +326,7 @@ class Metavinci(QMainWindow):
         self.setWindowIcon(self.win_icon)          # Set the icon
         # label = QLabel("", self)
         # label.setPixmap(QPixmap(self.LOGO_IMG))
-        # label.adjustSize()
-
-        self.setWindowFlag(Qt.FramelessWindowHint) 
+        # label.adjustSize() 
 
         if self.BLENDER_PATH.exists():
             for file in os.listdir(str(self.BLENDER_PATH)):
@@ -346,6 +478,12 @@ class Metavinci(QMainWindow):
         candid_ts_action = QAction("Generate Candid Ts Interface", self)
         candid_ts_action.triggered.connect(self.hvym_gen_candid_ts)
 
+        test_action = QAction("TEST", self)
+        test_action.triggered.connect(self.test_process)
+        
+        test_animated_action = QAction("TEST ANIMATED", self)
+        test_animated_action.triggered.connect(self.test_animated_process)
+
         tray_menu = QMenu()
 
         if self.HVYM.is_file():
@@ -354,6 +492,8 @@ class Metavinci(QMainWindow):
             tray_stellar_accounts_menu.addAction(stellar_new_account_action)
             tray_stellar_accounts_menu.addAction(stellar_change_account_action)
             tray_stellar_accounts_menu.addAction(stellar_remove_account_action)
+            # tray_menu.addAction(test_action)
+            # tray_menu.addAction(test_animated_action)
             # tray_stellar_accounts_menu.addAction(stellar_testnet_account_action)
             # tray_ic_accounts_menu = tray_accounts_menu.addMenu("IC")
             # tray_ic_accounts_menu.addAction(icp_principal_action)
@@ -427,7 +567,12 @@ class Metavinci(QMainWindow):
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
         self.setStyleSheet(Path(str(self.STYLE_SHEET)).read_text())
-        loading.Stop()
+        
+        # Close splash screen and hide main window when initialization is complete
+        QApplication.processEvents()  # Ensure splash is displayed
+        time.sleep(0.5)  # Show splash for half a second
+        splash.close()
+        self.hide()
         
 
     def init_post(self):
@@ -460,7 +605,93 @@ class Metavinci(QMainWindow):
         self.hide()
 
     def loading_indicator(self, prompt):
-        return GifAnimation(str(self.LOADING_GIF), 1000, True, prompt)
+        return self.animated_loading_window(prompt)
+    
+    def loading_window(self, prompt):
+        """
+        Creates and shows a non-blocking loading indicator window.
+        
+        Args:
+            prompt (str): Text to display in the loading window
+            
+        Returns:
+            LoadingWindow: The window object with a close() method
+        """
+        self.show()
+        
+        loading_window = LoadingWindow(self, prompt)
+        loading_window.show()
+        loading_window.raise_()
+        loading_window.activateWindow()
+        QApplication.processEvents()
+
+        
+        return loading_window
+    
+    def splash_window(self, image_path=None):
+        """
+        Creates and shows a splash screen window using QSplashScreen.
+        
+        Args:
+            image_path (str): Path to the splash image (defaults to METAVINCI_IMG)
+            
+        Returns:
+            QSplashScreen: The splash screen object with a close() method
+        """
+        # Use default image if none provided
+        if image_path is None:
+            image_path = self.HVYM_IMG
+        
+        # Load the splash image
+        pixmap = QPixmap(image_path)
+        if pixmap.isNull():
+            print(f"Warning: Could not load splash image: {image_path}")
+            # Create a fallback pixmap with text
+            pixmap = QPixmap(300, 150)
+            pixmap.fill(Qt.transparent)
+        
+        # Create the splash screen
+        splash = QSplashScreen(pixmap, Qt.WindowStaysOnTopHint)
+        
+        # Show the splash screen
+        splash.show()
+        
+        # Force Qt to process events to ensure splash is displayed
+        QApplication.processEvents()
+        
+        return splash
+    
+    def animated_loading_window(self, prompt, gif_path=None):
+        """
+        Creates and shows a non-blocking animated loading indicator window.
+        
+        Args:
+            prompt (str): Text to display in the loading window
+            gif_path (str): Path to the GIF file (defaults to LOADING_GIF)
+            
+        Returns:
+            AnimatedLoadingWindow: The window object with start_animation() and stop_animation() methods
+        """
+        self.show()
+
+        # Use default GIF if none provided
+        if gif_path is None:
+            gif_path = self.LOADING_GIF
+        
+        animated_window = AnimatedLoadingWindow(self, prompt, gif_path)
+        
+        animated_window.show()
+        
+        animated_window.raise_()
+        animated_window.activateWindow()
+        
+        # Start the animation
+        animated_window.start_animation()
+        
+        # Force Qt to process events to ensure window is displayed
+        QApplication.processEvents()
+
+        return animated_window
         
     def open_file_dialog(self, prompt, filter="*.key"):
         self.show
@@ -912,6 +1143,31 @@ class Metavinci(QMainWindow):
             if self.PRESS.is_file():
                 self._update_press()
 
+    def test_process(self):
+        loading = self.loading_window('TESTING') 
+        
+        # Simulate some work being done (non-blocking)
+        # In real usage, this would be replaced with actual work
+        for i in range(10):
+            QApplication.processEvents()  # Keep UI responsive
+            time.sleep(1)  # Simulate work
+        
+        # Close the loading window when work is complete
+        loading.close()
+        self.hide()
+    
+    def test_animated_process(self):
+        """Test the animated loading window functionality."""
+        animated_loading = self.animated_loading_window('ANIMATED TESTING') 
+        for i in range(100):
+            animated_loading.ensure_animation_running()  # Keep animation running
+            time.sleep(0.1)  # Simulate work
+        
+        # Stop animation and close the loading window when work is complete
+        animated_loading.stop_animation()
+        animated_loading.close()
+        self.hide()
+
     def _installation_check(self):
         if not self.HVYM.is_file():
             print('Install the cli')
@@ -926,7 +1182,6 @@ class Metavinci(QMainWindow):
         install = self.open_confirm_dialog('Install Heavymeta cli?')
         if install == True:
             loading = self.loading_indicator('INSTALLING HVYM')
-            loading.Play()
             try:
                 bin_dir = os.path.dirname(str(self.HVYM))
                 if not os.path.exists(bin_dir):
@@ -939,13 +1194,13 @@ class Metavinci(QMainWindow):
                 self.open_msg_dialog(f"Error installing hvym: {e}")
             self.install_hvym_action.setVisible(False)
             self.update_hvym_action.setVisible(True)
-            loading.Stop()
+            loading.close()
+            self.hide()
 
     def _update_hvym(self):
         update = self.open_confirm_dialog('Update Heavymeta cli?')
         if update == True:
             loading = self.loading_indicator('UPDATING HVYM')
-            loading.Play()
             try:
                 bin_dir = os.path.dirname(str(self.HVYM))
                 if not os.path.exists(bin_dir):
@@ -958,7 +1213,8 @@ class Metavinci(QMainWindow):
                 self.open_msg_dialog(f"Error updating hvym: {e}")
                 self.install_hvym_action.setVisible(False)
                 self.update_hvym_action.setVisible(True)
-            loading.Stop()
+            loading.close()
+            self.hide()
 
     def _delete_hvym(self):
         if self.HVYM.is_file():
@@ -969,7 +1225,6 @@ class Metavinci(QMainWindow):
         if install == True:
             if self.BLENDER_PATH.exists() and self.ADDON_INSTALL_PATH.exists():
                 loading = self.loading_indicator('Installing Blender Addon')
-                loading.Play()
                 if not self.ADDON_PATH.exists():
                     # Use cross-platform download and extract
                     success = download_and_extract_zip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(self.ADDON_INSTALL_PATH))
@@ -977,7 +1232,8 @@ class Metavinci(QMainWindow):
                         self.open_msg_dialog(f'Blender Addon installed. Please restart Daemon.')
                     else:
                         self.open_msg_dialog('Failed to install Blender Addon')
-                loading.Stop()
+                loading.close()
+                self.hide()
                 # self.restart()
             else:
                 self.open_msg_dialog('Blender not found. Please install blender first')
@@ -1048,7 +1304,6 @@ class Metavinci(QMainWindow):
         install = self.open_confirm_dialog('Install Heavymeta Press?')
         if install == True:
             loading = self.loading_indicator('Installing Heavymeta Press')
-            loading.Play()
             
             # Use cross-platform script download and execution
             script_url = self.platform_manager.get_press_install_script_url()
@@ -1058,7 +1313,8 @@ class Metavinci(QMainWindow):
                 self.restart()
             else:
                 self.open_msg_dialog('Failed to install Heavymeta Press')
-            loading.Stop()
+            loading.close()
+            self.hide()
 
     def _delete_press(self):
         if self.PRESS.is_file():
@@ -1068,10 +1324,11 @@ class Metavinci(QMainWindow):
         update = self.open_confirm_dialog('Update Heavymeta Press?')
         if update == True:
             loading = self.loading_indicator('UPDATING Press')
-            loading.Play()
             self._delete_press()
             self._install_press()
-            loading.Stop()
+            loading.close()
+            self.hide()
+            self.restart()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

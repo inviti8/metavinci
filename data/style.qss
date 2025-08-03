@@ -1301,3 +1301,30 @@ QDateEdit::down-arrow:focus
 {
     image: url(:/qss_icons/rc/down_arrow.png);
 }
+
+/* Loading Window Styles */
+LoadingWindow QLabel
+{
+    font-size: 20px;
+    font-weight: bold;
+    color: #fff4c9;
+    background-color: #98314a;
+    border: 3px solid #fff4c9;
+    border-radius: 15px;
+    padding: 30px;
+    margin: 10px;
+}
+
+/* Animated Loading Window Styles */
+AnimatedLoadingWindow QLabel
+{
+    font-size: 18px;
+    font-weight: bold;
+    color: #fff4c9;
+    background-color: transparent;
+    border: 0px;
+    padding: 10px;
+    margin: 5px;
+}
+
+
