@@ -1186,6 +1186,7 @@ class Metavinci(QMainWindow):
         if install == True:
             loading = self.loading_indicator('INSTALLING HVYM')
             try:
+                QApplication.processEvents()
                 bin_dir = os.path.dirname(str(self.HVYM))
                 if not os.path.exists(bin_dir):
                     os.makedirs(bin_dir, exist_ok=True)
@@ -1195,6 +1196,7 @@ class Metavinci(QMainWindow):
             except Exception as e:
                 print(e)
                 self.open_msg_dialog(f"Error installing hvym: {e}")
+            QApplication.processEvents()
             self.install_hvym_action.setVisible(False)
             self.update_hvym_action.setVisible(True)
             loading.close()
@@ -1205,6 +1207,7 @@ class Metavinci(QMainWindow):
         if update == True:
             loading = self.loading_indicator('UPDATING HVYM')
             try:
+                QApplication.processEvents()
                 bin_dir = os.path.dirname(str(self.HVYM))
                 if not os.path.exists(bin_dir):
                     os.makedirs(bin_dir, exist_ok=True)
@@ -1213,9 +1216,11 @@ class Metavinci(QMainWindow):
                 self.open_msg_dialog(f"hvym updated at {hvym_path}")
             except Exception as e:
                 print(e)
+                QApplication.processEvents()
                 self.open_msg_dialog(f"Error updating hvym: {e}")
                 self.install_hvym_action.setVisible(False)
                 self.update_hvym_action.setVisible(True)
+            QApplication.processEvents()
             loading.close()
             self.hide()
 
@@ -1231,6 +1236,7 @@ class Metavinci(QMainWindow):
                 if not self.ADDON_PATH.exists():
                     # Use cross-platform download and extract
                     success = download_and_extract_zip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(self.ADDON_INSTALL_PATH))
+                    QApplication.processEvents()
                     if success:
                         self.open_msg_dialog(f'Blender Addon installed. Please restart Daemon.')
                     else:
@@ -1262,6 +1268,7 @@ class Metavinci(QMainWindow):
             self.hvym_setup_pintheon()
             time.sleep(0.5)
             if self.hvym_pintheon_exists() == 'True':
+                QApplication.processEvents()
                 self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
                 self.install_pintheon_action.setVisible(False)
                 self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
@@ -1271,6 +1278,7 @@ class Metavinci(QMainWindow):
                 self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
                 self.tray_pintheon_menu.addAction(self.open_tunnel_action)
                 self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
+            QApplication.processEvents()
             loading.close()
             self.hide()
 
