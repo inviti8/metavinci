@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QLineEdit, QWidgetAction, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QComboBox, QDialogButtonBox, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp, QVBoxLayout, QPushButton, QDialog, QDesktopWidget, QFileDialog, QMessageBox, QSplashScreen
-from PyQt5.QtCore import Qt, QSize, QTimer, QByteArray, QThread
+from PyQt5.QtCore import Qt, QSize, QTimer, QByteArray, QThread, pyqtSignal
 from PyQt5.QtGui import QMovie
 from PyQt5.QtGui import QIcon, QPixmap
 from pathlib import Path
@@ -30,6 +30,12 @@ import tarfile
 import zipfile
 import shutil
 import requests
+
+class WindowThread(QThread):
+    result_ready = pyqtSignal(int)
+
+    def __init__(self):
+        super().__init__()
 
 
 class LoadingWindow(QWidget):
@@ -607,8 +613,15 @@ class Metavinci(QMainWindow):
         
         self.hide()
 
-    def loading_indicator(self, prompt):
-        return self.animated_loading_window(prompt)
+    def loading_indicator_start(self, prompt):
+        self.loading = self.loading_window(prompt)
+        time.sleep(0.5)
+        QApplication.processEvents()
+        return self.loading
+    
+    def loading_indicator_stop(self):
+        self.loading.close()
+        self.hide()
     
     def loading_window(self, prompt):
         """
@@ -1183,10 +1196,10 @@ class Metavinci(QMainWindow):
 
     def _install_hvym(self):
         install = self.open_confirm_dialog('Install Heavymeta cli?')
+        time.sleep(1)
         if install == True:
-            loading = self.loading_indicator('INSTALLING HVYM')
+            loading = self.loading_indicator_start('INSTALLING HVYM')
             try:
-                QApplication.processEvents()
                 bin_dir = os.path.dirname(str(self.HVYM))
                 if not os.path.exists(bin_dir):
                     os.makedirs(bin_dir, exist_ok=True)
@@ -1196,18 +1209,18 @@ class Metavinci(QMainWindow):
             except Exception as e:
                 print(e)
                 self.open_msg_dialog(f"Error installing hvym: {e}")
-            QApplication.processEvents()
             self.install_hvym_action.setVisible(False)
             self.update_hvym_action.setVisible(True)
             loading.close()
             self.hide()
+            self.restart()
 
     def _update_hvym(self):
         update = self.open_confirm_dialog('Update Heavymeta cli?')
+        time.sleep(1)
         if update == True:
-            loading = self.loading_indicator('UPDATING HVYM')
+            loading = self.loading_indicator_start('UPDATING HVYM')
             try:
-                QApplication.processEvents()
                 bin_dir = os.path.dirname(str(self.HVYM))
                 if not os.path.exists(bin_dir):
                     os.makedirs(bin_dir, exist_ok=True)
@@ -1216,11 +1229,9 @@ class Metavinci(QMainWindow):
                 self.open_msg_dialog(f"hvym updated at {hvym_path}")
             except Exception as e:
                 print(e)
-                QApplication.processEvents()
                 self.open_msg_dialog(f"Error updating hvym: {e}")
                 self.install_hvym_action.setVisible(False)
                 self.update_hvym_action.setVisible(True)
-            QApplication.processEvents()
             loading.close()
             self.hide()
 
@@ -1232,11 +1243,10 @@ class Metavinci(QMainWindow):
         install = self.open_confirm_dialog('Install Heavymeta Blender Addon?')
         if install == True:
             if self.BLENDER_PATH.exists() and self.ADDON_INSTALL_PATH.exists():
-                loading = self.loading_indicator('Installing Blender Addon')
+                loading = self.loading_indicator_start('Installing Blender Addon')
                 if not self.ADDON_PATH.exists():
                     # Use cross-platform download and extract
                     success = download_and_extract_zip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(self.ADDON_INSTALL_PATH))
-                    QApplication.processEvents()
                     if success:
                         self.open_msg_dialog(f'Blender Addon installed. Please restart Daemon.')
                     else:
@@ -1263,12 +1273,12 @@ class Metavinci(QMainWindow):
 
     def _install_pintheon(self):
         install = self.open_confirm_dialog('Install Pintheon?')
+        time.sleep(1)
         if install == True:
-            loading = self.loading_indicator('Installing Pintheon...')
+            loading = self.loading_indicator_start('Installing Pintheon...')
             self.hvym_setup_pintheon()
             time.sleep(0.5)
             if self.hvym_pintheon_exists() == 'True':
-                QApplication.processEvents()
                 self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
                 self.install_pintheon_action.setVisible(False)
                 self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
@@ -1278,14 +1288,14 @@ class Metavinci(QMainWindow):
                 self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
                 self.tray_pintheon_menu.addAction(self.open_tunnel_action)
                 self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
-            QApplication.processEvents()
             loading.close()
             self.hide()
 
     def _start_pintheon(self):
         start = self.open_confirm_dialog('Start Pintheon Gateway?')
+        time.sleep(1)
         if start == True:
-            loading = self.loading_indicator('Starting Pintheon...')
+            loading = self.loading_indicator_start('Starting Pintheon...')
             self.hvym_start_pintheon()
             self.PINTHEON_ACTIVE = True
             loading.close()
@@ -1319,8 +1329,10 @@ class Metavinci(QMainWindow):
 
     def _install_press(self):
         install = self.open_confirm_dialog('Install Heavymeta Press?')
+        time.sleep(1)
         if install == True:
-            loading = self.loading_indicator('Installing Heavymeta Press')
+            loading = self.loading_indicator_start('Installing Heavymeta Press')
+            QApplication.processEvents()
             
             # Use cross-platform script download and execution
             script_url = self.platform_manager.get_press_install_script_url()
@@ -1339,8 +1351,9 @@ class Metavinci(QMainWindow):
 
     def _update_press(self):
         update = self.open_confirm_dialog('Update Heavymeta Press?')
+        time.sleep(1)
         if update == True:
-            loading = self.loading_indicator('UPDATING Press')
+            loading = self.loading_indicator_start('UPDATING Press')
             self._delete_press()
             self._install_press()
             loading.close()
