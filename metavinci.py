@@ -261,6 +261,7 @@ class Metavinci(QMainWindow):
         self.FILE_PATH = Path(__file__).parent
         self.HVYM_IMG = os.path.join(self.FILE_PATH, 'images', 'metavinci.png')
         self.LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'hvym_logo_64.png')
+        self.PINTHEON_IMG = os.path.join(self.FILE_PATH, 'images', 'pintheon_logo.png')
         
         # Show splash screen during initialization
         splash = self.splash_window()
@@ -302,6 +303,7 @@ class Metavinci(QMainWindow):
         self.PINTHEON_ACTIVE = False
         self.win_icon = QIcon(self.HVYM_IMG)
         self.icon = QIcon(self.LOGO_IMG)
+        self.pintheon_icon = QIcon(self.PINTHEON_IMG)
         self.update_icon = QIcon(self.UPDATE_IMG)
         self.install_icon = QIcon(self.INSTALL_IMG)
         self.ic_icon = QIcon(self.ICP_LOGO_IMG)
@@ -515,6 +517,7 @@ class Metavinci(QMainWindow):
             self.tray_tools_update_menu.addAction(self.update_hvym_action)
             if self.PINTHEON_INSTALLED == "True":
                 self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
+                self.tray_pintheon_menu.setIcon(self.pintheon_icon)
 
                 self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
                 self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
@@ -1255,8 +1258,9 @@ class Metavinci(QMainWindow):
     def _install_pintheon(self):
         install = self.open_confirm_dialog('Install Pintheon?')
         if install == True:
+            loading = self.loading_indicator('Installing Pintheon...')
             self.hvym_setup_pintheon()
-            time.sleep(0.1)
+            time.sleep(0.5)
             if self.hvym_pintheon_exists() == 'True':
                 self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
                 self.install_pintheon_action.setVisible(False)
@@ -1267,12 +1271,17 @@ class Metavinci(QMainWindow):
                 self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
                 self.tray_pintheon_menu.addAction(self.open_tunnel_action)
                 self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
+            loading.close()
+            self.hide()
 
     def _start_pintheon(self):
         start = self.open_confirm_dialog('Start Pintheon Gateway?')
         if start == True:
+            loading = self.loading_indicator('Starting Pintheon...')
             self.hvym_start_pintheon()
             self.PINTHEON_ACTIVE = True
+            loading.close()
+            self.hide()
 
     def _stop_pintheon(self):
         start = self.open_confirm_dialog('Stop Pintheon Gateway?')
