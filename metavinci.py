@@ -1,3 +1,35 @@
+"""
+Metavinci - Network Daemon for Heavymeta
+
+This application now supports threaded loading windows for better performance.
+The loading windows run in background threads to keep the UI responsive during
+long-running operations.
+
+Threading Features:
+- LoadingWorker: Base class for background operations
+- threaded_loading_window(): Creates loading window with background work
+- threaded_animated_loading_window(): Creates animated loading window with background work
+- Custom workers for specific operations:
+  * HvymInstallWorker: For hvym CLI installation
+  * PintheonInstallWorker: For Pintheon installation
+  * PressInstallWorker: For Press installation
+
+Usage Example:
+    # For simple operations
+    loading_window, worker = self.threaded_loading_window('Loading...', my_work_function, arg1, arg2)
+    
+    # For animated operations  
+    animated_window, worker = self.threaded_animated_loading_window('Loading...', my_work_function, gif_path, arg1, arg2)
+    
+    # For custom operations
+    worker = HvymInstallWorker(self.HVYM)
+    loading_window = LoadingWindow(self, 'Installing...')
+    worker.success.connect(lambda msg: self._on_success(loading_window, worker, msg))
+    worker.start()
+    
+    # The windows and workers are automatically cleaned up when work completes
+"""
+
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QLineEdit, QWidgetAction, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QComboBox, QDialogButtonBox, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp, QVBoxLayout, QPushButton, QDialog, QDesktopWidget, QFileDialog, QMessageBox, QSplashScreen
 from PyQt5.QtCore import Qt, QSize, QTimer, QByteArray, QThread, pyqtSignal
 from PyQt5.QtGui import QMovie
@@ -30,6 +62,123 @@ import tarfile
 import zipfile
 import shutil
 import requests
+
+class LoadingWorker(QThread):
+    """
+    A QThread-based worker for handling loading operations in the background.
+    """
+    finished = pyqtSignal()
+    progress = pyqtSignal(str)
+    error = pyqtSignal(str)
+    success = pyqtSignal(str)  # For success messages
+    
+    def __init__(self, work_function, *args, **kwargs):
+        super().__init__()
+        self.work_function = work_function
+        self.args = args
+        self.kwargs = kwargs
+        
+    def run(self):
+        """Execute the work function in the background thread."""
+        try:
+            if self.args and self.kwargs:
+                result = self.work_function(*self.args, **self.kwargs)
+            elif self.args:
+                result = self.work_function(*self.args)
+            elif self.kwargs:
+                result = self.work_function(**self.kwargs)
+            else:
+                result = self.work_function()
+            
+            self.finished.emit()
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class HvymInstallWorker(LoadingWorker):
+    """Custom worker for hvym installation."""
+    
+    def __init__(self, hvym_path):
+        super().__init__(self._install_hvym_worker)
+        self.hvym_path = hvym_path
+    
+    def _install_hvym_worker(self):
+        """Worker function for installing hvym in background thread."""
+        try:
+            bin_dir = os.path.dirname(str(self.hvym_path))
+            if not os.path.exists(bin_dir):
+                os.makedirs(bin_dir, exist_ok=True)
+            hvym_path = download_and_install_hvym_cli(bin_dir)
+            print(f"hvym installed at {hvym_path}")
+            
+            # Emit success signal with message
+            self.success.emit(f"hvym installed at {hvym_path}")
+            
+        except Exception as e:
+            print(e)
+            # Emit error signal
+            self.error.emit(f"Error installing hvym: {e}")
+
+
+class PintheonInstallWorker(LoadingWorker):
+    """Custom worker for Pintheon installation."""
+    
+    def __init__(self, hvym_path):
+        super().__init__(self._install_pintheon_worker)
+        self.hvym_path = hvym_path
+    
+    def _install_pintheon_worker(self):
+        """Worker function for installing Pintheon in background thread."""
+        try:
+            # Run the hvym pintheon setup command
+            hvym_path = Path(self.hvym_path)
+            cli_dir = str(hvym_path.parent)
+            
+            # Use subprocess to run the setup command
+            command = f'{str(self.hvym_path)} pintheon-setup'
+            result = subprocess.run(command, shell=True, capture_output=True, text=True, cwd=cli_dir)
+            
+            if result.returncode == 0:
+                # Check if pintheon was installed successfully
+                check_command = f'{str(self.hvym_path)} pintheon-image-exists'
+                check_result = subprocess.run(check_command, shell=True, capture_output=True, text=True, cwd=cli_dir)
+                
+                if check_result.returncode == 0 and check_result.stdout.strip() == 'True':
+                    self.success.emit("Pintheon installed successfully")
+                else:
+                    self.error.emit("Pintheon installation completed but verification failed")
+            else:
+                self.error.emit(f"Pintheon installation failed: {result.stderr}")
+            
+        except Exception as e:
+            print(e)
+            # Emit error signal
+            self.error.emit(f"Error installing Pintheon: {e}")
+
+
+class PressInstallWorker(LoadingWorker):
+    """Custom worker for Press installation."""
+    
+    def __init__(self, platform_manager):
+        super().__init__(self._install_press_worker)
+        self.platform_manager = platform_manager
+    
+    def _install_press_worker(self):
+        """Worker function for installing Press in background thread."""
+        try:
+            # Use cross-platform script download and execution
+            script_url = self.platform_manager.get_press_install_script_url()
+            installed = download_and_execute_script(script_url, self.platform_manager)
+            
+            if installed:
+                self.success.emit("Press installed successfully")
+            else:
+                self.error.emit("Press installation failed")
+            
+        except Exception as e:
+            print(e)
+            # Emit error signal
+            self.error.emit(f"Error installing Press: {e}")
 
 class WindowThread(QThread):
     result_ready = pyqtSignal(int)
@@ -1159,30 +1308,152 @@ class Metavinci(QMainWindow):
             if self.PRESS.is_file():
                 self._update_press()
 
-    def test_process(self):
-        loading = self.loading_window('TESTING') 
+    def threaded_loading_window(self, prompt, work_function, *args, **kwargs):
+        """
+        Creates a loading window that runs work in a background thread.
         
-        # Simulate some work being done (non-blocking)
-        # In real usage, this would be replaced with actual work
-        for i in range(10):
-            QApplication.processEvents()  # Keep UI responsive
-            time.sleep(1)  # Simulate work
+        Args:
+            prompt (str): Text to display in the loading window
+            work_function (callable): Function to execute in background thread
+            *args, **kwargs: Arguments to pass to work_function
+            
+        Returns:
+            tuple: (loading_window, worker_thread) - both need to be kept in scope
+        """
+        self.show()
         
-        # Close the loading window when work is complete
-        loading.close()
+        # Create the loading window
+        loading_window = LoadingWindow(self, prompt)
+        loading_window.show()
+        loading_window.raise_()
+        loading_window.activateWindow()
+        QApplication.processEvents()
+        
+        # Create and configure the worker thread
+        worker = LoadingWorker(work_function, *args, **kwargs)
+        
+        # Connect signals
+        worker.finished.connect(lambda: self._on_loading_finished(loading_window, worker))
+        worker.error.connect(lambda error_msg: self._on_loading_error(loading_window, worker, error_msg))
+        worker.success.connect(lambda success_msg: self._on_loading_success(loading_window, worker, success_msg))
+        
+        # Start the worker thread
+        worker.start()
+        
+        return loading_window, worker
+    
+    def threaded_animated_loading_window(self, prompt, work_function, gif_path=None, *args, **kwargs):
+        """
+        Creates an animated loading window that runs work in a background thread.
+        
+        Args:
+            prompt (str): Text to display in the loading window
+            work_function (callable): Function to execute in background thread
+            gif_path (str): Path to the GIF file (defaults to LOADING_GIF)
+            *args, **kwargs: Arguments to pass to work_function
+            
+        Returns:
+            tuple: (animated_window, worker_thread) - both need to be kept in scope
+        """
+        self.show()
+
+        # Use default GIF if none provided
+        if gif_path is None:
+            gif_path = self.LOADING_GIF
+        
+        # Create the animated loading window
+        animated_window = AnimatedLoadingWindow(self, prompt, gif_path)
+        animated_window.show()
+        animated_window.raise_()
+        animated_window.activateWindow()
+        animated_window.start_animation()
+        QApplication.processEvents()
+        
+        # Create and configure the worker thread
+        worker = LoadingWorker(work_function, *args, **kwargs)
+        
+        # Connect signals
+        worker.finished.connect(lambda: self._on_animated_loading_finished(animated_window, worker))
+        worker.error.connect(lambda error_msg: self._on_animated_loading_error(animated_window, worker, error_msg))
+        worker.success.connect(lambda success_msg: self._on_animated_loading_success(animated_window, worker, success_msg))
+        
+        # Start the worker thread
+        worker.start()
+        
+        return animated_window, worker
+    
+    def _on_loading_finished(self, loading_window, worker):
+        """Handle completion of threaded loading operation."""
+        loading_window.close()
         self.hide()
+        worker.deleteLater()
+    
+    def _on_loading_error(self, loading_window, worker, error_msg):
+        """Handle error in threaded loading operation."""
+        loading_window.close()
+        self.hide()
+        worker.deleteLater()
+        self.open_msg_dialog(f"Error: {error_msg}")
+    
+    def _on_loading_success(self, loading_window, worker, success_msg):
+        """Handle success in threaded loading operation."""
+        loading_window.close()
+        self.hide()
+        worker.deleteLater()
+        self.open_msg_dialog(success_msg)
+    
+    def _on_animated_loading_finished(self, animated_window, worker):
+        """Handle completion of threaded animated loading operation."""
+        animated_window.stop_animation()
+        animated_window.close()
+        self.hide()
+        worker.deleteLater()
+    
+    def _on_animated_loading_error(self, animated_window, worker, error_msg):
+        """Handle error in threaded animated loading operation."""
+        animated_window.stop_animation()
+        animated_window.close()
+        self.hide()
+        worker.deleteLater()
+        self.open_msg_dialog(f"Error: {error_msg}")
+    
+    def _on_animated_loading_success(self, animated_window, worker, success_msg):
+        """Handle success in threaded animated loading operation."""
+        animated_window.stop_animation()
+        animated_window.close()
+        self.hide()
+        worker.deleteLater()
+        self.open_msg_dialog(success_msg)
+    
+    def _simulate_work(self, duration=10):
+        """Simulate work for testing purposes."""
+        for i in range(duration):
+            time.sleep(1)  # Simulate work
+            # Emit progress if needed
+            # self.progress.emit(f"Working... {i+1}/{duration}")
+    
+    def _simulate_animated_work(self, duration=100):
+        """Simulate work for animated testing purposes."""
+        for i in range(duration):
+            time.sleep(0.1)  # Simulate work
+            # Emit progress if needed
+            # self.progress.emit(f"Working... {i+1}/{duration}")
+    
+    def test_process(self):
+        """Test the threaded loading window functionality."""
+        # Use the new threaded method
+        loading_window, worker = self.threaded_loading_window('TESTING', self._simulate_work, 10)
+        
+        # The loading window and worker will be automatically cleaned up when the work is done
+        # No need to manually close or hide - the signal handlers will do that
     
     def test_animated_process(self):
-        """Test the animated loading window functionality."""
-        animated_loading = self.animated_loading_window('ANIMATED TESTING') 
-        for i in range(100):
-            animated_loading.ensure_animation_running()  # Keep animation running
-            time.sleep(0.1)  # Simulate work
+        """Test the threaded animated loading window functionality."""
+        # Use the new threaded method
+        animated_window, worker = self.threaded_animated_loading_window('ANIMATED TESTING', self._simulate_animated_work, None, 100)
         
-        # Stop animation and close the loading window when work is complete
-        animated_loading.stop_animation()
-        animated_loading.close()
-        self.hide()
+        # The animated window and worker will be automatically cleaned up when the work is done
+        # No need to manually close or hide - the signal handlers will do that
 
     def _installation_check(self):
         if not self.HVYM.is_file():
@@ -1196,44 +1467,81 @@ class Metavinci(QMainWindow):
 
     def _install_hvym(self):
         install = self.open_confirm_dialog('Install Heavymeta cli?')
-        time.sleep(1)
         if install == True:
-            loading = self.loading_indicator_start('INSTALLING HVYM')
-            try:
-                bin_dir = os.path.dirname(str(self.HVYM))
-                if not os.path.exists(bin_dir):
-                    os.makedirs(bin_dir, exist_ok=True)
-                hvym_path = download_and_install_hvym_cli(bin_dir)
-                print(f"hvym installed at {hvym_path}")
-                self.open_msg_dialog(f"hvym installed at {hvym_path}")
-            except Exception as e:
-                print(e)
-                self.open_msg_dialog(f"Error installing hvym: {e}")
-            self.install_hvym_action.setVisible(False)
-            self.update_hvym_action.setVisible(True)
-            loading.close()
-            self.hide()
-            self.restart()
+            # Create custom worker
+            worker = HvymInstallWorker(self.HVYM)
+
+            # Create animated loading window
+            loading_window = AnimatedLoadingWindow(self, 'INSTALLING HVYM', 'images/loading.gif')
+            loading_window.show()
+            loading_window.raise_()
+            loading_window.activateWindow()
+            loading_window.start_animation()
+            QApplication.processEvents()
+
+            # Connect signals
+            worker.finished.connect(lambda: self._on_animated_loading_finished(loading_window, worker))
+            worker.error.connect(lambda error_msg: self._on_animated_loading_error(loading_window, worker, error_msg))
+            worker.success.connect(lambda success_msg: self._on_hvym_install_success(loading_window, worker, success_msg))
+
+            # Start the worker thread
+            worker.start()
+
+            # Store references to prevent garbage collection
+            self._current_loading_window = loading_window
+            self._current_worker = worker
+    
+    def _on_hvym_install_success(self, loading_window, worker, success_msg):
+        """Handle successful hvym installation."""
+        loading_window.close()
+        self.hide()
+        worker.deleteLater()
+        
+        # Update UI
+        self.install_hvym_action.setVisible(False)
+        self.update_hvym_action.setVisible(True)
+        
+        # Show success message
+        self.open_msg_dialog(success_msg)
+        
+        # Restart after a delay
+        QTimer.singleShot(1000, self.restart)
+
 
     def _update_hvym(self):
         update = self.open_confirm_dialog('Update Heavymeta cli?')
-        time.sleep(1)
         if update == True:
-            loading = self.loading_indicator_start('UPDATING HVYM')
-            try:
-                bin_dir = os.path.dirname(str(self.HVYM))
-                if not os.path.exists(bin_dir):
-                    os.makedirs(bin_dir, exist_ok=True)
-                hvym_path = download_and_install_hvym_cli(bin_dir)
-                print(f"hvym updated at {hvym_path}")
-                self.open_msg_dialog(f"hvym updated at {hvym_path}")
-            except Exception as e:
-                print(e)
-                self.open_msg_dialog(f"Error updating hvym: {e}")
-                self.install_hvym_action.setVisible(False)
-                self.update_hvym_action.setVisible(True)
-            loading.close()
-            self.hide()
+            # Create custom worker
+            worker = HvymInstallWorker(self.HVYM)  # Reuse the same worker class
+            
+            # Create animated loading window
+            loading_window = AnimatedLoadingWindow(self, 'UPDATING HVYM', 'images/loading.gif')
+            loading_window.show()
+            loading_window.raise_()
+            loading_window.activateWindow()
+            loading_window.start_animation()
+            QApplication.processEvents()
+            
+            # Connect signals
+            worker.finished.connect(lambda: self._on_animated_loading_finished(loading_window, worker))
+            worker.error.connect(lambda error_msg: self._on_animated_loading_error(loading_window, worker, error_msg))
+            worker.success.connect(lambda success_msg: self._on_hvym_update_success(loading_window, worker, success_msg))
+            
+            # Start the worker thread
+            worker.start()
+            
+            # Store references to prevent garbage collection
+            self._current_loading_window = loading_window
+            self._current_worker = worker
+    
+    def _on_hvym_update_success(self, loading_window, worker, success_msg):
+        """Handle successful hvym update."""
+        loading_window.close()
+        self.hide()
+        worker.deleteLater()
+        
+        # Show success message
+        self.open_msg_dialog(success_msg)
 
     def _delete_hvym(self):
         if self.HVYM.is_file():
@@ -1273,41 +1581,134 @@ class Metavinci(QMainWindow):
 
     def _install_pintheon(self):
         install = self.open_confirm_dialog('Install Pintheon?')
-        time.sleep(1)
         if install == True:
-            loading = self.loading_indicator_start('Installing Pintheon...')
-            self.hvym_setup_pintheon()
-            time.sleep(0.5)
-            if self.hvym_pintheon_exists() == 'True':
-                self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
-                self.install_pintheon_action.setVisible(False)
-                self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
-                self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
-                    
-                self.tray_pintheon_menu.addAction(self.run_pintheon_action)
-                self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
-                self.tray_pintheon_menu.addAction(self.open_tunnel_action)
-                self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
-            loading.close()
-            self.hide()
-            time.sleep(0.5)
-            self.restart()
+            # Create custom worker
+            worker = PintheonInstallWorker(self.HVYM)
+            
+            # Create animated loading window
+            loading_window = AnimatedLoadingWindow(self, 'INSTALLING PINTHEON', 'images/loading.gif')
+            loading_window.show()
+            loading_window.raise_()
+            loading_window.activateWindow()
+            loading_window.start_animation()
+            QApplication.processEvents()
+            
+            # Connect signals
+            worker.finished.connect(lambda: self._on_animated_loading_finished(loading_window, worker))
+            worker.error.connect(lambda error_msg: self._on_animated_loading_error(loading_window, worker, error_msg))
+            worker.success.connect(lambda success_msg: self._on_pintheon_install_success(loading_window, worker, success_msg))
+            
+            # Start the worker thread
+            worker.start()
+            
+            # Store references to prevent garbage collection
+            self._current_loading_window = loading_window
+            self._current_worker = worker
+    
+    def _on_pintheon_install_success(self, loading_window, worker, success_msg):
+        """Handle successful Pintheon installation."""
+        loading_window.close()
+        self.hide()
+        worker.deleteLater()
+        
+        # Update UI - create Pintheon menu
+        self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
+        self.install_pintheon_action.setVisible(False)
+        self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
+        self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
+            
+        self.tray_pintheon_menu.addAction(self.run_pintheon_action)
+        self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
+        self.tray_pintheon_menu.addAction(self.open_tunnel_action)
+        
+        # Update database
+        self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
+        
+        # Show success message
+        self.open_msg_dialog(success_msg)
+        
+        # Restart after a delay
+        QTimer.singleShot(1000, self.restart)
 
     def _start_pintheon(self):
         start = self.open_confirm_dialog('Start Pintheon Gateway?')
-        time.sleep(1)
         if start == True:
-            loading = self.loading_indicator_start('Starting Pintheon...')
+            # Create a simple worker for starting Pintheon
+            worker = LoadingWorker(self._start_pintheon_worker)
+            
+            # Create loading window
+            loading_window = LoadingWindow(self, 'Starting Pintheon...')
+            loading_window.show()
+            loading_window.raise_()
+            loading_window.activateWindow()
+            QApplication.processEvents()
+            
+            # Connect signals
+            worker.finished.connect(lambda: self._on_pintheon_start_finished(loading_window, worker))
+            worker.error.connect(lambda error_msg: self._on_loading_error(loading_window, worker, error_msg))
+            
+            # Start the worker thread
+            worker.start()
+            
+            # Store references to prevent garbage collection
+            self._current_loading_window = loading_window
+            self._current_worker = worker
+    
+    def _start_pintheon_worker(self):
+        """Worker function for starting Pintheon in background thread."""
+        try:
             self.hvym_start_pintheon()
             self.PINTHEON_ACTIVE = True
-            loading.close()
-            self.hide()
+        except Exception as e:
+            print(e)
+            # Re-raise to trigger error signal
+            raise e
+    
+    def _on_pintheon_start_finished(self, loading_window, worker):
+        """Handle completion of Pintheon start operation."""
+        loading_window.close()
+        self.hide()
+        worker.deleteLater()
 
     def _stop_pintheon(self):
         start = self.open_confirm_dialog('Stop Pintheon Gateway?')
         if start == True:
+            # Create a simple worker for stopping Pintheon
+            worker = LoadingWorker(self._stop_pintheon_worker)
+            
+            # Create loading window
+            loading_window = LoadingWindow(self, 'Stopping Pintheon...')
+            loading_window.show()
+            loading_window.raise_()
+            loading_window.activateWindow()
+            QApplication.processEvents()
+            
+            # Connect signals
+            worker.finished.connect(lambda: self._on_pintheon_stop_finished(loading_window, worker))
+            worker.error.connect(lambda error_msg: self._on_loading_error(loading_window, worker, error_msg))
+            
+            # Start the worker thread
+            worker.start()
+            
+            # Store references to prevent garbage collection
+            self._current_loading_window = loading_window
+            self._current_worker = worker
+    
+    def _stop_pintheon_worker(self):
+        """Worker function for stopping Pintheon in background thread."""
+        try:
             self.hvym_stop_pintheon()
             self.PINTHEON_ACTIVE = False
+        except Exception as e:
+            print(e)
+            # Re-raise to trigger error signal
+            raise e
+    
+    def _on_pintheon_stop_finished(self, loading_window, worker):
+        """Handle completion of Pintheon stop operation."""
+        loading_window.close()
+        self.hide()
+        worker.deleteLater()
 
     def _open_tunnel(self):
         expose = self.open_confirm_dialog('Expose Pintheon Gateway to the Internet?')
@@ -1331,21 +1732,40 @@ class Metavinci(QMainWindow):
 
     def _install_press(self):
         install = self.open_confirm_dialog('Install Heavymeta Press?')
-        time.sleep(1)
         if install == True:
-            loading = self.loading_indicator_start('Installing Heavymeta Press')
+            # Create custom worker
+            worker = PressInstallWorker(self.platform_manager)
+            
+            # Create loading window
+            loading_window = LoadingWindow(self, 'Installing Heavymeta Press')
+            loading_window.show()
+            loading_window.raise_()
+            loading_window.activateWindow()
             QApplication.processEvents()
             
-            # Use cross-platform script download and execution
-            script_url = self.platform_manager.get_press_install_script_url()
-            installed = download_and_execute_script(script_url, self.platform_manager)
+            # Connect signals
+            worker.finished.connect(lambda: self._on_loading_finished(loading_window, worker))
+            worker.error.connect(lambda error_msg: self._on_loading_error(loading_window, worker, error_msg))
+            worker.success.connect(lambda success_msg: self._on_press_install_success(loading_window, worker, success_msg))
             
-            if installed:
-                self.restart()
-            else:
-                self.open_msg_dialog('Failed to install Heavymeta Press')
-            loading.close()
-            self.hide()
+            # Start the worker thread
+            worker.start()
+            
+            # Store references to prevent garbage collection
+            self._current_loading_window = loading_window
+            self._current_worker = worker
+    
+    def _on_press_install_success(self, loading_window, worker, success_msg):
+        """Handle successful Press installation."""
+        loading_window.close()
+        self.hide()
+        worker.deleteLater()
+        
+        # Show success message
+        self.open_msg_dialog(success_msg)
+        
+        # Restart after a delay
+        QTimer.singleShot(1000, self.restart)
 
     def _delete_press(self):
         if self.PRESS.is_file():
