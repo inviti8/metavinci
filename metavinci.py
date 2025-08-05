@@ -1290,6 +1290,8 @@ class Metavinci(QMainWindow):
                 self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
             loading.close()
             self.hide()
+            time.sleep(0.5)
+            self.restart()
 
     def _start_pintheon(self):
         start = self.open_confirm_dialog('Start Pintheon Gateway?')
