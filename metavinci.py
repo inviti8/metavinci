@@ -379,7 +379,15 @@ def download_and_install_hvym_cli(dest_dir):
     with tempfile.TemporaryDirectory() as tmpdir:
         asset = os.path.basename(url)
         archive_path = os.path.join(tmpdir, asset)
-        urllib.request.urlretrieve(url, archive_path)
+        # Use requests + certifi for robust SSL verification
+        import certifi
+        import requests
+        with requests.get(url, stream=True, timeout=30, verify=certifi.where(), headers={"User-Agent": "Metavinci/1.0"}) as r:
+            r.raise_for_status()
+            with open(archive_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
         # Extract
         if asset.endswith('.tar.gz'):
             with tarfile.open(archive_path, "r:gz") as tar:
