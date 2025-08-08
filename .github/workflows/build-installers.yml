@@ -286,16 +286,7 @@ jobs:
           # Submit and wait for completion; capture JSON to extract submission id
           xcrun notarytool submit "$DMG_PATH" --keychain-profile "AC_PROFILE" --wait --progress --output-format json | tee notarytool_submit.json
 
-          SUBMISSION_ID=$(python3 - <<'PY'
-import json
-import sys
-try:
-    d=json.load(open('notarytool_submit.json'))
-    print(d.get('id',''))
-except Exception:
-    print("")
-PY
-)
+          SUBMISSION_ID=$(python3 -c "import json,sys;print(json.load(open('notarytool_submit.json')).get('id',''))" || echo "")
           if [ -n "$SUBMISSION_ID" ]; then
             echo "Notarytool submission id: $SUBMISSION_ID"
             echo "Fetching notarization log:"
