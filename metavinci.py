@@ -130,25 +130,41 @@ class PintheonInstallWorker(LoadingWorker):
     def _install_pintheon_worker(self):
         """Worker function for installing Pintheon in background thread."""
         try:
-            # Run the hvym pintheon setup command
-            hvym_path = Path(self.hvym_path)
-            cli_dir = str(hvym_path.parent)
-            
-            # Use subprocess to run the setup command
-            command = f'{str(self.hvym_path)} pintheon-setup'
-            result = subprocess.run(command, shell=True, capture_output=True, text=True, cwd=cli_dir)
-            
+            # Prepare environment with certifi-backed CA bundle for hvym's requests
+            import certifi
+            env = os.environ.copy()
+            env["REQUESTS_CA_BUNDLE"] = certifi.where()
+
+            # Always run from user's HOME to keep Docker bind paths stable on macOS
+            home_dir = str(Path.home())
+
+            # Run the hvym pintheon setup command (list-form, no shell) to handle spaces in path
+            setup_cmd = [str(self.hvym_path), 'pintheon-setup']
+            result = subprocess.run(setup_cmd, capture_output=True, text=True, cwd=home_dir, env=env)
+
             if result.returncode == 0:
-                # Check if pintheon was installed successfully
-                check_command = f'{str(self.hvym_path)} pintheon-image-exists'
-                check_result = subprocess.run(check_command, shell=True, capture_output=True, text=True, cwd=cli_dir)
-                
+                # On macOS, remove quarantine from Pinggy binary if present
+                if platform.system().lower() == 'darwin':
+                    try:
+                        pinggy_path = Path.home() / '.local' / 'share' / 'pinggy' / 'pinggy'
+                        if pinggy_path.exists():
+                            subprocess.run(['xattr', '-d', 'com.apple.quarantine', str(pinggy_path)],
+                                           capture_output=True, check=False)
+                    except Exception:
+                        pass
+
+                # Verify Pintheon image exists
+                check_cmd = [str(self.hvym_path), 'pintheon-image-exists']
+                check_result = subprocess.run(check_cmd, capture_output=True, text=True, cwd=home_dir, env=env)
+
                 if check_result.returncode == 0 and check_result.stdout.strip() == 'True':
                     self.success.emit("Pintheon installed successfully")
                 else:
-                    self.error.emit("Pintheon installation completed but verification failed")
+                    detail = check_result.stderr.strip() or check_result.stdout.strip()
+                    self.error.emit(f"Pintheon installation completed but verification failed: {detail}")
             else:
-                self.error.emit(f"Pintheon installation failed: {result.stderr}")
+                detail = result.stderr.strip() or result.stdout.strip()
+                self.error.emit(f"Pintheon installation failed: {detail}")
             
         except Exception as e:
             print(e)
