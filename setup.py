@@ -49,7 +49,8 @@ setup(
         "build_exe": {
             "include_files": [
                 "images", "data", "service", "metavinci_desktop.ico",
-                "build\\dist\\windows\\metavinci.exe"
+                "build\\dist\\windows\\metavinci.exe",
+                ("uninstall_windows.bat", "uninstall_windows.bat"),
             ],
         },
         "bdist_msi": {
@@ -59,9 +60,6 @@ setup(
             "all_users": False,
             "install_icon": "metavinci_desktop.ico",
             "data": msi_data,
-            "include_files": [
-                ("uninstall_windows.bat", "uninstall_windows.bat"),
-            ],
         }
     },
 ) 
