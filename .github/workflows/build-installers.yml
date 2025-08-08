@@ -177,6 +177,8 @@ jobs:
           security set-keychain-settings -lut 21600 build.keychain
           security unlock-keychain -p "$KC_PW" build.keychain
           security list-keychains -d user -s build.keychain login.keychain
+          security default-keychain -s build.keychain
+          echo "Default keychain set to: $(security default-keychain | tr -d '"')"
 
           # Import Application signing certificate (.p12)
           echo "$MACOS_APPLICATION_P12" | base64 -D > app.p12
@@ -280,8 +282,7 @@ jobs:
           xcrun notarytool store-credentials "AC_PROFILE" \
             --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_ID_APP_PW" \
-            --keychain build.keychain
+            --password "$APPLE_ID_APP_PW"
 
           # Submit and wait for completion; capture JSON to extract submission id
           xcrun notarytool submit "$DMG_PATH" --keychain-profile "AC_PROFILE" --wait --progress --output-format json | tee notarytool_submit.json
