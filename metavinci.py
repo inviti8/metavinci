@@ -135,6 +135,20 @@ class PintheonInstallWorker(LoadingWorker):
             env = os.environ.copy()
             env["REQUESTS_CA_BUNDLE"] = certifi.where()
 
+            # Ensure PyInstaller runtime can create its temp directories (fixes PYI-16001/16006)
+            try:
+                tmp_base = None
+                if platform.system().lower() == 'darwin':
+                    tmp_base = Path.home() / 'Library' / 'Application Support' / 'Metavinci' / 'tmp'
+                else:
+                    tmp_base = Path.home() / '.metavinci_tmp'
+                tmp_base.mkdir(parents=True, exist_ok=True)
+                env['TMPDIR'] = str(tmp_base)
+                env['TEMP'] = str(tmp_base)
+                env['TMP'] = str(tmp_base)
+            except Exception:
+                pass
+
             # Always run from user's HOME to keep Docker bind paths stable on macOS
             home_dir = str(Path.home())
 
