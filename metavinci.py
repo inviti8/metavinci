@@ -358,6 +358,22 @@ def get_latest_hvym_release_asset_url():
 
 def download_and_install_hvym_cli(dest_dir):
     """Download and install the latest hvym CLI for the current platform."""
+    # Use macOS-specific installation helper if on macOS
+    if platform.system().lower() == "darwin":
+        try:
+            from macos_install_helper import MacOSInstallHelper
+            helper = MacOSInstallHelper()
+            hvym_path = helper.install_hvym_cli()
+            if hvym_path:
+                return hvym_path
+            else:
+                raise Exception("macOS installation helper failed")
+        except ImportError:
+            print("macOS installation helper not available, falling back to standard method")
+        except Exception as e:
+            print(f"macOS installation helper error: {e}, falling back to standard method")
+    
+    # Standard installation method for other platforms
     url = get_latest_hvym_release_asset_url()
     print(f"Downloading {url} ...")
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -1544,8 +1560,27 @@ class Metavinci(QMainWindow):
         self.open_msg_dialog(success_msg)
 
     def _delete_hvym(self):
-        if self.HVYM.is_file():
-            self.HVYM.unlink
+        """Delete the hvym CLI binary and clean up related files."""
+        try:
+            if self.HVYM.is_file():
+                self.HVYM.unlink()
+                print(f"Removed hvym binary: {self.HVYM}")
+            
+            # For macOS, also clean up directories if empty
+            if platform.system().lower() == "darwin":
+                try:
+                    from macos_install_helper import MacOSInstallHelper
+                    helper = MacOSInstallHelper()
+                    helper.uninstall_hvym_cli()
+                except ImportError:
+                    print("macOS installation helper not available for cleanup")
+                except Exception as e:
+                    print(f"Error during macOS cleanup: {e}")
+            
+            return True
+        except Exception as e:
+            print(f"Error deleting hvym: {e}")
+            return False
 
     def _install_blender_addon(self, version):
         install = self.open_confirm_dialog('Install Heavymeta Blender Addon?')

@@ -71,6 +71,14 @@ def build_linux_installer(version):
     shutil.copy(src_desktop, dest_desktop)
     shutil.copy(src_bin,  dest_bin)
     shutil.copy(src_icon,  dest_icon)
+    
+    # Copy uninstall script if it exists
+    src_uninstall = cwd / 'uninstall_linux.sh'
+    if src_uninstall.exists():
+        dest_uninstall = usr_dir / 'bin' / 'metavinci-uninstall'
+        shutil.copy(src_uninstall, dest_uninstall)
+        # Make it executable
+        os.chmod(dest_uninstall, 0o755)
 
     print("Building debian package...")
     subprocess.run(['dpkg-deb', '--build', str(pkg_dir)], check=True)
@@ -141,6 +149,11 @@ def build_macos_installer(version):
         files.append((readme, 'README.md'))
     if license_file and license_file.exists():
         files.append((license_file, 'LICENSE'))
+    
+    # Add uninstall script for macOS
+    uninstall_script = cwd / 'uninstall_macos.sh'
+    if uninstall_script.exists():
+        files.append((uninstall_script, 'uninstall_macos.sh'))
 
     # Create ZIP
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as z:

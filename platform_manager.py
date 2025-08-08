@@ -20,6 +20,7 @@ class PlatformManager:
         if self.is_windows:
             return Path.home() / 'AppData' / 'Local' / 'Programs' / 'Metavinci'
         elif self.is_macos:
+            # Use a more accessible location for macOS
             return Path.home() / 'Library' / 'Application Support' / 'Metavinci'
         else:  # Linux - maintain existing pattern
             return Path.home() / '.metavinci'
@@ -43,7 +44,8 @@ class PlatformManager:
         if self.is_windows:
             return Path.home() / 'AppData' / 'Local' / 'heavymeta-cli' / 'hvym-windows.exe'
         elif self.is_macos:
-            return Path.home() / '.local' / 'share' / 'heavymeta-cli' / 'hvym-macos'
+            # Use a more accessible location for macOS that doesn't require elevated permissions
+            return Path.home() / 'Library' / 'Application Support' / 'Metavinci' / 'bin' / 'hvym-macos'
         else:  # Linux - maintain existing pattern
             return Path.home() / '.local' / 'share' / 'heavymeta-cli' / 'hvym-linux'
     
@@ -61,7 +63,8 @@ class PlatformManager:
         if self.is_windows:
             return Path.home() / 'AppData' / 'Local' / 'heavymeta-press' / 'hvym-press-windows.exe'
         elif self.is_macos:
-            return Path.home() / '.local' / 'share' / 'heavymeta-press' / 'hvym-press-macos'
+            # Use a more accessible location for macOS that doesn't require elevated permissions
+            return Path.home() / 'Library' / 'Application Support' / 'Metavinci' / 'bin' / 'hvym-press-macos'
         else:  # Linux - maintain existing pattern
             return Path.home() / '.local' / 'share' / 'heavymeta-press' / 'hvym-press-linux'
     

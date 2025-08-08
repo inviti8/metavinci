@@ -59,6 +59,9 @@ setup(
             "all_users": False,
             "install_icon": "metavinci_desktop.ico",
             "data": msi_data,
+            "include_files": [
+                ("uninstall_windows.bat", "uninstall_windows.bat"),
+            ],
         }
     },
 ) 
