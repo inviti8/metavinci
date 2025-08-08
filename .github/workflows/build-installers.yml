@@ -297,8 +297,8 @@ jobs:
           echo "Notarytool submission id: $SUBMISSION_ID"
 
           echo "Waiting for notarization result (up to 20 minutes)..."
-          # Poll with a timeout for robustness and better logs
-          xcrun notarytool wait "$SUBMISSION_ID" --keychain-profile "AC_PROFILE" --poll-interval 15 --timeout 1200 --output-format json | tee notarytool_wait.json
+          # Use notarytool wait with a timeout (older Xcode may not support --poll-interval)
+          xcrun notarytool wait "$SUBMISSION_ID" --keychain-profile "AC_PROFILE" --timeout 1200 --output-format json | tee notarytool_wait.json
 
           # Show the notarization log regardless of result
           echo "Fetching notarization log:"
