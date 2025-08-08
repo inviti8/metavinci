@@ -59,6 +59,7 @@ class CrossPlatformBuilder:
             ('platform_manager.py', 'platform_manager.py'),
             ('download_utils.py', 'download_utils.py'),
             ('file_utils.py', 'file_utils.py'),
+            ('macos_install_helper.py', 'macos_install_helper.py'),
         ]
         
         directories = ['images', 'data', 'service']
@@ -115,6 +116,7 @@ class CrossPlatformBuilder:
                 '--collect-all', 'PyQt5.Qt',
                 '--codesign-identity', '-',  # Ad-hoc signing for development
                 '--osx-bundle-identifier', 'com.heavymeta.metavinci',
+                '--hidden-import', 'macos_install_helper',
             ]
             if icon_file.exists():
                 pyinstaller_cmd.extend(['--icon', str(icon_file)])

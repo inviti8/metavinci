@@ -10,6 +10,7 @@ import sys
 import stat
 import tempfile
 import urllib.request
+import ssl
 import tarfile
 import zipfile
 from pathlib import Path
@@ -100,8 +101,16 @@ class MacOSInstallHelper:
             with tempfile.NamedTemporaryFile(delete=False, suffix='.tar.gz') as temp_file:
                 temp_path = Path(temp_file.name)
             
-            # Download the file
-            urllib.request.urlretrieve(url, temp_path)
+            # Download with certifi-backed SSL context to avoid certificate issues
+            try:
+                import certifi
+                context = ssl.create_default_context(cafile=certifi.where())
+            except Exception:
+                context = ssl.create_default_context()
+            
+            req = urllib.request.Request(url, headers={"User-Agent": "Metavinci/1.0"})
+            with urllib.request.urlopen(req, context=context) as resp, open(temp_path, 'wb') as out:
+                out.write(resp.read())
             
             print(f"Downloaded to: {temp_path}")
             return temp_path
@@ -188,6 +197,16 @@ class MacOSInstallHelper:
             
             # Set executable permissions
             os.chmod(self.hvym_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+
+            # Remove macOS quarantine attribute if present to avoid Gatekeeper blocking execution
+            try:
+                import subprocess
+                subprocess.run([
+                    'xattr', '-d', 'com.apple.quarantine', str(self.hvym_path)
+                ], check=False, capture_output=True)
+            except Exception:
+                # Best-effort: ignore if xattr removal fails
+                pass
             
             # Clean up downloaded file
             download_path.unlink()
