@@ -95,6 +95,7 @@ jobs:
         retention-days: 30
 
   build-macos-installer:
+    environment: installers
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -159,6 +160,59 @@ jobs:
           ls -ld "$APP_BUNDLE"
           ls -l "$APP_BUNDLE"
 
+      - name: Create temporary keychain and import Developer ID certificates
+        run: |
+          set -euo pipefail
+
+          # Generate a random keychain password at runtime and mask it
+          KC_PW="$(openssl rand -base64 32)"
+          echo "::add-mask::$KC_PW"
+
+          # Create and unlock a build-scoped keychain
+          security create-keychain -p "$KC_PW" build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
+          security unlock-keychain -p "$KC_PW" build.keychain
+          security list-keychains -d user -s build.keychain login.keychain
+
+          # Import Application signing certificate (.p12)
+          echo "${{ secrets.MACOS_APPLICATION_P12 }}" | base64 -D > app.p12
+          security import app.p12 -k build.keychain -P "${{ secrets.MACOS_CERT_PW }}" -T /usr/bin/codesign
+
+          # Import Installer signing certificate (.p12) (kept for future .pkg signing)
+          echo "${{ secrets.MACOS_INSTALLER_P12 }}" | base64 -D > installer.p12
+          security import installer.p12 -k build.keychain -P "${{ secrets.MACOS_CERT_PW }}" -T /usr/bin/productsign || true
+
+          # Allow codesign/productsign to access the imported keys non-interactively
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PW" build.keychain
+
+          # Capture identities (use SHA-1 hash which is most robust for -s)
+          APP_IDENTITY_HASH=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | head -n1 | awk '{print $2}')
+          if [ -z "$APP_IDENTITY_HASH" ]; then
+            echo "Failed to locate 'Developer ID Application' identity in keychain" >&2
+            security find-identity -v -p codesigning build.keychain | cat
+            exit 1
+          fi
+          echo "Using Application identity: $APP_IDENTITY_HASH"
+
+          echo "APP_IDENTITY_HASH=$APP_IDENTITY_HASH" >> $GITHUB_ENV
+
+      - name: Code sign .app with hardened runtime
+        run: |
+          set -euo pipefail
+          APP_BUNDLE="$(pwd)/build/dist/mac/metavinci_desktop.app"
+          if [ ! -d "$APP_BUNDLE" ]; then
+            echo "App bundle not found at $APP_BUNDLE" >&2
+            exit 1
+          fi
+
+          # Sign the entire bundle. While --deep is not ideal, it helps cover nested items in simple apps.
+          codesign --force --options runtime --timestamp \
+            --sign "$APP_IDENTITY_HASH" --deep "$APP_BUNDLE"
+
+          # Verify signature
+          codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE" | cat
+          spctl -a -vv "$APP_BUNDLE" | cat || true
+
       - name: Create DMG from .app bundle
         run: |
           APP_BUNDLE="$(pwd)/build/dist/mac/metavinci_desktop.app"
@@ -169,6 +223,17 @@ jobs:
           mkdir -p release/mac
           ARCH="${{ matrix.arch }}"
           hdiutil create -volname "Metavinci" -srcfolder "$APP_BUNDLE" -ov -format UDZO "release/mac/metavinci_desktop_${{ github.ref_name }}_${ARCH}.dmg"
+
+      - name: Code sign DMG
+        run: |
+          set -euo pipefail
+          ARCH="${{ matrix.arch }}"
+          DMG_PATH="release/mac/metavinci_desktop_${{ github.ref_name }}_${ARCH}.dmg"
+          if [ ! -f "$DMG_PATH" ]; then
+            echo "DMG not found at $DMG_PATH" >&2
+            exit 1
+          fi
+          codesign --force --timestamp --sign "$APP_IDENTITY_HASH" "$DMG_PATH"
 
       - name: Verify DMG integrity
         run: |
@@ -187,6 +252,33 @@ jobs:
           echo "Mounted at $MOUNT_POINT"
           ls -lR "$MOUNT_POINT"
           hdiutil detach "$MOUNT_POINT"
+
+      - name: Notarize DMG with Apple ID (notarytool)
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID_APP_PW: ${{ secrets.APPLE_ID_APP_PW }}
+        run: |
+          set -euo pipefail
+          ARCH="${{ matrix.arch }}"
+          DMG_PATH="release/mac/metavinci_desktop_${{ github.ref_name }}_${ARCH}.dmg"
+
+          # Store credentials in the temporary keychain profile
+          xcrun notarytool store-credentials "AC_PROFILE" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_ID_APP_PW" \
+            --keychain build.keychain
+
+          # Submit and wait for completion
+          xcrun notarytool submit "$DMG_PATH" --keychain-profile "AC_PROFILE" --wait --progress
+
+      - name: Staple notarization ticket to DMG
+        run: |
+          set -euo pipefail
+          ARCH="${{ matrix.arch }}"
+          DMG_PATH="release/mac/metavinci_desktop_${{ github.ref_name }}_${ARCH}.dmg"
+          xcrun stapler staple "$DMG_PATH"
 
       - name: Upload macOS DMG installer
         uses: actions/upload-artifact@v4
