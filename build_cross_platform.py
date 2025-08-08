@@ -113,6 +113,8 @@ class CrossPlatformBuilder:
                 '--exclude-module', 'unittest',
                 '--exclude-module', 'doctest',
                 '--collect-all', 'PyQt5.Qt',
+                '--codesign-identity', '-',  # Ad-hoc signing for development
+                '--osx-bundle-identifier', 'com.heavymeta.metavinci',
             ]
             if icon_file.exists():
                 pyinstaller_cmd.extend(['--icon', str(icon_file)])
