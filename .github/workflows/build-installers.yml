@@ -284,17 +284,32 @@ jobs:
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_ID_APP_PW"
 
-          # Submit and wait for completion; capture JSON to extract submission id
-          xcrun notarytool submit "$DMG_PATH" --keychain-profile "AC_PROFILE" --wait --progress --output-format json | tee notarytool_submit.json
+          # Submit (non-blocking) and capture JSON to extract submission id
+          echo "Submitting $DMG_PATH to Apple notarization service..."
+          xcrun notarytool submit "$DMG_PATH" --keychain-profile "AC_PROFILE" --output-format json | tee notarytool_submit.json
 
           SUBMISSION_ID=$(python3 -c "import json,sys;print(json.load(open('notarytool_submit.json')).get('id',''))" || echo "")
-          if [ -n "$SUBMISSION_ID" ]; then
-            echo "Notarytool submission id: $SUBMISSION_ID"
-            echo "Fetching notarization log:"
-            xcrun notarytool log "$SUBMISSION_ID" --keychain-profile "AC_PROFILE" | cat || true
-          else
-            echo "Warning: Could not extract submission id from notarytool output" >&2
+          if [ -z "$SUBMISSION_ID" ]; then
+            echo "Error: Could not extract submission id from notarytool submission output" >&2
             cat notarytool_submit.json || true
+            exit 1
+          fi
+          echo "Notarytool submission id: $SUBMISSION_ID"
+
+          echo "Waiting for notarization result (up to 20 minutes)..."
+          # Poll with a timeout for robustness and better logs
+          xcrun notarytool wait "$SUBMISSION_ID" --keychain-profile "AC_PROFILE" --poll-interval 15 --timeout 1200 --output-format json | tee notarytool_wait.json
+
+          # Show the notarization log regardless of result
+          echo "Fetching notarization log:"
+          xcrun notarytool log "$SUBMISSION_ID" --keychain-profile "AC_PROFILE" | cat || true
+
+          # If wait.json indicates an error, fail the step explicitly
+          STATUS=$(python3 -c "import json;print(json.load(open('notarytool_wait.json')).get('status',''))" || echo "")
+          echo "Notarization status: $STATUS"
+          if [ "$STATUS" != "Accepted" ]; then
+            echo "Notarization did not complete successfully (status=$STATUS)" >&2
+            exit 1
           fi
 
       - name: Staple notarization ticket to DMG
