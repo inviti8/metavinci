@@ -18,24 +18,34 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v4
-      with:
-        python-version: 3.11
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
 
-    - name: Install dependencies
+    - name: Build Linux installer with Docker (Ubuntu 20.04 for compatibility)
+      id: docker-build
       run: |
+        # Build the Docker image for Linux compatibility
+        docker build -f Dockerfile.linux-build -t metavinci-linux-build .
+        
+        # Run the build inside Docker container
+        docker run --rm -v $(pwd):/app -w /app metavinci-linux-build \
+          python build_installers.py --platform linux --version ${{ github.ref_name }}
+      continue-on-error: true
+
+    - name: Fallback Linux build (if Docker fails)
+      if: steps.docker-build.outcome == 'failure'
+      run: |
+        echo "Docker build failed, falling back to native build..."
+        # Set up Python 3.11
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pyinstaller Pillow icnsutil
-
-    - name: Install system Qt libraries (Linux only)
-      run: |
+        
+        # Install system Qt libraries
         sudo apt-get update
         sudo apt-get install -y libxcb-xinerama0 libxcb-xinerama0-dev libxcb1 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-randr0 libxcb-xfixes0 libxcb-sync1 libxcb-xkb1 libxkbcommon-x11-0
-
-    - name: Build Linux installer
-      run: |
+        
+        # Build with compatibility flags
         python build_installers.py --platform linux --version ${{ github.ref_name }}
 
     - name: Upload Linux installer
