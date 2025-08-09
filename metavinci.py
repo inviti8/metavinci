@@ -1683,15 +1683,10 @@ class Metavinci(QMainWindow):
         self.hide()
         worker.deleteLater()
         
-        # Update UI
-        self.install_hvym_action.setVisible(False)
-        self.update_hvym_action.setVisible(True)
-        
+        # Update UI to reflect hvym availability
+        self._update_ui_on_hvym_installed()
         # Show success message
         self.open_msg_dialog(success_msg)
-        
-        # Restart after a delay
-        QTimer.singleShot(1000, self.restart)
 
 
     def _update_hvym(self):
@@ -1726,6 +1721,8 @@ class Metavinci(QMainWindow):
         self.hide()
         worker.deleteLater()
         
+        # Ensure UI remains consistent after update
+        self._update_ui_on_hvym_installed()
         # Show success message
         self.open_msg_dialog(success_msg)
 
@@ -1816,15 +1813,8 @@ class Metavinci(QMainWindow):
         self.hide()
         worker.deleteLater()
         
-        # Update UI - create Pintheon menu
-        self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
-        self.install_pintheon_action.setVisible(False)
-        self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
-        self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
-            
-        self.tray_pintheon_menu.addAction(self.run_pintheon_action)
-        self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
-        self.tray_pintheon_menu.addAction(self.open_tunnel_action)
+        # Update UI - create/refresh Pintheon menu
+        self._ensure_pintheon_menu()
         
         # Update database
         self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
@@ -1833,7 +1823,27 @@ class Metavinci(QMainWindow):
         self.open_msg_dialog(success_msg)
         
         # Restart after a delay
-        QTimer.singleShot(1000, self.restart)
+        # No restart required
+
+    def _ensure_pintheon_menu(self):
+        # Create Pintheon menu if not present, otherwise refresh
+        if not hasattr(self, 'tray_pintheon_menu') or self.tray_pintheon_menu is None:
+            self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
+        self.tray_pintheon_menu.clear()
+        self.tray_pintheon_menu.setIcon(self.pintheon_icon)
+        self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
+        self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
+        self.tray_pintheon_menu.addAction(self.run_pintheon_action)
+        self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
+        self.tray_pintheon_menu.addAction(self.open_tunnel_action)
+
+    def _update_ui_on_hvym_installed(self):
+        # Toggle install/update visibility
+        self.install_hvym_action.setVisible(False)
+        self.update_hvym_action.setVisible(True)
+        # If Pintheon is installed, ensure its menu exists
+        self.PINTHEON_INSTALLED = 'True'
+        self._ensure_pintheon_menu()
 
     def _start_pintheon(self):
         start = self.open_confirm_dialog('Start Pintheon Gateway?')
