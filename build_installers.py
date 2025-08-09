@@ -37,6 +37,8 @@ def build_linux_installer(version):
     release_linux_dir = release_dir / "linux"
     src_bin = dist_dir / bin_name
     src_icon = cwd / 'metavinci_desktop.png'
+    # Menu icon (smaller) for /usr/share/pixmaps
+    src_menu_icon = cwd / 'images' / 'hvym_logo_64.png'
     src_ctrl = cwd / 'linux' / 'control'
     src_desktop = cwd / 'linux' / 'metavinci.desktop'
     pkg_dir = cwd / f'metavinci_desktop_{version}'
@@ -45,13 +47,15 @@ def build_linux_installer(version):
     bin_dir = usr_dir / 'bin'
     share_dir = usr_dir / 'share'
     app_dir = share_dir  / 'applications'
+    pixmaps_dir = share_dir / 'pixmaps'
     icon_dir = share_dir / 'icons'
     hicolor_dir = icon_dir / 'hicolor'
     icon_size_dir = hicolor_dir / '512x512'
     icon_apps_dir = icon_size_dir / 'apps'
     dest_ctrl = deb_dir / 'control'
     dest_desktop = app_dir / 'metavinci.desktop'
-    dest_bin = bin_dir / 'metavinci_desktop'
+    # Install binary under the name expected by the .desktop Exec
+    dest_bin = bin_dir / 'metavinci'
     deb = cwd / f'metavinci_desktop_{version}.deb'
     dest_deb = release_linux_dir / f'metavinci-desktop_{version}_amd64.deb'
     dest_icon = icon_apps_dir / 'metavinci_desktop.png'
@@ -61,7 +65,7 @@ def build_linux_installer(version):
     _clean_dir(release_dir)
     if pkg_dir.exists():
         shutil.rmtree(pkg_dir)
-    for d in [release_dir, release_linux_dir, pkg_dir, deb_dir, usr_dir, bin_dir, share_dir, app_dir, icon_dir, hicolor_dir, icon_size_dir, icon_apps_dir]:
+    for d in [release_dir, release_linux_dir, pkg_dir, deb_dir, usr_dir, bin_dir, share_dir, app_dir, pixmaps_dir, icon_dir, hicolor_dir, icon_size_dir, icon_apps_dir]:
         d.mkdir(parents=True, exist_ok=True)
     if deb.is_file():
         deb.unlink()
@@ -71,6 +75,17 @@ def build_linux_installer(version):
     shutil.copy(src_desktop, dest_desktop)
     shutil.copy(src_bin,  dest_bin)
     shutil.copy(src_icon,  dest_icon)
+    # Also install a standard pixmap icon for direct absolute Icon path
+    try:
+        if src_menu_icon.exists():
+            dest_pixmap = pixmaps_dir / 'metavinci.png'
+            shutil.copy(src_menu_icon, dest_pixmap)
+        else:
+            # fallback to the large icon
+            dest_pixmap = pixmaps_dir / 'metavinci.png'
+            shutil.copy(src_icon, dest_pixmap)
+    except Exception as e:
+        print(f"[WARN] Could not install pixmap icon: {e}")
     
     # Copy uninstall script if it exists
     src_uninstall = cwd / 'uninstall_linux.sh'
