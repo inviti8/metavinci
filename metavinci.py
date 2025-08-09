@@ -1398,38 +1398,11 @@ class Metavinci(QMainWindow):
         return self._subprocess_hvym([str(self.HVYM), 'pinggy-token'])
     
     def hvym_start_pintheon(self):
-        # Update the pintheon icon variable
-        self.pintheon_icon = QIcon(self.ON_IMG)
-        # Update the actual tray icon
-        self.tray_icon.setIcon(QIcon(self.LOGO_IMG_ACTIVE))
-        # Update the menu action icons
-        self.run_pintheon_action.setIcon(self.pintheon_icon)
-        self.stop_pintheon_action.setIcon(self.pintheon_icon)
-
-        # Hide start action, show stop action
-        self.run_pintheon_action.setVisible(False)
-        self.stop_pintheon_action.setVisible(True)
-
-        if len(self.TUNNEL_TOKEN) < 7:
-            self.open_tunnel_action.setVisible(False)
-        else:
-            self.open_tunnel_action.setVisible(True)
-        
+        # Only run the CLI; UI updates must occur on main thread after completion
         return self._subprocess_hvym([str(self.HVYM), 'pintheon-start'])
     
     def hvym_stop_pintheon(self):
-        # Update the pintheon icon variable
-        self.pintheon_icon = QIcon(self.OFF_IMG)
-        # Update the actual tray icon
-        self.tray_icon.setIcon(QIcon(self.LOGO_IMG))
-        # Update the menu action icons
-        self.run_pintheon_action.setIcon(self.pintheon_icon)
-        self.stop_pintheon_action.setIcon(self.pintheon_icon)
-        # Show start action, hide stop action
-        self.run_pintheon_action.setVisible(True)
-        self.stop_pintheon_action.setVisible(False)
-        self.open_tunnel_action.setVisible(False)
-
+        # Only run the CLI; UI updates must occur on main thread after completion
         return self._subprocess_hvym([str(self.HVYM), 'pintheon-stop'])
     
     def hvym_open_tunnel(self):
@@ -1838,6 +1811,8 @@ class Metavinci(QMainWindow):
         try:
             self.hvym_start_pintheon()
             self.PINTHEON_ACTIVE = True
+            # Defer UI updates to main thread
+            QTimer.singleShot(0, self._update_ui_on_pintheon_started)
         except Exception as e:
             print(e)
             # Re-raise to trigger error signal
@@ -1848,6 +1823,17 @@ class Metavinci(QMainWindow):
         loading_window.close()
         self.hide()
         worker.deleteLater()
+        # Ensure UI reflects started state
+        self._update_ui_on_pintheon_started()
+
+    def _update_ui_on_pintheon_started(self):
+        self.pintheon_icon = QIcon(self.ON_IMG)
+        self.tray_icon.setIcon(QIcon(self.LOGO_IMG_ACTIVE))
+        self.run_pintheon_action.setIcon(self.pintheon_icon)
+        self.stop_pintheon_action.setIcon(self.pintheon_icon)
+        self.run_pintheon_action.setVisible(False)
+        self.stop_pintheon_action.setVisible(True)
+        self.open_tunnel_action.setVisible(len(self.TUNNEL_TOKEN) >= 7)
 
     def _stop_pintheon(self):
         start = self.open_confirm_dialog('Stop Pintheon Gateway?')
@@ -1878,6 +1864,8 @@ class Metavinci(QMainWindow):
         try:
             self.hvym_stop_pintheon()
             self.PINTHEON_ACTIVE = False
+            # Defer UI updates to main thread
+            QTimer.singleShot(0, self._update_ui_on_pintheon_stopped)
         except Exception as e:
             print(e)
             # Re-raise to trigger error signal
@@ -1888,6 +1876,17 @@ class Metavinci(QMainWindow):
         loading_window.close()
         self.hide()
         worker.deleteLater()
+        # Ensure UI reflects stopped state
+        self._update_ui_on_pintheon_stopped()
+
+    def _update_ui_on_pintheon_stopped(self):
+        self.pintheon_icon = QIcon(self.OFF_IMG)
+        self.tray_icon.setIcon(QIcon(self.LOGO_IMG))
+        self.run_pintheon_action.setIcon(self.pintheon_icon)
+        self.stop_pintheon_action.setIcon(self.pintheon_icon)
+        self.run_pintheon_action.setVisible(True)
+        self.stop_pintheon_action.setVisible(False)
+        self.open_tunnel_action.setVisible(False)
 
     def _open_tunnel(self):
         expose = self.open_confirm_dialog('Expose Pintheon Gateway to the Internet?')
