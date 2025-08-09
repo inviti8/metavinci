@@ -2027,6 +2027,11 @@ class Metavinci(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    # Keep the app alive even if all windows are hidden/closed; tray remains active
+    try:
+        app.setQuitOnLastWindowClosed(False)
+    except Exception:
+        pass
     mw = Metavinci()
     mw.show()
     mw.setFixedSize(70,70)

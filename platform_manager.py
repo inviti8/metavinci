@@ -29,6 +29,10 @@ class PlatformManager:
         """Get the binary directory path"""
         config_path = self.get_config_path()
         return config_path / 'bin'
+
+    def get_logs_path(self):
+        """Get the logs directory path under the config path"""
+        return self.get_config_path() / 'logs'
     
     def get_dfx_path(self):
         """Get DFX binary path"""
