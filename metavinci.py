@@ -33,7 +33,7 @@ Usage Example:
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QLineEdit, QWidgetAction, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QComboBox, QDialogButtonBox, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp, QVBoxLayout, QPushButton, QDialog, QDesktopWidget, QFileDialog, QMessageBox, QSplashScreen
 from PyQt5.QtCore import Qt, QSize, QTimer, QByteArray, QThread, pyqtSignal
 from PyQt5.QtGui import QMovie
-from PyQt5.QtGui import QIcon, QPixmap
+from PyQt5.QtGui import QIcon, QPixmap, QImageReader
 from pathlib import Path
 import subprocess
 import os
@@ -303,21 +303,17 @@ class AnimatedLoadingWindow(QWidget):
         layout.addWidget(self.text_label)
         
         # Set up the GIF animation - create only ONE instance
+        self.gif_path = gif_path
         self.movie = QMovie(gif_path, QByteArray(), self)
         self.movie.setCacheMode(QMovie.CacheAll)
-        
-        # Debug: Check the original frame count and speed
-        print(f"GIF file: {gif_path}")
-        print(f"Movie frame count: {self.movie.frameCount()}")
-        
+        self._sized_from_frame = False
+        # Size window once the first valid frame arrives (frameCount can be -1 until fully loaded)
+        self.movie.frameChanged.connect(self._on_movie_frame_changed)
+
         # Set up the label with the movie
         self.animated_label.setMovie(self.movie)
         
-        # Load the movie to get size info, then stop it
-        self.movie.start()
-        self.movie.stop()  # Stop it so we can control when it starts
-        
-        # Size the window based on the GIF dimensions
+        # Try to pre-compute window size before animation starts
         self.size_window_to_gif()
         
         # Center the window
@@ -329,17 +325,36 @@ class AnimatedLoadingWindow(QWidget):
         
     def size_window_to_gif(self):
         """Size the window based on the GIF dimensions plus padding for text."""
-        # Get the GIF size
+        # Get the GIF size from the current pixmap if available
         gif_size = self.movie.currentPixmap().size()
-        
+
         if gif_size.isValid() and gif_size.width() > 0 and gif_size.height() > 0:
             # Add padding for text label and margins
             window_width = gif_size.width() + 80  # 20px padding on each side
             window_height = gif_size.height() + 200  # Extra space for text label
             self.setFixedSize(window_width, window_height)
         else:
-            # Fallback size if GIF size can't be determined
-            self.setFixedSize(300, 200)
+            # Fallback: use image reader to query dimensions without loading frames
+            try:
+                reader = QImageReader(self.gif_path)
+                size = reader.size()
+                if size.isValid() and size.width() > 0 and size.height() > 0:
+                    window_width = size.width() + 80
+                    window_height = size.height() + 200
+                    self.setFixedSize(window_width, window_height)
+                else:
+                    # Final fallback size if dimensions can't be determined yet
+                    self.setFixedSize(300, 200)
+            except Exception:
+                self.setFixedSize(300, 200)
+
+    def _on_movie_frame_changed(self, frame_index: int):
+        # The first valid frame guarantees we know the size; only adjust once
+        if not self._sized_from_frame:
+            pix = self.movie.currentPixmap()
+            if not pix.isNull() and pix.size().isValid():
+                self.size_window_to_gif()
+                self._sized_from_frame = True
         
     def center_window(self):
         """Center the window on screen using the same method as the main window."""
@@ -1314,9 +1329,10 @@ class Metavinci(QMainWindow):
             return None
         
     def _subprocess_hvym(self, command):
-        # Run hvym from the user's HOME to keep Docker bind paths stable across launch methods
-        home_dir = str(Path.home())
-        return self._subprocess(command, cwd=home_dir)
+        # Run hvym from its install directory to preserve any relative resource lookups
+        hvym_path = Path(self.HVYM)
+        cli_dir = str(hvym_path.parent)
+        return self._subprocess(command, cwd=cli_dir)
     
     def _run(self, command):
         try:
