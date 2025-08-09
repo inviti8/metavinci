@@ -323,6 +323,14 @@ class AnimatedLoadingWindow(QWidget):
         # Ensure window is visible and on top
         self.raise_()
         self.activateWindow()
+
+        # Start animation immediately for reliability on macOS/Linux
+        self.movie.setSpeed(120)
+        self.movie.start()
+        # Keep animation ticking (QMovie requires regular event processing)
+        self._keep_alive_timer = QTimer(self)
+        self._keep_alive_timer.timeout.connect(self.ensure_animation_running)
+        self._keep_alive_timer.start(500)
         
     def size_window_to_gif(self):
         """Size the window based on the GIF dimensions plus padding for text."""
