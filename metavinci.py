@@ -137,11 +137,8 @@ class PintheonInstallWorker(LoadingWorker):
 
             # Ensure PyInstaller runtime can create its temp directories (fixes PYI-16001/16006)
             try:
-                tmp_base = None
-                if platform.system().lower() == 'darwin':
-                    tmp_base = Path.home() / 'Library' / 'Application Support' / 'Metavinci' / 'tmp'
-                else:
-                    tmp_base = Path.home() / '.metavinci_tmp'
+                # Use a temp directory without spaces to avoid PyInstaller issues on macOS
+                tmp_base = Path.home() / '.metavinci_tmp'
                 tmp_base.mkdir(parents=True, exist_ok=True)
                 env['TMPDIR'] = str(tmp_base)
                 env['TEMP'] = str(tmp_base)
@@ -1218,8 +1215,15 @@ class Metavinci(QMainWindow):
 
     def _subprocess(self, command, cwd=None):
         try:
-            output = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT, cwd=cwd)
-            return output.decode('utf-8')
+            # Support both string (shell) and list (exec) command forms
+            if isinstance(command, (list, tuple)):
+                result = subprocess.run(list(command), capture_output=True, text=True, cwd=cwd)
+                if result.returncode == 0:
+                    return result.stdout
+                return None
+            else:
+                output = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT, cwd=cwd)
+                return output.decode('utf-8')
         except Exception as e:
             return None
         
@@ -1238,58 +1242,58 @@ class Metavinci(QMainWindow):
             return None
         
     def run_press(self):
-        self._subprocess(str(self.PRESS))
+        self._subprocess([str(self.PRESS)])
 
     def splash(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} splash'))
+        return self._subprocess_hvym([str(self.HVYM), 'splash'])
     
     def new_stellar_account(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} stellar-new-account'))
+        return self._subprocess_hvym([str(self.HVYM), 'stellar-new-account'])
 
     def change_stellar_account(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} stellar-set-account'))
+        return self._subprocess_hvym([str(self.HVYM), 'stellar-set-account'])
 
     def remove_stellar_account(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} stellar-remove-account'))
+        return self._subprocess_hvym([str(self.HVYM), 'stellar-remove-account'])
     
     def new_stellar_testnet_account(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} stellar-new-testnet-account'))
+        return self._subprocess_hvym([str(self.HVYM), 'stellar-new-testnet-account'])
 
     def new_ic_account(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} icp-new-account'))
+        return self._subprocess_hvym([str(self.HVYM), 'icp-new-account'])
 
     def new_ic_test_account(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} icp-new-test-account'))
+        return self._subprocess_hvym([str(self.HVYM), 'icp-new-test-account'])
 
     def change_ic_account(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} icp-set-account'))
+        return self._subprocess_hvym([str(self.HVYM), 'icp-set-account'])
 
     def remove_ic_account(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} icp-remove-account'))
+        return self._subprocess_hvym([str(self.HVYM), 'icp-remove-account'])
     
     def get_ic_principal(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} icp-active-principal'))
+        return self._subprocess_hvym([str(self.HVYM), 'icp-active-principal'])
 
     def hvym_check(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} check'))
+        return self._subprocess_hvym([str(self.HVYM), 'check'])
     
     def hvym_install_didc(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} didc-install'))
+        return self._subprocess_hvym([str(self.HVYM), 'didc-install'])
     
     def hvym_gen_candid_js(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} didc-bind-js-popup'))
+        return self._subprocess_hvym([str(self.HVYM), 'didc-bind-js-popup'])
     
     def hvym_gen_candid_ts(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} didc-bind-ts-popup'))
+        return self._subprocess_hvym([str(self.HVYM), 'didc-bind-ts-popup'])
     
     def hvym_setup_pintheon(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} pintheon-setup'))
+        return self._subprocess_hvym([str(self.HVYM), 'pintheon-setup'])
 
     def hvym_pintheon_exists(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} pintheon-image-exists'))
+        return self._subprocess_hvym([str(self.HVYM), 'pintheon-image-exists'])
 
     def hvym_tunnel_token_exists(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} pinggy-token'))
+        return self._subprocess_hvym([str(self.HVYM), 'pinggy-token'])
     
     def hvym_start_pintheon(self):
         # Update the pintheon icon variable
@@ -1309,7 +1313,7 @@ class Metavinci(QMainWindow):
         else:
             self.open_tunnel_action.setVisible(True)
         
-        return(self._subprocess_hvym(f'{str(self.HVYM)} pintheon-start'))
+        return self._subprocess_hvym([str(self.HVYM), 'pintheon-start'])
     
     def hvym_stop_pintheon(self):
         # Update the pintheon icon variable
@@ -1324,7 +1328,7 @@ class Metavinci(QMainWindow):
         self.stop_pintheon_action.setVisible(False)
         self.open_tunnel_action.setVisible(False)
 
-        return(self._subprocess_hvym(f'{str(self.HVYM)} pintheon-stop'))
+        return self._subprocess_hvym([str(self.HVYM), 'pintheon-stop'])
     
     def hvym_open_tunnel(self):
         # Update the pintheon icon variable
@@ -1334,7 +1338,7 @@ class Metavinci(QMainWindow):
         self.open_tunnel_action.setIcon(self.tunnel_icon)
         # Hide start action, show stop action
         self.open_tunnel_action.setVisible(False)
-        return(self._subprocess_hvym(f'{str(self.HVYM)} pintheon-tunnel-open'))
+        return self._subprocess_hvym([str(self.HVYM), 'pintheon-tunnel-open'])
 
     def hvym_close_tunnel(self):
         # Update the pintheon icon variable
@@ -1344,13 +1348,13 @@ class Metavinci(QMainWindow):
         self.open_tunnel_action.setIcon(self.tunnel_icon)
         # Hide start action, show stop action
         self.open_tunnel_action.setVisible(True)
-        return(self._subprocess_hvym(f'{str(self.HVYM)} pintheon-tunnel-close'))
+        return self._subprocess_hvym([str(self.HVYM), 'pintheon-tunnel-close'])
     
     def hvym_set_tunnel_token(self):
-        return(self._subprocess_hvym(f'{str(self.HVYM)} pinggy-set-token'))
+        return self._subprocess_hvym([str(self.HVYM), 'pinggy-set-token'])
 
     def hvym_is_tunnel_open(self):
-        return(self._subproces_hvym(f'{str(self.HVYM)} is-pintheon-tunnel-open'))
+        return self._subprocess_hvym([str(self.HVYM), 'is-pintheon-tunnel-open'])
 
     def update_tools(self):
         update = self.open_confirm_dialog('You want to update Heavymeta Tools?')
