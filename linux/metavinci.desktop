@@ -6,6 +6,6 @@ GenericName=Heavymeta Tools Daemon
 Comment=Manage Heavymeta Tools and Updates.
 Exec=/usr/bin/metavinci
 Terminal=false
-Icon=metavinci_desktop
+Icon=/usr/share/pixmaps/metavinci.png
 Keywords=Metavinci;Heavymeta;
 Categories=Web3;Art;
