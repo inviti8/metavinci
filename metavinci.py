@@ -1837,53 +1837,18 @@ class Metavinci(QMainWindow):
 
     def _start_pintheon(self):
         start = self.open_confirm_dialog('Start Pintheon Gateway?')
-        if start == True:
-            # Create a simple worker for starting Pintheon
-            worker = LoadingWorker(self._start_pintheon_worker)
-            
-            # Create loading window
-            loading_window = LoadingWindow(self, 'Starting Pintheon...')
-            loading_window.show()
-            loading_window.raise_()
-            loading_window.activateWindow()
-            QApplication.processEvents()
-            
-            # Connect signals (ensure UI updates happen on main thread)
-            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_pintheon_start_finished(loading_window, worker)))
-            worker.error.connect(lambda error_msg: self._on_loading_error(loading_window, worker, error_msg))
-            
-            # Start the worker thread
-            worker.start()
-            
-            # Store references to prevent garbage collection
-            self._current_loading_window = loading_window
-            self._current_worker = worker
-    
-    def _start_pintheon_worker(self):
-        """Worker function for starting Pintheon in background thread."""
-        try:
+        if start:
+            # Run synchronously on main thread (simpler, avoids threading/timer issues)
             result = self.hvym_start_pintheon()
-            if result is None:
-                raise Exception('pintheon-start failed')
-            self.PINTHEON_ACTIVE = True
-            # Defer UI updates to main thread
-            QTimer.singleShot(0, self._update_ui_on_pintheon_started)
-        except Exception as e:
-            try:
-                if hasattr(self, 'logger'):
-                    self.logger.exception('Failed to start Pintheon')
-            except Exception:
-                pass
-            # Re-raise to trigger error signal
-            raise e
+            if result is not None:
+                self.PINTHEON_ACTIVE = True
+                self._update_ui_on_pintheon_started()
+            else:
+                self.open_msg_dialog('Failed to start Pintheon. Check logs for details.')
     
-    def _on_pintheon_start_finished(self, loading_window, worker):
-        """Handle completion of Pintheon start operation."""
-        loading_window.close()
-        self.hide()
-        worker.deleteLater()
-        # Ensure UI reflects started state
-        self._update_ui_on_pintheon_started()
+    # Worker-based start removed (synchronous path used)
+    
+    # Worker-based start completion removed
 
     def _update_ui_on_pintheon_started(self):
         self.pintheon_icon = QIcon(self.ON_IMG)
@@ -1895,54 +1860,19 @@ class Metavinci(QMainWindow):
         self.open_tunnel_action.setVisible(len(self.TUNNEL_TOKEN) >= 7)
 
     def _stop_pintheon(self):
-        start = self.open_confirm_dialog('Stop Pintheon Gateway?')
-        if start == True:
-            # Create a simple worker for stopping Pintheon
-            worker = LoadingWorker(self._stop_pintheon_worker)
-            
-            # Create loading window
-            loading_window = LoadingWindow(self, 'Stopping Pintheon...')
-            loading_window.show()
-            loading_window.raise_()
-            loading_window.activateWindow()
-            QApplication.processEvents()
-            
-            # Connect signals (ensure UI updates happen on main thread)
-            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_pintheon_stop_finished(loading_window, worker)))
-            worker.error.connect(lambda error_msg: self._on_loading_error(loading_window, worker, error_msg))
-            
-            # Start the worker thread
-            worker.start()
-            
-            # Store references to prevent garbage collection
-            self._current_loading_window = loading_window
-            self._current_worker = worker
-    
-    def _stop_pintheon_worker(self):
-        """Worker function for stopping Pintheon in background thread."""
-        try:
+        stop = self.open_confirm_dialog('Stop Pintheon Gateway?')
+        if stop:
+            # Run synchronously on main thread
             result = self.hvym_stop_pintheon()
-            if result is None:
-                raise Exception('pintheon-stop failed')
-            self.PINTHEON_ACTIVE = False
-            # Defer UI updates to main thread
-            QTimer.singleShot(0, self._update_ui_on_pintheon_stopped)
-        except Exception as e:
-            try:
-                if hasattr(self, 'logger'):
-                    self.logger.exception('Failed to stop Pintheon')
-            except Exception:
-                pass
-            # Re-raise to trigger error signal
-            raise e
+            if result is not None:
+                self.PINTHEON_ACTIVE = False
+                self._update_ui_on_pintheon_stopped()
+            else:
+                self.open_msg_dialog('Failed to stop Pintheon. Check logs for details.')
     
-    def _on_pintheon_stop_finished(self, loading_window, worker):
-        """Handle completion of Pintheon stop operation."""
-        loading_window.close()
-        self.hide()
-        worker.deleteLater()
-        # Ensure UI reflects stopped state
-        self._update_ui_on_pintheon_stopped()
+    # Worker-based stop removed (synchronous path used)
+    
+    # Worker-based stop completion removed
 
     def _update_ui_on_pintheon_stopped(self):
         self.pintheon_icon = QIcon(self.OFF_IMG)
