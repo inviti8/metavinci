@@ -61,8 +61,7 @@ class CrossPlatformBuilder:
             ('file_utils.py', 'file_utils.py'),
             ('macos_install_helper.py', 'macos_install_helper.py'),
             ('resources.qrc', 'resources.qrc'),
-            ('linux_compatibility.py', 'linux_compatibility.py'),
-            ('test_linux_compatibility.py', 'test_linux_compatibility.py'),
+            ('runtime_hook.py', 'runtime_hook.py'),
         ]
         
         directories = ['images', 'data', 'service']
@@ -171,18 +170,8 @@ class CrossPlatformBuilder:
                 '--exclude-module', 'unittest',
                 '--exclude-module', 'doctest',
                 '--collect-all', 'PyQt5.Qt',
-                # Linux compatibility flags to avoid glibc version issues
-                '--runtime-hook', 'linux_compatibility.py',
-                '--hidden-import', 'linux_compatibility',
-                # Bundle all libraries to avoid system dependency issues
-                '--collect-all', 'lib',
-                '--collect-all', 'lib64',
-                # Additional compatibility options
-                '--hidden-import', 'ctypes',
-                '--hidden-import', 'ctypes.util',
-                '--hidden-import', 'lib2to3',
-                # Use static linking where possible
-                '--static-lib',
+                '--runtime-hook', 'runtime_hook.py',
+                '--hidden-import', 'PyQt5.sip',
             ]
             if icon_file.exists():
                 pyinstaller_cmd.extend(['--icon', str(icon_file)])
