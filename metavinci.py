@@ -62,6 +62,7 @@ import tarfile
 import zipfile
 import shutil
 import requests
+import logging
 
 class LoadingWorker(QThread):
     """
@@ -493,6 +494,8 @@ class Metavinci(QMainWindow):
         self.platform_manager = PlatformManager()
         # Build a stable subprocess environment, especially for macOS (Finder launches have a minimal PATH)
         self.proc_env = self._build_subprocess_env()
+        # Initialize file logging early
+        self._init_logging()
         
         self.HOME = os.path.expanduser('~')
         self.PATH = self.platform_manager.get_config_path()
@@ -836,6 +839,34 @@ class Metavinci(QMainWindow):
             splash.close()
         self.hide()
         
+
+    def _init_logging(self):
+        """Initialize application logging to a file under the config directory."""
+        try:
+            logs_dir = self.platform_manager.get_config_path() / 'logs'
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            log_path = logs_dir / 'metavinci.log'
+
+            self.logger = logging.getLogger('metavinci')
+            self.logger.setLevel(logging.INFO)
+            # Avoid duplicate handlers
+            if not self.logger.handlers:
+                fh = logging.FileHandler(str(log_path))
+                fh.setLevel(logging.INFO)
+                formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+                fh.setFormatter(formatter)
+                self.logger.addHandler(fh)
+
+            # Capture uncaught exceptions
+            def _excepthook(exc_type, exc_value, exc_tb):
+                try:
+                    self.logger.exception('Uncaught exception', exc_info=(exc_type, exc_value, exc_tb))
+                except Exception:
+                    pass
+            sys.excepthook = _excepthook
+            self.logger.info('Logger initialized')
+        except Exception:
+            pass
 
     def _build_subprocess_env(self):
         """Create a robust environment for subprocesses to work when launched from Applications on macOS."""
@@ -1318,14 +1349,36 @@ class Metavinci(QMainWindow):
         try:
             # Support both string (shell) and list (exec) command forms
             if isinstance(command, (list, tuple)):
+                if hasattr(self, 'logger'):
+                    self.logger.info(f"RUN (exec): {command} | cwd={cwd}")
                 result = subprocess.run(list(command), capture_output=True, text=True, cwd=cwd, env=self.proc_env)
+                if hasattr(self, 'logger'):
+                    self.logger.info(f"RET={result.returncode}\nSTDOUT=\n{result.stdout}\nSTDERR=\n{result.stderr}")
                 if result.returncode == 0:
                     return result.stdout
                 return None
             else:
+                if hasattr(self, 'logger'):
+                    self.logger.info(f"RUN (shell): {command} | cwd={cwd}")
                 output = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT, cwd=cwd, env=self.proc_env)
-                return output.decode('utf-8')
-        except Exception as e:
+                text = output.decode('utf-8')
+                if hasattr(self, 'logger'):
+                    self.logger.info(f"RET=0\nSTDOUT=\n{text}")
+                return text
+        except subprocess.CalledProcessError as e:
+            try:
+                if hasattr(self, 'logger'):
+                    out = e.output.decode('utf-8', errors='replace') if isinstance(e.output, (bytes, bytearray)) else str(e.output)
+                    self.logger.error(f"NONZERO (shell): code={e.returncode}\nOUTPUT=\n{out}")
+            except Exception:
+                pass
+            return None
+        except Exception:
+            try:
+                if hasattr(self, 'logger'):
+                    self.logger.exception(f"Subprocess error for command={command}")
+            except Exception:
+                pass
             return None
         
     def _subprocess_hvym(self, command):
@@ -1809,12 +1862,18 @@ class Metavinci(QMainWindow):
     def _start_pintheon_worker(self):
         """Worker function for starting Pintheon in background thread."""
         try:
-            self.hvym_start_pintheon()
+            result = self.hvym_start_pintheon()
+            if result is None:
+                raise Exception('pintheon-start failed')
             self.PINTHEON_ACTIVE = True
             # Defer UI updates to main thread
             QTimer.singleShot(0, self._update_ui_on_pintheon_started)
         except Exception as e:
-            print(e)
+            try:
+                if hasattr(self, 'logger'):
+                    self.logger.exception('Failed to start Pintheon')
+            except Exception:
+                pass
             # Re-raise to trigger error signal
             raise e
     
@@ -1862,12 +1921,18 @@ class Metavinci(QMainWindow):
     def _stop_pintheon_worker(self):
         """Worker function for stopping Pintheon in background thread."""
         try:
-            self.hvym_stop_pintheon()
+            result = self.hvym_stop_pintheon()
+            if result is None:
+                raise Exception('pintheon-stop failed')
             self.PINTHEON_ACTIVE = False
             # Defer UI updates to main thread
             QTimer.singleShot(0, self._update_ui_on_pintheon_stopped)
         except Exception as e:
-            print(e)
+            try:
+                if hasattr(self, 'logger'):
+                    self.logger.exception('Failed to stop Pintheon')
+            except Exception:
+                pass
             # Re-raise to trigger error signal
             raise e
     
