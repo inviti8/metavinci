@@ -13,8 +13,9 @@ permissions:
 
 jobs:
   build-linux-installer:
-    runs-on: ubuntu-20.04
-    # Linux-specific build job - using ubuntu-20.04 for glibc compatibility
+    runs-on: ubuntu-22.04
+    # Linux-specific build job - using ubuntu-22.04 for current compatibility
+    # Note: ubuntu-20.04 was deprecated, ubuntu-22.04 provides glibc 2.35 which is widely compatible
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
