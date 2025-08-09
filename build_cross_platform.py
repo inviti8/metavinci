@@ -60,6 +60,7 @@ class CrossPlatformBuilder:
             ('download_utils.py', 'download_utils.py'),
             ('file_utils.py', 'file_utils.py'),
             ('macos_install_helper.py', 'macos_install_helper.py'),
+            ('resources.qrc', 'resources.qrc'),
         ]
         
         directories = ['images', 'data', 'service']
@@ -101,6 +102,19 @@ class CrossPlatformBuilder:
                 raise
         else:
             print("Warning: No requirements file found to install dependencies")
+        # Compile Qt resources (minimal: loading.gif)
+        try:
+            qrc_src = self.build_dir / 'resources.qrc'
+            if qrc_src.exists():
+                resources_py = self.build_dir / 'resources_rc.py'
+                # Prefer Python module invocation to avoid relying on external pyrcc5 in PATH
+                cmd = [sys.executable, '-m', 'PyQt5.pyrcc_main', str(qrc_src), '-o', str(resources_py)]
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if result.returncode != 0:
+                    # Fallback to pyrcc5 if module invocation failed
+                    subprocess.run(['pyrcc5', str(qrc_src), '-o', str(resources_py)], check=True)
+        except Exception as e:
+            print(f"[WARN] Could not compile Qt resources: {e}")
     
     def build_executable(self, target_platform=None):
         """Build the executable using PyInstaller"""
