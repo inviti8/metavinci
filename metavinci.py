@@ -449,6 +449,8 @@ class Metavinci(QMainWindow):
         self.setWindowFlag(Qt.FramelessWindowHint)
                 # Initialize platform manager
         self.platform_manager = PlatformManager()
+        # Build a stable subprocess environment, especially for macOS (Finder launches have a minimal PATH)
+        self.proc_env = self._build_subprocess_env()
         
         self.HOME = os.path.expanduser('~')
         self.PATH = self.platform_manager.get_config_path()
@@ -498,8 +500,14 @@ class Metavinci(QMainWindow):
         self.DB.update({'INITIALIZED': True, 'principal': self.user_pid}, self.QUERY.type == 'app_data')
         self.INITIALIZED = (len(self.DB.search(self.QUERY.INITIALIZED == True)) > 0)
         self.PINTHEON_INSTALLED = self.hvym_pintheon_exists()
-        if self.PINTHEON_INSTALLED != None:
-            self.PINTHEON_INSTALLED = self.PINTHEON_INSTALLED.rstrip().strip()
+        if self.PINTHEON_INSTALLED is not None:
+            val = self.PINTHEON_INSTALLED.strip().lower()
+            if val in ('true', '1', 'yes'):
+                self.PINTHEON_INSTALLED = 'True'
+            elif val in ('false', '0', 'no'):
+                self.PINTHEON_INSTALLED = 'False'
+            else:
+                self.PINTHEON_INSTALLED = self.PINTHEON_INSTALLED.strip()
 
         if not self.HVYM.is_file():
             self.TUNNEL_TOKEN = ''
@@ -783,6 +791,45 @@ class Metavinci(QMainWindow):
         splash.close()
         self.hide()
         
+
+    def _build_subprocess_env(self):
+        """Create a robust environment for subprocesses to work when launched from Applications on macOS."""
+        env = os.environ.copy()
+        if platform.system().lower() == 'darwin':
+            # Ensure PATH contains locations where docker and homebrew binaries are typically installed
+            default_paths = [
+                '/usr/local/bin',                 # Intel Homebrew + Docker symlink
+                '/opt/homebrew/bin',              # Apple Silicon Homebrew
+                '/usr/bin', '/bin', '/usr/sbin', '/sbin',
+                '/Applications/Docker.app/Contents/Resources/bin'  # Docker Desktop internal CLI
+            ]
+            current_path_parts = env.get('PATH', '').split(':') if env.get('PATH') else []
+            for p in default_paths:
+                if p not in current_path_parts:
+                    current_path_parts.append(p)
+            env['PATH'] = ':'.join(current_path_parts)
+
+            # Certs for robust HTTPS (some macOS launches miss proper SSL bundle)
+            try:
+                import certifi
+                env['REQUESTS_CA_BUNDLE'] = certifi.where()
+            except Exception:
+                pass
+
+            # Avoid PyInstaller temp dir issues and spaces by using a known temp directory
+            try:
+                tmp_base = Path.home() / '.metavinci_tmp'
+                tmp_base.mkdir(parents=True, exist_ok=True)
+                env['TMPDIR'] = str(tmp_base)
+                env['TEMP'] = str(tmp_base)
+                env['TMP'] = str(tmp_base)
+            except Exception:
+                pass
+
+            # Ensure a sane locale
+            env.setdefault('LC_ALL', 'en_US.UTF-8')
+            env.setdefault('LANG', 'en_US.UTF-8')
+        return env
 
     def init_post(self):
         self.user_pid = str(self._run('dfx identity get-principal')).strip()
@@ -1217,20 +1264,20 @@ class Metavinci(QMainWindow):
         try:
             # Support both string (shell) and list (exec) command forms
             if isinstance(command, (list, tuple)):
-                result = subprocess.run(list(command), capture_output=True, text=True, cwd=cwd)
+                result = subprocess.run(list(command), capture_output=True, text=True, cwd=cwd, env=self.proc_env)
                 if result.returncode == 0:
                     return result.stdout
                 return None
             else:
-                output = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT, cwd=cwd)
+                output = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT, cwd=cwd, env=self.proc_env)
                 return output.decode('utf-8')
         except Exception as e:
             return None
         
     def _subprocess_hvym(self, command):
-        hvym_path = Path(self.HVYM)
-        cli_dir = str(hvym_path.parent)
-        return self._subprocess(command, cwd=cli_dir)
+        # Run hvym from the user's HOME to keep Docker bind paths stable across launch methods
+        home_dir = str(Path.home())
+        return self._subprocess(command, cwd=home_dir)
     
     def _run(self, command):
         try:
