@@ -61,7 +61,6 @@ class CrossPlatformBuilder:
             ('file_utils.py', 'file_utils.py'),
             ('macos_install_helper.py', 'macos_install_helper.py'),
             ('resources.qrc', 'resources.qrc'),
-            ('runtime_hook.py', 'runtime_hook.py'),
         ]
         
         directories = ['images', 'data', 'service']
@@ -170,7 +169,6 @@ class CrossPlatformBuilder:
                 '--exclude-module', 'unittest',
                 '--exclude-module', 'doctest',
                 '--collect-all', 'PyQt5.Qt',
-                '--runtime-hook', 'runtime_hook.py',
                 '--hidden-import', 'PyQt5.sip',
             ]
             if icon_file.exists():
