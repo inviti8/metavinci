@@ -1489,11 +1489,11 @@ class Metavinci(QMainWindow):
         loading_window.activateWindow()
         QApplication.processEvents()
         
-            # Create and configure the worker thread
-            worker = LoadingWorker(work_function, *args, **kwargs)
+        # Create and configure the worker thread
+        worker = LoadingWorker(work_function, *args, **kwargs)
         
-            # Connect signals (marshal callbacks onto main thread)
-            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_loading_finished(loading_window, worker)))
+        # Connect signals (marshal callbacks onto main thread)
+        worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_loading_finished(loading_window, worker)))
         worker.error.connect(lambda error_msg: self._on_loading_error(loading_window, worker, error_msg))
         worker.success.connect(lambda success_msg: self._on_loading_success(loading_window, worker, success_msg))
         
@@ -1532,8 +1532,8 @@ class Metavinci(QMainWindow):
         # Create and configure the worker thread
         worker = LoadingWorker(work_function, *args, **kwargs)
         
-            # Connect signals (marshal callbacks onto main thread)
-            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_animated_loading_finished(animated_window, worker)))
+        # Connect signals (marshal callbacks onto main thread)
+        worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_animated_loading_finished(animated_window, worker)))
         worker.error.connect(lambda error_msg: self._on_animated_loading_error(animated_window, worker, error_msg))
         worker.success.connect(lambda success_msg: self._on_animated_loading_success(animated_window, worker, success_msg))
         
