@@ -135,6 +135,33 @@ class PintheonInstallWorker(LoadingWorker):
             env = os.environ.copy()
             env["REQUESTS_CA_BUNDLE"] = certifi.where()
 
+            # Align PATH and Docker environment with main app behavior (important for macOS Finder launches)
+            if platform.system().lower() == 'darwin':
+                default_paths = [
+                    '/usr/local/bin',
+                    '/opt/homebrew/bin',
+                    '/usr/bin', '/bin', '/usr/sbin', '/sbin',
+                    '/Applications/Docker.app/Contents/Resources/bin'
+                ]
+                current_path_parts = env.get('PATH', '').split(':') if env.get('PATH') else []
+                for p in default_paths:
+                    if p not in current_path_parts:
+                        current_path_parts.append(p)
+                env['PATH'] = ':'.join(current_path_parts)
+
+                # Locale
+                env.setdefault('LC_ALL', 'en_US.UTF-8')
+                env.setdefault('LANG', 'en_US.UTF-8')
+
+                # Prefer user's Docker Desktop socket if present
+                try:
+                    docker_sock_home = Path.home() / '.docker' / 'run' / 'docker.sock'
+                    default_sock = Path('/var/run/docker.sock')
+                    if 'DOCKER_HOST' not in env and docker_sock_home.exists() and not default_sock.exists():
+                        env['DOCKER_HOST'] = f'unix://{docker_sock_home}'
+                except Exception:
+                    pass
+
             # Ensure PyInstaller runtime can create its temp directories (fixes PYI-16001/16006)
             try:
                 # Use a temp directory without spaces to avoid PyInstaller issues on macOS
@@ -471,8 +498,10 @@ class Metavinci(QMainWindow):
         self.LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'hvym_logo_64.png')
         self.PINTHEON_IMG = os.path.join(self.FILE_PATH, 'images', 'pintheon_logo.png')
         
-        # Show splash screen during initialization
-        splash = self.splash_window()
+        # Show splash screen during initialization (main thread only)
+        splash = None
+        if QThread.currentThread() == QApplication.instance().thread():
+            splash = self.splash_window()
         self.LOGO_IMG_ACTIVE = os.path.join(self.FILE_PATH, 'images', 'hvym_logo_64_active.png')
         self.LOADING_GIF = os.path.join(self.FILE_PATH, 'images', 'loading.gif')
         self.UPDATE_IMG = os.path.join(self.FILE_PATH, 'images', 'update.png')
@@ -788,7 +817,8 @@ class Metavinci(QMainWindow):
         # Close splash screen and hide main window when initialization is complete
         QApplication.processEvents()  # Ensure splash is displayed
         time.sleep(0.5)  # Show splash for half a second
-        splash.close()
+        if splash is not None:
+            splash.close()
         self.hide()
         
 
@@ -829,6 +859,15 @@ class Metavinci(QMainWindow):
             # Ensure a sane locale
             env.setdefault('LC_ALL', 'en_US.UTF-8')
             env.setdefault('LANG', 'en_US.UTF-8')
+
+            # Prefer user's Docker Desktop socket if present
+            try:
+                docker_sock_home = Path.home() / '.docker' / 'run' / 'docker.sock'
+                default_sock = Path('/var/run/docker.sock')
+                if 'DOCKER_HOST' not in env and docker_sock_home.exists() and not default_sock.exists():
+                    env['DOCKER_HOST'] = f'unix://{docker_sock_home}'
+            except Exception:
+                pass
         return env
 
     def init_post(self):
@@ -1434,11 +1473,11 @@ class Metavinci(QMainWindow):
         loading_window.activateWindow()
         QApplication.processEvents()
         
-        # Create and configure the worker thread
-        worker = LoadingWorker(work_function, *args, **kwargs)
+            # Create and configure the worker thread
+            worker = LoadingWorker(work_function, *args, **kwargs)
         
-        # Connect signals
-        worker.finished.connect(lambda: self._on_loading_finished(loading_window, worker))
+            # Connect signals (marshal callbacks onto main thread)
+            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_loading_finished(loading_window, worker)))
         worker.error.connect(lambda error_msg: self._on_loading_error(loading_window, worker, error_msg))
         worker.success.connect(lambda success_msg: self._on_loading_success(loading_window, worker, success_msg))
         
@@ -1477,8 +1516,8 @@ class Metavinci(QMainWindow):
         # Create and configure the worker thread
         worker = LoadingWorker(work_function, *args, **kwargs)
         
-        # Connect signals
-        worker.finished.connect(lambda: self._on_animated_loading_finished(animated_window, worker))
+            # Connect signals (marshal callbacks onto main thread)
+            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_animated_loading_finished(animated_window, worker)))
         worker.error.connect(lambda error_msg: self._on_animated_loading_error(animated_window, worker, error_msg))
         worker.success.connect(lambda success_msg: self._on_animated_loading_success(animated_window, worker, success_msg))
         
@@ -1585,9 +1624,9 @@ class Metavinci(QMainWindow):
             QApplication.processEvents()
 
             # Connect signals
-            worker.finished.connect(lambda: self._on_animated_loading_finished(loading_window, worker))
+            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_animated_loading_finished(loading_window, worker)))
             worker.error.connect(lambda error_msg: self._on_animated_loading_error(loading_window, worker, error_msg))
-            worker.success.connect(lambda success_msg: self._on_hvym_install_success(loading_window, worker, success_msg))
+            worker.success.connect(lambda success_msg: QTimer.singleShot(0, lambda: self._on_hvym_install_success(loading_window, worker, success_msg)))
 
             # Start the worker thread
             worker.start()
@@ -1628,9 +1667,9 @@ class Metavinci(QMainWindow):
             QApplication.processEvents()
             
             # Connect signals
-            worker.finished.connect(lambda: self._on_animated_loading_finished(loading_window, worker))
+            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_animated_loading_finished(loading_window, worker)))
             worker.error.connect(lambda error_msg: self._on_animated_loading_error(loading_window, worker, error_msg))
-            worker.success.connect(lambda success_msg: self._on_hvym_update_success(loading_window, worker, success_msg))
+            worker.success.connect(lambda success_msg: QTimer.singleShot(0, lambda: self._on_hvym_update_success(loading_window, worker, success_msg)))
             
             # Start the worker thread
             worker.start()
@@ -1718,9 +1757,9 @@ class Metavinci(QMainWindow):
             QApplication.processEvents()
             
             # Connect signals
-            worker.finished.connect(lambda: self._on_animated_loading_finished(loading_window, worker))
+            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_animated_loading_finished(loading_window, worker)))
             worker.error.connect(lambda error_msg: self._on_animated_loading_error(loading_window, worker, error_msg))
-            worker.success.connect(lambda success_msg: self._on_pintheon_install_success(loading_window, worker, success_msg))
+            worker.success.connect(lambda success_msg: QTimer.singleShot(0, lambda: self._on_pintheon_install_success(loading_window, worker, success_msg)))
             
             # Start the worker thread
             worker.start()
@@ -1767,8 +1806,8 @@ class Metavinci(QMainWindow):
             loading_window.activateWindow()
             QApplication.processEvents()
             
-            # Connect signals
-            worker.finished.connect(lambda: self._on_pintheon_start_finished(loading_window, worker))
+            # Connect signals (ensure UI updates happen on main thread)
+            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_pintheon_start_finished(loading_window, worker)))
             worker.error.connect(lambda error_msg: self._on_loading_error(loading_window, worker, error_msg))
             
             # Start the worker thread
@@ -1807,8 +1846,8 @@ class Metavinci(QMainWindow):
             loading_window.activateWindow()
             QApplication.processEvents()
             
-            # Connect signals
-            worker.finished.connect(lambda: self._on_pintheon_stop_finished(loading_window, worker))
+            # Connect signals (ensure UI updates happen on main thread)
+            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_pintheon_stop_finished(loading_window, worker)))
             worker.error.connect(lambda error_msg: self._on_loading_error(loading_window, worker, error_msg))
             
             # Start the worker thread
@@ -1868,9 +1907,9 @@ class Metavinci(QMainWindow):
             QApplication.processEvents()
             
             # Connect signals
-            worker.finished.connect(lambda: self._on_loading_finished(loading_window, worker))
+            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_loading_finished(loading_window, worker)))
             worker.error.connect(lambda error_msg: self._on_loading_error(loading_window, worker, error_msg))
-            worker.success.connect(lambda success_msg: self._on_press_install_success(loading_window, worker, success_msg))
+            worker.success.connect(lambda success_msg: QTimer.singleShot(0, lambda: self._on_press_install_success(loading_window, worker, success_msg)))
             
             # Start the worker thread
             worker.start()
