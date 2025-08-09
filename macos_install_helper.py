@@ -89,7 +89,7 @@ class MacOSInstallHelper:
             Path: Path to downloaded file, or None if failed
         """
         try:
-            # Get the latest release URL for macOS
+            # Get the latest release URL for macOS (architecture-aware)
             url = self._get_latest_hvym_release_url()
             if not url:
                 print("Could not determine download URL")
@@ -135,15 +135,22 @@ class MacOSInstallHelper:
                 import json
                 release_data = json.loads(response.read().decode())
             
-            # Find the macOS asset (using the same logic as the main application)
+            # Find the macOS asset (architecture-aware)
+            import platform as _platform
+            machine = (_platform.machine() or '').lower()
+            arch_suffix = 'arm64' if 'arm' in machine or 'aarch64' in machine else 'amd64'
+            expected_asset_name = f"hvym-macos-{arch_suffix}.tar.gz"
             assets = {asset['name']: asset['browser_download_url'] for asset in release_data.get('assets', [])}
-            asset_name = "hvym-macos.tar.gz"
-            url = assets.get(asset_name)
+            url = assets.get(expected_asset_name)
             
             if not url:
-                print(f"Asset {asset_name} not found in latest release")
-                return None
-                
+                # Fallback: try legacy universal macOS asset name if arch-specific not found
+                legacy_name = "hvym-macos.tar.gz"
+                url = assets.get(legacy_name)
+                if not url:
+                    print(f"Assets {expected_asset_name} or {legacy_name} not found in latest release")
+                    return None
+            
             return url
             
         except Exception as e:
@@ -172,8 +179,11 @@ class MacOSInstallHelper:
                 print(f"Unsupported file format: {download_path.suffix} (filename: {download_path.name})")
                 return False
             
-            # Find the extracted binary
-            binary_name = 'hvym-macos'
+            # Find the extracted binary (architecture-aware)
+            import platform as _platform
+            machine = (_platform.machine() or '').lower()
+            arch_suffix = 'arm64' if 'arm' in machine or 'aarch64' in machine else 'amd64'
+            binary_name = f'hvym-macos-{arch_suffix}'
             extracted_binary = self.bin_dir / binary_name
             
             if not extracted_binary.exists():
@@ -186,8 +196,13 @@ class MacOSInstallHelper:
                             break
             
             if not extracted_binary.exists():
-                print(f"Could not find {binary_name} in extracted files")
-                return False
+                # Fallback to legacy filename if present
+                legacy_binary = self.bin_dir / 'hvym-macos'
+                if legacy_binary.exists():
+                    extracted_binary = legacy_binary
+                else:
+                    print(f"Could not find {binary_name} or legacy hvym-macos in extracted files")
+                    return False
             
             # Move to final location if needed
             if extracted_binary != self.hvym_path:
@@ -300,6 +315,54 @@ class MacOSInstallHelper:
                 
         except Exception:
             return False
+
+    # --- Convenience methods used by tests ---
+    def ensure_directories(self) -> bool:
+        """Public wrapper used by tests to create needed directories."""
+        try:
+            self._create_directories()
+            return True
+        except Exception:
+            return False
+
+    def get_installation_status(self) -> dict:
+        """Return a summary of install-related paths and status for tests."""
+        try:
+            return self.get_install_info()
+        except Exception:
+            return {
+                'hvym_path': str(self.hvym_path),
+                'bin_dir': str(self.bin_dir),
+                'config_dir': str(self.config_dir),
+                'is_installed': False
+            }
+
+    def check_macos_permissions(self) -> list:
+        """Best-effort permission checks; return list of issue strings (empty if none)."""
+        issues = []
+        try:
+            # Check directories are writable and executable
+            for path in (self.config_dir, self.bin_dir):
+                try:
+                    if not path.exists():
+                        continue
+                    if not os.access(path, os.W_OK):
+                        issues.append(f"Directory not writable: {path}")
+                    if not os.access(path, os.X_OK):
+                        issues.append(f"Directory not executable: {path}")
+                except Exception:
+                    issues.append(f"Could not validate permissions for: {path}")
+
+            # If hvym exists, ensure it's executable
+            try:
+                if self.hvym_path.exists() and not os.access(self.hvym_path, os.X_OK):
+                    issues.append(f"Binary not executable: {self.hvym_path}")
+            except Exception:
+                issues.append("Could not validate hvym binary permissions")
+        except Exception:
+            # On any unexpected error, provide a generic hint but don't fail
+            issues.append("Permission check encountered an unexpected error")
+        return issues
 
     def uninstall_hvym_cli(self):
         """

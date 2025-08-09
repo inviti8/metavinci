@@ -424,7 +424,15 @@ def get_latest_hvym_release_asset_url():
     if system == "linux":
         asset_name = "hvym-linux.tar.gz"
     elif system == "darwin":
-        asset_name = "hvym-macos.tar.gz"
+        # Architecture-aware macOS asset selection
+        machine = (platform.machine() or '').lower()
+        arch_suffix = 'arm64' if 'arm' in machine or 'aarch64' in machine else 'amd64'
+        preferred = f"hvym-macos-{arch_suffix}.tar.gz"
+        # Try preferred first; fall back to legacy name if needed
+        if preferred in assets:
+            asset_name = preferred
+        else:
+            asset_name = "hvym-macos.tar.gz"
     elif system == "windows":
         asset_name = "hvym-windows.zip"
     else:
@@ -515,6 +523,14 @@ class Metavinci(QMainWindow):
         self.DIDC = self.platform_manager.get_didc_path()
         self.PRESS = self.platform_manager.get_press_path()
         self.BLENDER_PATH = self.platform_manager.get_blender_path()
+        # Backward compatibility: if on macOS and arch-specific hvym not present, fall back to legacy filename
+        try:
+            if platform.system().lower() == 'darwin' and not self.HVYM.is_file():
+                legacy_hvym = self.BIN_PATH / 'hvym-macos'
+                if legacy_hvym.is_file():
+                    self.HVYM = legacy_hvym
+        except Exception:
+            pass
         self.BLENDER_VERSIONS = []
         self.BLENDER_VERSION = None
         self.ADDON_INSTALL_PATH = self.BLENDER_PATH / str(self.BLENDER_VERSION) / 'scripts' / 'addons'

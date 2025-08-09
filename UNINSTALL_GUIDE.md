@@ -21,7 +21,9 @@ When you uninstall Metavinci, the `hvym` CLI that was downloaded and installed b
 #### Manual Cleanup
 If the uninstall script is not available, manually remove:
 ```bash
-# Remove hvym CLI binary
+# Remove hvym CLI binary (try both arch-specific and legacy names)
+rm -f ~/Library/Application\ Support/Metavinci/bin/hvym-macos-arm64
+rm -f ~/Library/Application\ Support/Metavinci/bin/hvym-macos-amd64
 rm -f ~/Library/Application\ Support/Metavinci/bin/hvym-macos
 
 # Remove empty directories
@@ -96,8 +98,8 @@ After uninstallation, verify that the `hvym` CLI has been removed:
 
 ### macOS
 ```bash
-ls ~/Library/Application\ Support/Metavinci/bin/hvym-macos
-# Should return "No such file or directory"
+ls ~/Library/Application\ Support/Metavinci/bin/hvym-macos-*
+# Should return "No such file or directory" for all patterns
 ```
 
 ### Windows
