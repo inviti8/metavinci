@@ -17,7 +17,12 @@ echo "=================================="
 USER_HOME="$HOME"
 METAVINCI_CONFIG_DIR="$USER_HOME/Library/Application Support/Metavinci"
 METAVINCI_BIN_DIR="$METAVINCI_CONFIG_DIR/bin"
-HVYM_BINARY="$METAVINCI_BIN_DIR/hvym-macos"
+# Possible hvym binary names (architecture-aware and legacy)
+HVYM_CANDIDATES=(
+  "$METAVINCI_BIN_DIR/hvym-macos-arm64"
+  "$METAVINCI_BIN_DIR/hvym-macos-amd64"
+  "$METAVINCI_BIN_DIR/hvym-macos"
+)
 
 echo "Looking for Metavinci installation..."
 
@@ -29,13 +34,20 @@ fi
 
 echo "Found Metavinci installation at: $METAVINCI_CONFIG_DIR"
 
-# Remove hvym CLI binary if it exists
-if [ -f "$HVYM_BINARY" ]; then
-    echo "Removing hvym CLI binary..."
-    rm -f "$HVYM_BINARY"
-    echo -e "${GREEN}✓ Removed hvym CLI binary${NC}"
+# Remove hvym CLI binary if it exists (any known name)
+removed_any=false
+for candidate in "${HVYM_CANDIDATES[@]}"; do
+  if [ -f "$candidate" ]; then
+    echo "Removing hvym CLI binary: $candidate"
+    rm -f "$candidate"
+    removed_any=true
+  fi
+done
+
+if [ "$removed_any" = true ]; then
+  echo -e "${GREEN}✓ Removed hvym CLI binary${NC}"
 else
-    echo -e "${YELLOW}hvym CLI binary not found${NC}"
+  echo -e "${YELLOW}hvym CLI binary not found${NC}"
 fi
 
 # Remove bin directory if it's empty

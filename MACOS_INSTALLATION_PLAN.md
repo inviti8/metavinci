@@ -146,7 +146,8 @@ The entitlements file grants the app specific permissions:
 ```
 ~/Library/Application Support/Metavinci/
 ├── bin/
-│   ├── hvym-macos
+│   ├── hvym-macos-arm64
+│   ├── hvym-macos-amd64
 │   └── hvym-press-macos
 ├── db.json
 └── other config files
@@ -177,7 +178,7 @@ python3 macos_install_helper.py
 ls -la ~/Library/Application\ Support/Metavinci/
 
 # Test hvym CLI
-~/Library/Application\ Support/Metavinci/bin/hvym-macos --version
+~/Library/Application\ Support/Metavinci/bin/hvym-macos-$(uname -m | sed 's/aarch64\|arm.*/arm64/; s/x86_64\|amd.*/amd64/') --version
 
 # Check app bundle
 codesign -dv --verbose=4 /path/to/metavinci_desktop.app

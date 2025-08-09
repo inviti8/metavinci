@@ -184,6 +184,16 @@ class CrossPlatformBuilder:
                     pyinstaller_cmd.extend(['--add-data', f'{qt_plugins}:PyQt5/Qt/plugins/platforms'])
             else:
                 print(f"[INFO] Qt platforms directory not found or empty, skipping --add-data for platforms.")
+
+            # Also include imageformats (qgif plugin) so QMovie can load GIFs
+            img_plugins = _os.path.join(_os.path.dirname(PyQt5.__file__), 'Qt', 'plugins', 'imageformats')
+            if _os.path.exists(img_plugins) and _os.listdir(img_plugins):
+                if target_platform == 'windows' or (target_platform is None and self.platform_manager.is_windows):
+                    pyinstaller_cmd.extend(['--add-data', f'{img_plugins};PyQt5/Qt/plugins/imageformats'])
+                else:
+                    pyinstaller_cmd.extend(['--add-data', f'{img_plugins}:PyQt5/Qt/plugins/imageformats'])
+            else:
+                print(f"[INFO] Qt imageformats directory not found or empty, GIFs may not load.")
         except Exception as e:
             print(f"[WARN] Could not add PyQt5 Qt platforms: {e}")
         

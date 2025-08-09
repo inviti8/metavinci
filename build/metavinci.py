@@ -346,7 +346,14 @@ def get_latest_hvym_release_asset_url():
     if system == "linux":
         asset_name = "hvym-linux.tar.gz"
     elif system == "darwin":
-        asset_name = "hvym-macos.tar.gz"
+        # Architecture-aware macOS asset selection
+        machine = (platform.machine() or '').lower()
+        arch_suffix = 'arm64' if 'arm' in machine or 'aarch64' in machine else 'amd64'
+        preferred = f"hvym-macos-{arch_suffix}.tar.gz"
+        if preferred in assets:
+            asset_name = preferred
+        else:
+            asset_name = "hvym-macos.tar.gz"
     elif system == "windows":
         asset_name = "hvym-windows.zip"
     else:

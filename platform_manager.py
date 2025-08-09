@@ -49,7 +49,12 @@ class PlatformManager:
             return Path.home() / 'AppData' / 'Local' / 'heavymeta-cli' / 'hvym-windows.exe'
         elif self.is_macos:
             # Use a more accessible location for macOS that doesn't require elevated permissions
-            return Path.home() / 'Library' / 'Application Support' / 'Metavinci' / 'bin' / 'hvym-macos'
+            # Binary name is architecture-specific: hvym-macos-arm64 (Apple Silicon) or hvym-macos-amd64 (Intel)
+            import platform as _platform
+            machine = (_platform.machine() or '').lower()
+            arch_suffix = 'arm64' if 'arm' in machine or 'aarch64' in machine else 'amd64'
+            binary_name = f'hvym-macos-{arch_suffix}'
+            return Path.home() / 'Library' / 'Application Support' / 'Metavinci' / 'bin' / binary_name
         else:  # Linux - maintain existing pattern
             return Path.home() / '.local' / 'share' / 'heavymeta-cli' / 'hvym-linux'
     
