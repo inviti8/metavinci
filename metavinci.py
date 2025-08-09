@@ -1827,31 +1827,69 @@ class Metavinci(QMainWindow):
         # Update database
         self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
         
+        # Refresh UI to show start/stop actions
+        self._refresh_pintheon_ui_state()
         # Show success message
         self.open_msg_dialog(success_msg)
         
         # Restart after a delay
         # No restart required
 
-    def _ensure_pintheon_menu(self):
-        # Create Pintheon menu if not present, otherwise refresh
-        if not hasattr(self, 'tray_pintheon_menu') or self.tray_pintheon_menu is None:
-            self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
-        self.tray_pintheon_menu.clear()
-        self.tray_pintheon_menu.setIcon(self.pintheon_icon)
-        self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
-        self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
-        self.tray_pintheon_menu.addAction(self.run_pintheon_action)
-        self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
-        self.tray_pintheon_menu.addAction(self.open_tunnel_action)
-
     def _update_ui_on_hvym_installed(self):
         # Toggle install/update visibility
         self.install_hvym_action.setVisible(False)
         self.update_hvym_action.setVisible(True)
-        # If Pintheon is installed, ensure its menu exists
-        self.PINTHEON_INSTALLED = 'True'
-        self._ensure_pintheon_menu()
+        # Refresh Pintheon UI state based on actual installation
+        self._refresh_pintheon_ui_state()
+
+    def _is_pintheon_installed(self) -> bool:
+        try:
+            res = self.hvym_pintheon_exists()
+            if res is None:
+                return False
+            val = res.strip().lower()
+            return val in ('true', '1', 'yes')
+        except Exception:
+            return False
+
+    def _refresh_pintheon_ui_state(self):
+        installed = self._is_pintheon_installed()
+        self.PINTHEON_INSTALLED = 'True' if installed else 'False'
+        if installed:
+            # Remove install action from Installations menu if present
+            if self.install_pintheon_action in self.tray_tools_update_menu.actions():
+                self.tray_tools_update_menu.removeAction(self.install_pintheon_action)
+            # Ensure Pintheon submenu exists and is populated
+            if not hasattr(self, 'tray_pintheon_menu') or self.tray_pintheon_menu is None:
+                self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
+            else:
+                self.tray_pintheon_menu.clear()
+            self.tray_pintheon_menu.setIcon(self.pintheon_icon)
+            self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
+            self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
+            self.tray_pintheon_menu.addAction(self.run_pintheon_action)
+            self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
+            self.tray_pintheon_menu.addAction(self.open_tunnel_action)
+            # Visibility according to active state
+            self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
+            self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
+            self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE and len(self.TUNNEL_TOKEN) >= 7)
+        else:
+            # Remove Pintheon submenu if present
+            if hasattr(self, 'tray_pintheon_menu') and self.tray_pintheon_menu is not None:
+                try:
+                    self.tray_tools_menu.removeAction(self.tray_pintheon_menu.menuAction())
+                except Exception:
+                    pass
+                self.tray_pintheon_menu = None
+            # Ensure install action is visible in Installations menu
+            if self.install_pintheon_action not in self.tray_tools_update_menu.actions():
+                self.tray_tools_update_menu.addAction(self.install_pintheon_action)
+            self.install_pintheon_action.setVisible(True)
+            # Hide runtime actions
+            self.run_pintheon_action.setVisible(False)
+            self.stop_pintheon_action.setVisible(False)
+            self.open_tunnel_action.setVisible(False)
 
     def _start_pintheon(self):
         start = self.open_confirm_dialog('Start Pintheon Gateway?')
