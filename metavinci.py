@@ -31,7 +31,7 @@ Usage Example:
 """
 
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QLineEdit, QWidgetAction, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QComboBox, QDialogButtonBox, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp, QVBoxLayout, QPushButton, QDialog, QDesktopWidget, QFileDialog, QMessageBox, QSplashScreen
-from PyQt5.QtCore import Qt, QSize, QTimer, QByteArray, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QSize, QTimer, QByteArray, QThread, pyqtSignal, QCoreApplication
 from PyQt5.QtGui import QMovie
 from PyQt5.QtGui import QIcon, QPixmap, QImageReader
 from pathlib import Path
@@ -305,7 +305,7 @@ class AnimatedLoadingWindow(QWidget):
         
         # Set up the GIF animation - create only ONE instance
         self.gif_path = gif_path
-        self.movie = QMovie(gif_path, QByteArray(), self)
+        self.movie = QMovie(gif_path)
         self.movie.setCacheMode(QMovie.CacheAll)
         self._sized_from_frame = False
         # Size window once the first valid frame arrives (frameCount can be -1 until fully loaded)
@@ -508,6 +508,16 @@ class Metavinci(QMainWindow):
         self.setWindowFlag(Qt.FramelessWindowHint)
                 # Initialize platform manager
         self.platform_manager = PlatformManager()
+        # Ensure Qt plugin paths include imageformats so QMovie can load GIFs on macOS/Linux
+        try:
+            import PyQt5, os as _os
+            plugin_base = _os.path.join(_os.path.dirname(PyQt5.__file__), 'Qt', 'plugins')
+            img_plugins = _os.path.join(plugin_base, 'imageformats')
+            for _p in (plugin_base, img_plugins):
+                if _p and _p not in QCoreApplication.libraryPaths():
+                    QCoreApplication.addLibraryPath(_p)
+        except Exception:
+            pass
         # Build a stable subprocess environment, especially for macOS (Finder launches have a minimal PATH)
         self.proc_env = self._build_subprocess_env()
         # Initialize file logging early
@@ -1775,19 +1785,58 @@ class Metavinci(QMainWindow):
 
     def _install_blender_addon(self, version):
         install = self.open_confirm_dialog('Install Heavymeta Blender Addon?')
-        if install == True:
+        if install is True:
             if self.BLENDER_PATH.exists() and self.ADDON_INSTALL_PATH.exists():
-                loading = self.loading_indicator_start('Installing Blender Addon')
-                if not self.ADDON_PATH.exists():
-                    # Use cross-platform download and extract
-                    success = download_and_extract_zip('https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip', str(self.ADDON_INSTALL_PATH))
-                    if success:
-                        self.open_msg_dialog(f'Blender Addon installed. Please restart Daemon.')
-                    else:
-                        self.open_msg_dialog('Failed to install Blender Addon')
-                loading.close()
-                self.hide()
-                # self.restart()
+                # Run install on a background thread; keep animation running until finished
+                def _install_blender_addon_worker_fn():
+                    try:
+                        if not self.ADDON_PATH.exists():
+                            url = 'https://github.com/inviti8/heavymeta_standard/archive/refs/heads/main.zip'
+                            ok = download_and_extract_zip(url, str(self.ADDON_INSTALL_PATH))
+                            if not ok:
+                                raise Exception('Failed to download/extract Blender Addon')
+                        return True
+                    except Exception as e:
+                        return e
+
+                # Create animated loading window
+                loading_window = AnimatedLoadingWindow(self, 'INSTALLING BLENDER ADDON', self.LOADING_GIF)
+                loading_window.show()
+                loading_window.raise_()
+                loading_window.activateWindow()
+                loading_window.start_animation()
+                QApplication.processEvents()
+
+                # Create worker
+                worker = LoadingWorker(_install_blender_addon_worker_fn)
+
+                # On success/error, stop animation and notify
+                def _on_success(_msg):
+                    loading_window.stop_animation()
+                    loading_window.close()
+                    self.hide()
+                    self.open_msg_dialog('Blender Addon installed. Please restart Daemon.')
+
+                def _on_error(err_msg):
+                    loading_window.stop_animation()
+                    loading_window.close()
+                    self.hide()
+                    self.open_msg_dialog(err_msg or 'Failed to install Blender Addon')
+
+                def _on_finished():
+                    # finished already handled by success/error handlers
+                    pass
+
+                # Connect signals
+                worker.finished.connect(lambda: QTimer.singleShot(0, _on_finished))
+                worker.error.connect(lambda emsg: _on_error(emsg))
+                worker.success.connect(lambda _msg: _on_success(_msg))
+
+                # Start the worker
+                worker.start()
+                # Keep references
+                self._current_loading_window = loading_window
+                self._current_worker = worker
             else:
                 self.open_msg_dialog('Blender not found. Please install blender first')
 
