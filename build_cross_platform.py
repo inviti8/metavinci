@@ -82,18 +82,25 @@ class CrossPlatformBuilder:
     
     def install_dependencies(self):
         """Install Python dependencies"""
-        # Skip dependency installation in CI/CD environment
-        if os.environ.get('CI') == 'true':
-            print("Skipping dependency installation in CI environment")
-            return
-            
         requirements_file = self.build_dir / 'requirements.txt'
+        fallback_file = Path.cwd() / 'build_requirements.txt'
+        to_install = None
         if requirements_file.exists():
-            print("Installing dependencies...")
-            subprocess.run(['pip', 'install', '-r', str(requirements_file)], 
-                         cwd=str(self.build_dir), check=True)
+            to_install = requirements_file
+        elif fallback_file.exists():
+            to_install = fallback_file
+
+        if to_install:
+            print(f"Installing dependencies from {to_install} ...")
+            try:
+                subprocess.run(['pip', 'install', '--upgrade', 'pip', 'wheel', 'setuptools'], check=True)
+                subprocess.run(['pip', 'install', '-r', str(to_install)], 
+                             cwd=str(self.build_dir), check=True)
+            except subprocess.CalledProcessError as e:
+                print(f"[ERROR] Failed to install dependencies: {e}")
+                raise
         else:
-            print("Warning: requirements.txt not found")
+            print("Warning: No requirements file found to install dependencies")
     
     def build_executable(self, target_platform=None):
         """Build the executable using PyInstaller"""
@@ -114,6 +121,7 @@ class CrossPlatformBuilder:
                 '--exclude-module', 'unittest',
                 '--exclude-module', 'doctest',
                 '--collect-all', 'PyQt5.Qt',
+                '--log-level', 'DEBUG',
                 '--codesign-identity', '-',  # Ad-hoc signing for development
                 '--osx-bundle-identifier', 'com.heavymeta.metavinci',
                 '--hidden-import', 'macos_install_helper',
@@ -189,7 +197,12 @@ class CrossPlatformBuilder:
         print(f"Command: {' '.join(pyinstaller_cmd)}")
         
         try:
-            subprocess.run(pyinstaller_cmd, cwd=str(self.build_dir), check=True)
+            proc = subprocess.run(pyinstaller_cmd, cwd=str(self.build_dir), capture_output=True, text=True)
+            if proc.returncode != 0:
+                print("[ERROR] PyInstaller failed")
+                print("[STDOUT]\n" + (proc.stdout or ""))
+                print("[STDERR]\n" + (proc.stderr or ""))
+                return False
             
             # Analyze the built executable or .app size
             if target_platform == 'macos':
@@ -220,8 +233,8 @@ class CrossPlatformBuilder:
                     print(f"Build completed but executable not found at {executable_path}")
                     return False
             return True
-        except subprocess.CalledProcessError as e:
-            print(f"Build failed: {e}")
+        except Exception as e:
+            print(f"Build failed with exception: {e}")
             return False
     
     def install_to_local(self, target_platform=None):
