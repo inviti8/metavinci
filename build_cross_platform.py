@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import argparse
 
+
 # Import our platform manager
 from platform_manager import PlatformManager
 
@@ -169,6 +170,7 @@ class CrossPlatformBuilder:
                 '--exclude-module', 'unittest',
                 '--exclude-module', 'doctest',
                 '--collect-all', 'PyQt5.Qt',
+                '--hidden-import', 'PyQt5.sip',
             ]
             if icon_file.exists():
                 pyinstaller_cmd.extend(['--icon', str(icon_file)])

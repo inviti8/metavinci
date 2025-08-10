@@ -13,37 +13,109 @@ permissions:
 
 jobs:
   build-linux-installer:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    # Linux-specific build job - using ubuntu-22.04 for current compatibility
+    # Note: ubuntu-20.04 was deprecated, ubuntu-22.04 provides glibc 2.35 which is widely compatible
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v4
-      with:
-        python-version: 3.11
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller Pillow icnsutil
+      - name: Install Python dependencies for Linux
+        run: |
+          echo "=== Installing Python dependencies ==="
+          python -m pip install --upgrade pip
+          echo "Pip upgraded to: $(pip --version)"
+          
+          echo "Installing requirements.txt..."
+          pip install -r requirements.txt
+          echo "Installing build dependencies..."
+          pip install pyinstaller Pillow icnsutil
+          
+          echo "=== Installed packages ==="
+          pip list | grep -E "(pyinstaller|pillow|icnsutil|pyqt5)" || echo "Some packages not found in pip list"
+          echo "=== Python version and location ==="
+          python --version
+          which python
+          echo "=== Current directory and files ==="
+          pwd
+          ls -la
+          
+          echo "=== PyInstaller version and info ==="
+          pyinstaller --version || echo "PyInstaller not found in PATH"
+          which pyinstaller || echo "PyInstaller not in PATH"
 
-    - name: Install system Qt libraries (Linux only)
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libxcb-xinerama0 libxcb-xinerama0-dev libxcb1 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-randr0 libxcb-xfixes0 libxcb-sync1 libxcb-xkb1 libxkbcommon-x11-0
+      - name: Install system Qt libraries (Linux only)
+        run: |
+          echo "=== Installing system Qt libraries ==="
+          echo "Current system info:"
+          cat /etc/os-release
+          echo "Available memory:"
+          free -h
+          echo "Disk space:"
+          df -h
+          
+          sudo apt-get update
+          echo "Installing Qt dependencies..."
+          sudo apt-get install -y libxcb-xinerama0 libxcb-xinerama0-dev libxcb1 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-randr0 libxcb-xfixes0 libxcb-sync1 libxcb-xkb1 libxkbcommon-x11-0
+          
+          echo "=== Qt libraries installed ==="
+          echo "Checking for Qt libraries:"
+          ldconfig -p | grep -E "(xcb|qt)" | head -20 || echo "No Qt libraries found in ldconfig"
 
-    - name: Build Linux installer
-      run: |
-        python build_installers.py --platform linux --version ${{ github.ref_name }}
+      - name: Build Linux installer
+        run: |
+          echo "=== Building Linux installer ==="
+          echo "Environment variables:"
+          env | grep -E "(PATH|PYTHON|QT)" | head -20
+          
+          echo "Checking build script exists:"
+          ls -la build_installers.py
+          
+          echo "Checking source files:"
+          ls -la *.py *.qrc
+          
+          echo "Starting build process..."
+          python build_installers.py --platform linux --version ${{ github.ref_name }}
+          
+          echo "=== Build completed ==="
+          echo "Build output directory:"
+          ls -la build/ || echo "Build directory not found"
+          echo "Release directory:"
+          ls -la release/ || echo "Release directory not found"
+          
+          echo "=== Checking for .deb file ==="
+          find . -name "*.deb" -type f 2>/dev/null || echo "No .deb files found"
+          echo "=== Checking file permissions ==="
+          ls -la release/linux/ 2>/dev/null || echo "Linux release directory not accessible"
+          
+          echo "=== Testing built executable ==="
+          if [ -f "build/dist/linux/metavinci" ]; then
+            echo "Executable found, checking size and permissions:"
+            ls -la build/dist/linux/metavinci
+            echo "Checking if executable can run (should show help):"
+            timeout 10s build/dist/linux/metavinci --help || echo "Executable failed to run or timed out"
+          else
+            echo "Executable not found at expected location"
+            find build/ -name "metavinci" -type f 2>/dev/null || echo "No metavinci executable found anywhere"
+          fi
+          
+          echo "=== Final artifact check ==="
+          echo "Looking for .deb files:"
+          find . -name "*.deb" -type f -exec ls -la {} \; 2>/dev/null || echo "No .deb files found"
+          echo "Checking release directory structure:"
+          tree release/ 2>/dev/null || echo "Tree command not available or release directory not found"
 
-    - name: Upload Linux installer
-      uses: actions/upload-artifact@v4
-      with:
-        name: metavinci-linux-installer
-        path: release/linux/*.deb
-        retention-days: 30
+      - name: Upload Linux installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: metavinci-linux-installer
+          path: release/linux/*.deb
+          retention-days: 30
 
   build-windows-installer:
     runs-on: windows-latest
@@ -80,7 +152,19 @@ jobs:
         python -c "import setuptools; print('setuptools location:', setuptools.__file__)"
 
     - name: Build Windows installer (PyInstaller + cx_Freeze)
-      run: python build_installers.py --platform windows --version ${{ github.ref_name }}
+      run: |
+        echo "=== Building Windows installer ==="
+        echo "Current directory:"
+        pwd
+        echo "Source files:"
+        dir *.py *.qrc
+        echo "Starting build..."
+        python build_installers.py --platform windows --version ${{ github.ref_name }}
+        echo "=== Build completed ==="
+        echo "Build output:"
+        dir build\ || echo "Build directory not found"
+        echo "Dist output:"
+        dir dist\ || echo "Dist directory not found"
 
     - name: Download lessmsi
       run: |
@@ -121,7 +205,18 @@ jobs:
 
       - name: Build macOS installer
         run: |
+          echo "=== Building macOS installer ==="
+          echo "Current directory:"
+          pwd
+          echo "Source files:"
+          ls -la *.py *.qrc
+          echo "Starting build..."
           python build_installers.py --platform macos --version ${{ github.ref_name }}
+          echo "=== Build completed ==="
+          echo "Build output:"
+          ls -la build/ || echo "Build directory not found"
+          echo "Release output:"
+          ls -la release/ || echo "Release directory not found"
 
       - name: List .app bundles
         run: |
