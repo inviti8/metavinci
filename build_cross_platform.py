@@ -41,7 +41,7 @@ class CrossPlatformBuilder:
         elif target_platform == 'macos' or (target_platform is None and self.platform_manager.is_macos):
             return self.cwd / 'hvym_logo_64.icns'
         else:  # Linux
-            return self.cwd / 'hvym_logo_64.png'
+            return self.cwd / 'metavinci.png'
     
     def get_dist_directory(self, target_platform=None):
         """Get the distribution directory for the target platform"""
