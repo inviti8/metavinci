@@ -241,6 +241,38 @@ class PressInstallWorker(LoadingWorker):
             # Emit error signal
             self.error.emit(f"Error installing Press: {e}")
 
+
+class HvymPressInstallWorker(LoadingWorker):
+    """Custom worker for hvym_press installation using direct downloads."""
+    
+    def __init__(self, press_path):
+        super().__init__(self._install_hvym_press_worker)
+        self.press_path = press_path
+    
+    def _install_hvym_press_worker(self):
+        """Worker function for installing hvym_press in background thread."""
+        try:
+            # Check if hvym_press is supported on current architecture
+            platform_manager = PlatformManager()
+            if not platform_manager.is_hvym_press_supported():
+                raise Exception("hvym_press is not supported on this architecture")
+            
+            bin_dir = os.path.dirname(str(self.press_path))
+            if not os.path.exists(bin_dir):
+                os.makedirs(bin_dir, exist_ok=True)
+            
+            press_path = download_and_install_hvym_press_cli(bin_dir)
+            print(f"hvym_press installed at {press_path}")
+            
+            # Emit success signal with message
+            self.success.emit(f"hvym_press installed at {press_path}")
+            
+        except Exception as e:
+            print(e)
+            # Emit error signal
+            self.error.emit(f"Error installing hvym_press: {e}")
+
+
 class WindowThread(QThread):
     result_ready = pyqtSignal(int)
 
@@ -501,6 +533,94 @@ def download_and_install_hvym_cli(dest_dir):
                     print(f"hvym installed at {dst}")
                     return dst
         raise Exception("hvym binary not found in archive")
+
+
+def get_latest_hvym_press_release_asset_url():
+    """Get the latest hvym_press release asset URL for the current platform."""
+    api_url = "https://api.github.com/repos/inviti8/hvym_press/releases/latest"
+    response = requests.get(api_url, timeout=10)
+    response.raise_for_status()
+    data = response.json()
+    assets = {asset['name']: asset['browser_download_url'] for asset in data['assets']}
+    system = platform.system().lower()
+    if system == "linux":
+        asset_name = "hvym_press-linux"
+    elif system == "darwin":
+        # Architecture-aware macOS asset selection
+        machine = (platform.machine() or '').lower()
+        arch_suffix = 'arm64' if 'arm' in machine or 'aarch64' in machine else 'amd64'
+        # Note: hvym_press is not supported on Apple Silicon
+        if arch_suffix == 'arm64':
+            raise Exception("hvym_press is not supported on macOS Apple Silicon (ARM64)")
+        asset_name = "hvym_press-macos"
+    elif system == "windows":
+        asset_name = "hvym_press-windows"
+    else:
+        raise Exception("Unsupported platform")
+    url = assets.get(asset_name)
+    if not url:
+        raise Exception(f"Asset {asset_name} not found in latest release")
+    return url
+
+
+def download_and_install_hvym_press_cli(dest_dir):
+    """Download and install the latest hvym_press CLI for the current platform."""
+    # Check if hvym_press is supported on current architecture
+    platform_manager = PlatformManager()
+    if not platform_manager.is_hvym_press_supported():
+        raise Exception("hvym_press is not supported on this architecture")
+    
+    # Use macOS-specific installation helper if on macOS
+    if platform.system().lower() == "darwin":
+        try:
+            from macos_install_helper import MacOSInstallHelper
+            helper = MacOSInstallHelper()
+            press_path = helper.install_hvym_press_cli()
+            if press_path:
+                return press_path
+            else:
+                raise Exception("macOS installation helper failed")
+        except ImportError:
+            print("macOS installation helper not available, falling back to standard method")
+        except Exception as e:
+            print(f"macOS installation helper error: {e}, falling back to standard method")
+    
+    # Standard installation method for other platforms
+    url = get_latest_hvym_press_release_asset_url()
+    print(f"Downloading {url} ...")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        asset = os.path.basename(url)
+        archive_path = os.path.join(tmpdir, asset)
+        # Use requests + certifi for robust SSL verification
+        import certifi
+        import requests
+        with requests.get(url, stream=True, timeout=30, verify=certifi.where(), headers={"User-Agent": "Metavinci/1.0"}) as r:
+            r.raise_for_status()
+            with open(archive_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+        # Extract
+        if asset.endswith('.tar.gz'):
+            with tarfile.open(archive_path, "r:gz") as tar:
+                tar.extractall(path=tmpdir)
+        elif asset.endswith('.zip'):
+            with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                zip_ref.extractall(tmpdir)
+        else:
+            raise Exception("Unknown archive format")
+        # Find the hvym_press binary
+        for root, dirs, files in os.walk(tmpdir):
+            for file in files:
+                if file.startswith("hvym_press"):
+                    src = os.path.join(root, file)
+                    dst = os.path.join(dest_dir, file)
+                    shutil.move(src, dst)
+                    if platform.system().lower() != "windows":
+                        os.chmod(dst, 0o755)
+                    print(f"hvym_press installed at {dst}")
+                    return dst
+        raise Exception("hvym_press binary not found in archive")
 
 
 class Metavinci(QMainWindow):
@@ -832,9 +952,13 @@ class Metavinci(QMainWindow):
 
 
         if not self.PRESS.is_file():
-            self.tray_tools_update_menu.addAction(install_press_action)
+            # Only show press installation if hvym_press is supported on current architecture
+            if self.platform_manager.is_hvym_press_supported():
+                self.tray_tools_update_menu.addAction(install_press_action)
         else:
-            self.tray_tools_update_menu.addAction(update_press_action)
+            # Only show press update if hvym_press is supported on current architecture
+            if self.platform_manager.is_hvym_press_supported():
+                self.tray_tools_update_menu.addAction(update_press_action)
 
         # if not self.ADDON_PATH.exists():
         #     tray_tools_update_menu.addAction(install_addon_action)
@@ -2032,21 +2156,27 @@ class Metavinci(QMainWindow):
             self.open_tunnel_action.setVisible(True)
 
     def _install_press(self):
+        # Check if hvym_press is supported on current architecture
+        if not self.platform_manager.is_hvym_press_supported():
+            self.open_msg_dialog("hvym_press is not supported on this architecture (macOS Apple Silicon)")
+            return
+            
         install = self.open_confirm_dialog('Install Heavymeta Press?')
         if install == True:
-            # Create custom worker
-            worker = PressInstallWorker(self.platform_manager)
+            # Create custom worker using the new HvymPressInstallWorker
+            worker = HvymPressInstallWorker(self.PRESS)
             
-            # Create loading window
-            loading_window = LoadingWindow(self, 'Installing Heavymeta Press')
+            # Create animated loading window for consistency with hvym installation
+            loading_window = AnimatedLoadingWindow(self, 'INSTALLING HVYM PRESS', 'images/loading.gif')
             loading_window.show()
             loading_window.raise_()
             loading_window.activateWindow()
+            loading_window.start_animation()
             QApplication.processEvents()
             
             # Connect signals
-            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_loading_finished(loading_window, worker)))
-            worker.error.connect(lambda error_msg: self._on_loading_error(loading_window, worker, error_msg))
+            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_animated_loading_finished(loading_window, worker)))
+            worker.error.connect(lambda error_msg: self._on_animated_loading_error(loading_window, worker, error_msg))
             worker.success.connect(lambda success_msg: QTimer.singleShot(0, lambda: self._on_press_install_success(loading_window, worker, success_msg)))
             
             # Start the worker thread
@@ -2073,6 +2203,11 @@ class Metavinci(QMainWindow):
             self.PRESS.unlink
 
     def _update_press(self):
+        # Check if hvym_press is supported on current architecture
+        if not self.platform_manager.is_hvym_press_supported():
+            self.open_msg_dialog("hvym_press is not supported on this architecture (macOS Apple Silicon)")
+            return
+            
         update = self.open_confirm_dialog('Update Heavymeta Press?')
         time.sleep(1)
         if update == True:

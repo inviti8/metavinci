@@ -15,6 +15,23 @@ class PlatformManager:
         self.is_macos = self.platform == 'darwin'
         self.is_linux = self.platform == 'linux'
         
+    def get_architecture(self):
+        """Get the current system architecture"""
+        machine = (platform.machine() or '').lower()
+        if 'arm' in machine or 'aarch64' in machine:
+            return 'arm64'
+        elif 'x86_64' in machine or 'amd64' in machine:
+            return 'amd64'
+        else:
+            return machine
+    
+    def is_hvym_press_supported(self):
+        """Check if hvym_press is supported on the current architecture"""
+        # hvym_press is not supported on macOS Apple Silicon
+        if self.is_macos and self.get_architecture() == 'arm64':
+            return False
+        return True
+        
     def get_config_path(self):
         """Get the main configuration directory path"""
         if self.is_windows:
@@ -73,6 +90,9 @@ class PlatformManager:
             return Path.home() / 'AppData' / 'Local' / 'heavymeta-press' / 'hvym-press-windows.exe'
         elif self.is_macos:
             # Use a more accessible location for macOS that doesn't require elevated permissions
+            # Note: hvym_press is not supported on Apple Silicon
+            if not self.is_hvym_press_supported():
+                return Path.home() / 'Library' / 'Application Support' / 'Metavinci' / 'bin' / 'hvym-press-unsupported'
             return Path.home() / 'Library' / 'Application Support' / 'Metavinci' / 'bin' / 'hvym-press-macos'
         else:  # Linux - maintain existing pattern
             return Path.home() / '.local' / 'share' / 'heavymeta-press' / 'hvym-press-linux'
