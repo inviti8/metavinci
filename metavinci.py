@@ -1097,6 +1097,7 @@ class Metavinci(QMainWindow):
         self.user_pid = str(self._run('dfx identity get-principal')).strip()
         self.DB.update({'INITIALIZED': True, 'principal': self.user_pid}, self.QUERY.type == 'app_data')
         self._installation_check()
+        self._check_press_installation()
         msg = QMessageBox(self)
         msg.setWindowTitle("!")
         msg.setText("Metavinci must restart now...")
@@ -1831,6 +1832,44 @@ class Metavinci(QMainWindow):
             if check != None and check.strip() == 'ONE-TWO':
                 print('hvym is on path')
 
+    def _check_press_installation(self):
+        """Check if hvym_press is installed and update tray actions accordingly."""
+        try:
+            if self.PRESS.is_file():
+                print('hvym_press is installed')
+                # Update UI to reflect press availability
+                self._update_ui_on_press_installed()
+                self._ensure_press_menu()
+            else:
+                print('hvym_press is not installed')
+                # Ensure install action is visible if supported on current architecture
+                if self.platform_manager.is_hvym_press_supported():
+                    if hasattr(self, 'install_press_action'):
+                        self.install_press_action.setVisible(True)
+                    if hasattr(self, 'update_press_action'):
+                        self.update_press_action.setVisible(False)
+                # Hide run action if it exists
+                if hasattr(self, 'run_press_action'):
+                    self.run_press_action.setVisible(False)
+                # Ensure press menu is properly set up
+                self._ensure_press_menu()
+        except Exception as e:
+            print(f"Error checking press installation: {e}")
+
+    def _refresh_startup_ui_state(self):
+        """Refresh all UI states after startup to ensure tray menu accuracy."""
+        try:
+            # Refresh press UI state
+            self._refresh_press_ui_state()
+            self._ensure_press_menu()
+            
+            # Refresh pintheon UI state if hvym is available
+            if self.HVYM.is_file():
+                self._refresh_pintheon_ui_state()
+                
+        except Exception as e:
+            print(f"Error refreshing startup UI state: {e}")
+
     def _install_hvym(self):
         install = self.open_confirm_dialog('Install Heavymeta cli?')
         if install == True:
@@ -2161,6 +2200,23 @@ class Metavinci(QMainWindow):
         except Exception as e:
             print(f"Error refreshing press UI state: {e}")
 
+    def _ensure_press_menu(self):
+        """Ensure the press menu is properly set up and visible."""
+        try:
+            if self.PRESS.is_file():
+                # Press is installed - ensure run action is visible in Tools menu
+                if hasattr(self, 'run_press_action'):
+                    # Check if run_press_action is already in the tools menu
+                    if self.run_press_action not in self.tray_tools_menu.actions():
+                        self.tray_tools_menu.addAction(self.run_press_action)
+                    self.run_press_action.setVisible(True)
+            else:
+                # Press is not installed - hide run action
+                if hasattr(self, 'run_press_action'):
+                    self.run_press_action.setVisible(False)
+        except Exception as e:
+            print(f"Error ensuring press menu: {e}")
+
     def _start_pintheon(self):
         start = self.open_confirm_dialog('Start Pintheon Gateway?')
         if start:
@@ -2331,5 +2387,9 @@ if __name__ == "__main__":
     mw.setFixedSize(70,70)
     mw.center()
     mw.hide()
+    
+    # Refresh UI states after startup to ensure tray menu accuracy
+    mw._refresh_startup_ui_state()
+    
     sys.exit(app.exec())
 
