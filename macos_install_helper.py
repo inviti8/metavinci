@@ -15,6 +15,7 @@ import tarfile
 import zipfile
 from pathlib import Path
 from platform_manager import PlatformManager
+import shutil
 
 class MacOSInstallHelper:
     """Helper class for macOS-specific installation requirements."""
@@ -375,8 +376,8 @@ class MacOSInstallHelper:
             
             print(f"Downloading from: {url}")
             
-            # Create temporary file for download
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.tar.gz') as temp_file:
+            # Create temporary file for download (direct executable, not compressed)
+            with tempfile.NamedTemporaryFile(delete=False, suffix='') as temp_file:
                 temp_path = Path(temp_file.name)
             
             # Download with certifi-backed SSL context to avoid certificate issues
@@ -430,67 +431,41 @@ class MacOSInstallHelper:
 
     def _install_hvym_press_binary(self, download_path):
         """
-        Extract and install the downloaded hvym_press binary.
+        Install the downloaded hvym_press binary directly.
         
         Args:
-            download_path (Path): Path to downloaded file
+            download_path (Path): Path to downloaded executable file
             
         Returns:
             bool: True if successful, False otherwise
         """
         try:
-            # Extract the archive
-            if download_path.suffix == '.tar.gz' or download_path.name.endswith('.tar.gz'):
-                with tarfile.open(download_path, 'r:gz') as tar:
-                    tar.extractall(self.bin_dir)
-            elif download_path.suffix == '.zip':
-                with zipfile.ZipFile(download_path, 'r') as zip_file:
-                    zip_file.extractall(self.bin_dir)
-            else:
-                print(f"Unsupported file format: {download_path.suffix} (filename: {download_path.name})")
-                return False
-            
-            # Find the extracted binary
+            # The downloaded file is already the executable, no extraction needed
             binary_name = 'hvym_press-macos'
-            extracted_binary = self.bin_dir / binary_name
-            
-            if not extracted_binary.exists():
-                # Look for the binary in subdirectories
-                for item in self.bin_dir.iterdir():
-                    if item.is_dir():
-                        potential_binary = item / binary_name
-                        if potential_binary.exists():
-                            extracted_binary = potential_binary
-                            break
-            
-            if not extracted_binary.exists():
-                print(f"Could not find {binary_name} in extracted files")
-                return False
-            
-            # Move to final location if needed
             press_path = self.platform_manager.get_press_path()
-            if extracted_binary != press_path:
-                if press_path.exists():
-                    press_path.unlink()
-                extracted_binary.rename(press_path)
+            
+            # Move the downloaded executable to the final location
+            if press_path.exists():
+                press_path.unlink()
+            
+            # Rename the downloaded file to the expected name and move to final location
+            final_binary = self.bin_dir / binary_name
+            shutil.move(download_path, final_binary)
             
             # Set executable permissions
-            os.chmod(press_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+            os.chmod(final_binary, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
 
             # Remove macOS quarantine attribute if present to avoid Gatekeeper blocking execution
             try:
                 import subprocess
                 subprocess.run([
-                    'xattr', '-d', 'com.apple.quarantine', str(press_path)
+                    'xattr', '-d', 'com.apple.quarantine', str(final_binary)
                 ], check=False, capture_output=True)
             except Exception:
                 # Best-effort: ignore if xattr removal fails
                 pass
             
-            # Clean up downloaded file
-            download_path.unlink()
-            
-            print(f"Installed binary to: {press_path}")
+            print(f"Installed binary to: {final_binary}")
             return True
             
         except Exception as e:

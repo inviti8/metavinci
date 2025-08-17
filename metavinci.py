@@ -218,7 +218,7 @@ class PintheonInstallWorker(LoadingWorker):
 
 
 class PressInstallWorker(LoadingWorker):
-    """Custom worker for Press installation."""
+    """Custom worker for Press installation using direct executable downloads."""
     
     def __init__(self, platform_manager):
         super().__init__(self._install_press_worker)
@@ -227,11 +227,22 @@ class PressInstallWorker(LoadingWorker):
     def _install_press_worker(self):
         """Worker function for installing Press in background thread."""
         try:
-            # Use cross-platform script download and execution
-            script_url = self.platform_manager.get_press_install_script_url()
-            installed = download_and_execute_script(script_url, self.platform_manager)
+            # Check if hvym_press is supported on current architecture
+            if not self.platform_manager.is_hvym_press_supported():
+                raise Exception("hvym_press is not supported on this architecture")
             
-            if installed:
+            # Get the press path and bin directory
+            press_path = self.platform_manager.get_press_path()
+            bin_dir = press_path.parent
+            
+            # Ensure bin directory exists
+            if not bin_dir.exists():
+                bin_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Use the direct download and installation method
+            installed_path = download_and_install_hvym_press_cli(str(bin_dir))
+            
+            if installed_path:
                 self.success.emit("Press installed successfully")
             else:
                 self.error.emit("Press installation failed")
@@ -554,7 +565,7 @@ def get_latest_hvym_press_release_asset_url():
             raise Exception("hvym_press is not supported on macOS Apple Silicon (ARM64)")
         asset_name = "hvym_press-macos"
     elif system == "windows":
-        asset_name = "hvym_press-windows"
+        asset_name = "hvym_press-windows.exe"
     else:
         raise Exception("Unsupported platform")
     url = assets.get(asset_name)
@@ -588,39 +599,42 @@ def download_and_install_hvym_press_cli(dest_dir):
     # Standard installation method for other platforms
     url = get_latest_hvym_press_release_asset_url()
     print(f"Downloading {url} ...")
+    
+    # Get the expected executable name for the current platform
+    system = platform.system().lower()
+    if system == "linux":
+        executable_name = "hvym_press-linux"
+    elif system == "darwin":
+        executable_name = "hvym_press-macos"
+    elif system == "windows":
+        executable_name = "hvym_press-windows.exe"
+    else:
+        raise Exception("Unsupported platform")
+    
+    # Download the executable directly
     with tempfile.TemporaryDirectory() as tmpdir:
-        asset = os.path.basename(url)
-        archive_path = os.path.join(tmpdir, asset)
+        executable_path = os.path.join(tmpdir, executable_name)
+        
         # Use requests + certifi for robust SSL verification
         import certifi
         import requests
         with requests.get(url, stream=True, timeout=30, verify=certifi.where(), headers={"User-Agent": "Metavinci/1.0"}) as r:
             r.raise_for_status()
-            with open(archive_path, 'wb') as f:
+            with open(executable_path, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
-        # Extract
-        if asset.endswith('.tar.gz'):
-            with tarfile.open(archive_path, "r:gz") as tar:
-                tar.extractall(path=tmpdir)
-        elif asset.endswith('.zip'):
-            with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-                zip_ref.extractall(tmpdir)
-        else:
-            raise Exception("Unknown archive format")
-        # Find the hvym_press binary
-        for root, dirs, files in os.walk(tmpdir):
-            for file in files:
-                if file.startswith("hvym_press"):
-                    src = os.path.join(root, file)
-                    dst = os.path.join(dest_dir, file)
-                    shutil.move(src, dst)
-                    if platform.system().lower() != "windows":
-                        os.chmod(dst, 0o755)
-                    print(f"hvym_press installed at {dst}")
-                    return dst
-        raise Exception("hvym_press binary not found in archive")
+        
+        # Move the executable to the destination directory
+        dst_path = os.path.join(dest_dir, executable_name)
+        shutil.move(executable_path, dst_path)
+        
+        # Set executable permissions for Unix systems
+        if platform.system().lower() != "windows":
+            os.chmod(dst_path, 0o755)
+        
+        print(f"hvym_press installed at {dst_path}")
+        return dst_path
 
 
 class Metavinci(QMainWindow):
@@ -2039,6 +2053,14 @@ class Metavinci(QMainWindow):
         # Refresh Pintheon UI state based on actual installation
         self._refresh_pintheon_ui_state()
 
+    def _update_ui_on_press_installed(self):
+        """Update UI to reflect hvym_press availability after installation."""
+        # Toggle install/update visibility
+        self.install_press_action.setVisible(False)
+        self.update_press_action.setVisible(True)
+        # Refresh press UI state based on actual installation
+        self._refresh_press_ui_state()
+
     def _is_pintheon_installed(self) -> bool:
         try:
             res = self.hvym_pintheon_exists()
@@ -2114,6 +2136,30 @@ class Metavinci(QMainWindow):
                 self.open_tunnel_action.setVisible(False)
         else:
             menu = self.tray_tools_menu.addMenu("!!DOCKER NOT INSTALLED!!")
+
+    def _refresh_press_ui_state(self):
+        """Refresh press-related UI elements based on installation status."""
+        try:
+            # Check if press is actually installed
+            press_installed = self.PRESS.is_file()
+            
+            if press_installed:
+                # Press is installed - ensure run action is visible
+                if hasattr(self, 'run_press_action'):
+                    self.run_press_action.setVisible(True)
+                
+                # Update any other press-dependent UI elements
+                # For example, if there are press-specific menu items, show them here
+                
+            else:
+                # Press is not installed - hide run action
+                if hasattr(self, 'run_press_action'):
+                    self.run_press_action.setVisible(False)
+                
+                # Hide any other press-dependent UI elements
+                
+        except Exception as e:
+            print(f"Error refreshing press UI state: {e}")
 
     def _start_pintheon(self):
         start = self.open_confirm_dialog('Start Pintheon Gateway?')
@@ -2220,11 +2266,23 @@ class Metavinci(QMainWindow):
         self.hide()
         worker.deleteLater()
         
+        # Update UI to reflect press availability
+        self._update_ui_on_press_installed()
         # Show success message
         self.open_msg_dialog(success_msg)
         
-        # Restart after a delay
-        QTimer.singleShot(1000, self.restart)
+
+
+    def _on_press_update_success(self, loading_window, worker, success_msg):
+        """Handle successful Press update."""
+        loading_window.close()
+        self.hide()
+        worker.deleteLater()
+        
+        # Update UI to reflect press availability
+        self._update_ui_on_press_installed()
+        # Show success message
+        self.open_msg_dialog(success_msg)
 
     def _delete_press(self):
         if self.PRESS.is_file():
@@ -2237,14 +2295,29 @@ class Metavinci(QMainWindow):
             return
             
         update = self.open_confirm_dialog('Update Heavymeta Press?')
-        time.sleep(1)
         if update == True:
-            loading = self.loading_indicator_start('UPDATING Press')
-            self._delete_press()
-            self._install_press()
-            loading.close()
-            self.hide()
-            self.restart()
+            # Create custom worker using the new HvymPressInstallWorker
+            worker = HvymPressInstallWorker(self.PRESS)
+            
+            # Create animated loading window for consistency with hvym installation
+            loading_window = AnimatedLoadingWindow(self, 'UPDATING HVYM PRESS', 'images/loading.gif')
+            loading_window.show()
+            loading_window.raise_()
+            loading_window.activateWindow()
+            loading_window.start_animation()
+            QApplication.processEvents()
+            
+            # Connect signals
+            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_animated_loading_finished(loading_window, worker)))
+            worker.error.connect(lambda error_msg: self._on_animated_loading_error(loading_window, worker, error_msg))
+            worker.success.connect(lambda success_msg: QTimer.singleShot(0, lambda: self._on_press_update_success(loading_window, worker, success_msg)))
+            
+            # Start the worker thread
+            worker.start()
+            
+            # Store references to prevent garbage collection
+            self._current_loading_window = loading_window
+            self._current_worker = worker
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
