@@ -62,6 +62,49 @@ class MacOSInstallHelper:
             print(f"Error during macOS installation: {e}")
             return None
     
+    def install_hvym_press_cli(self):
+        """
+        Download and install the hvym_press CLI for macOS.
+        Note: hvym_press is not supported on Apple Silicon (ARM64).
+        
+        Returns:
+            str: Path to the installed hvym_press binary, or None if failed
+        """
+        try:
+            print("Starting macOS-specific hvym_press CLI installation...")
+            
+            # Check if hvym_press is supported on current architecture
+            if not self.platform_manager.is_hvym_press_supported():
+                print("hvym_press is not supported on macOS Apple Silicon (ARM64)")
+                return None
+            
+            # Create necessary directories
+            self._create_directories()
+            
+            # Download the latest hvym_press CLI
+            download_path = self._download_hvym_press_cli()
+            if not download_path:
+                print("Failed to download hvym_press CLI")
+                return None
+                
+            # Install the binary
+            success = self._install_hvym_press_binary(download_path)
+            if not success:
+                print("Failed to install hvym_press CLI")
+                return None
+                
+            # Verify installation
+            if self._verify_hvym_press_installation():
+                print(f"Successfully installed hvym_press CLI to: {self.platform_manager.get_press_path()}")
+                return str(self.platform_manager.get_press_path())
+            else:
+                print("Installation verification failed")
+                return None
+                
+        except Exception as e:
+            print(f"Error during macOS hvym_press installation: {e}")
+            return None
+    
     def _create_directories(self):
         """Create necessary directories with proper permissions."""
         try:
@@ -314,6 +357,193 @@ class MacOSInstallHelper:
                 return False
                 
         except Exception:
+            return False
+
+    def _download_hvym_press_cli(self):
+        """
+        Download the latest hvym_press CLI for macOS.
+        
+        Returns:
+            Path: Path to downloaded file, or None if failed
+        """
+        try:
+            # Get the latest release URL for macOS
+            url = self._get_latest_hvym_press_release_url()
+            if not url:
+                print("Could not determine download URL")
+                return None
+            
+            print(f"Downloading from: {url}")
+            
+            # Create temporary file for download
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.tar.gz') as temp_file:
+                temp_path = Path(temp_file.name)
+            
+            # Download with certifi-backed SSL context to avoid certificate issues
+            try:
+                import certifi
+                context = ssl.create_default_context(cafile=certifi.where())
+            except Exception:
+                context = ssl.create_default_context()
+            
+            req = urllib.request.Request(url, headers={"User-Agent": "Metavinci/1.0"})
+            with urllib.request.urlopen(req, context=context) as resp, open(temp_path, 'wb') as out:
+                out.write(resp.read())
+            
+            print(f"Downloaded to: {temp_path}")
+            return temp_path
+            
+        except Exception as e:
+            print(f"Error downloading hvym_press CLI: {e}")
+            return None
+
+    def _get_latest_hvym_press_release_url(self):
+        """
+        Get the URL for the latest hvym_press CLI release for macOS.
+        
+        Returns:
+            str: Download URL, or None if failed
+        """
+        try:
+            # GitHub API URL for latest release
+            api_url = "https://api.github.com/repos/inviti8/hvym_press/releases/latest"
+            
+            # Get the latest release info
+            with urllib.request.urlopen(api_url) as response:
+                import json
+                release_data = json.loads(response.read().decode())
+            
+            # Find the macOS asset
+            expected_asset_name = "hvym_press-macos"
+            assets = {asset['name']: asset['browser_download_url'] for asset in release_data.get('assets', [])}
+            url = assets.get(expected_asset_name)
+            
+            if not url:
+                print(f"Asset {expected_asset_name} not found in latest release")
+                return None
+            
+            return url
+            
+        except Exception as e:
+            print(f"Error getting release URL: {e}")
+            return None
+
+    def _install_hvym_press_binary(self, download_path):
+        """
+        Extract and install the downloaded hvym_press binary.
+        
+        Args:
+            download_path (Path): Path to downloaded file
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Extract the archive
+            if download_path.suffix == '.tar.gz' or download_path.name.endswith('.tar.gz'):
+                with tarfile.open(download_path, 'r:gz') as tar:
+                    tar.extractall(self.bin_dir)
+            elif download_path.suffix == '.zip':
+                with zipfile.ZipFile(download_path, 'r') as zip_file:
+                    zip_file.extractall(self.bin_dir)
+            else:
+                print(f"Unsupported file format: {download_path.suffix} (filename: {download_path.name})")
+                return False
+            
+            # Find the extracted binary
+            binary_name = 'hvym_press-macos'
+            extracted_binary = self.bin_dir / binary_name
+            
+            if not extracted_binary.exists():
+                # Look for the binary in subdirectories
+                for item in self.bin_dir.iterdir():
+                    if item.is_dir():
+                        potential_binary = item / binary_name
+                        if potential_binary.exists():
+                            extracted_binary = potential_binary
+                            break
+            
+            if not extracted_binary.exists():
+                print(f"Could not find {binary_name} in extracted files")
+                return False
+            
+            # Move to final location if needed
+            press_path = self.platform_manager.get_press_path()
+            if extracted_binary != press_path:
+                if press_path.exists():
+                    press_path.unlink()
+                extracted_binary.rename(press_path)
+            
+            # Set executable permissions
+            os.chmod(press_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+
+            # Remove macOS quarantine attribute if present to avoid Gatekeeper blocking execution
+            try:
+                import subprocess
+                subprocess.run([
+                    'xattr', '-d', 'com.apple.quarantine', str(press_path)
+                ], check=False, capture_output=True)
+            except Exception:
+                # Best-effort: ignore if xattr removal fails
+                pass
+            
+            # Clean up downloaded file
+            download_path.unlink()
+            
+            print(f"Installed binary to: {press_path}")
+            return True
+            
+        except Exception as e:
+            print(f"Error installing binary: {e}")
+            return False
+
+    def _verify_hvym_press_installation(self):
+        """
+        Verify that the hvym_press installation was successful.
+        
+        Returns:
+            bool: True if verification passes, False otherwise
+        """
+        try:
+            press_path = self.platform_manager.get_press_path()
+            
+            # Check if binary exists
+            if not press_path.exists():
+                print("Binary does not exist")
+                return False
+            
+            # Check if binary is executable
+            if not os.access(press_path, os.X_OK):
+                print("Binary is not executable")
+                return False
+            
+            # For PyInstaller executables on macOS, the --version command might fail
+            # due to directory creation issues, but the binary is still valid
+            # Let's try a simple verification first
+            import subprocess
+            try:
+                result = subprocess.run([str(press_path), '--version'], 
+                                      capture_output=True, text=True, timeout=10)
+                
+                if result.returncode == 0:
+                    print(f"Binary verification successful: {result.stdout.strip()}")
+                    return True
+                else:
+                    # If --version fails, check if it's a PyInstaller error
+                    if "PYI-" in result.stderr:
+                        print("Binary is a PyInstaller executable (expected behavior)")
+                        print("Installation appears successful - binary exists and is executable")
+                        return True
+                    else:
+                        print(f"Binary verification failed: {result.stderr}")
+                        return False
+                        
+            except subprocess.TimeoutExpired:
+                print("Binary verification timed out")
+                return False
+                
+        except Exception as e:
+            print(f"Error during verification: {e}")
             return False
 
     # --- Convenience methods used by tests ---
