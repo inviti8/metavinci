@@ -87,15 +87,15 @@ class PlatformManager:
     def get_press_path(self):
         """Get Heavymeta Press path"""
         if self.is_windows:
-            return Path.home() / 'AppData' / 'Local' / 'heavymeta-press' / 'hvym-press-windows.exe'
+            return Path.home() / 'AppData' / 'Local' / 'heavymeta-press' / 'hvym_press-windows.exe'
         elif self.is_macos:
             # Use a more accessible location for macOS that doesn't require elevated permissions
             # Note: hvym_press is not supported on Apple Silicon
             if not self.is_hvym_press_supported():
                 return Path.home() / 'Library' / 'Application Support' / 'Metavinci' / 'bin' / 'hvym-press-unsupported'
-            return Path.home() / 'Library' / 'Application Support' / 'Metavinci' / 'bin' / 'hvym-press-macos'
+            return Path.home() / 'Library' / 'Application Support' / 'Metavinci' / 'bin' / 'hvym_press-macos'
         else:  # Linux - maintain existing pattern
-            return Path.home() / '.local' / 'share' / 'heavymeta-press' / 'hvym-press-linux'
+            return Path.home() / '.local' / 'share' / 'heavymeta-press' / 'hvym_press-linux'
     
     def get_blender_path(self):
         """Get Blender configuration path"""
