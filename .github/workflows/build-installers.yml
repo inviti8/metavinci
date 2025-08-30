@@ -181,7 +181,22 @@ jobs:
         
         # Sign the MSI using the installed Windows SDK signtool
         $signTool = "$env:ProgramFiles (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe"
-        $msiFile = (Get-ChildItem -Path "dist\*.msi").FullName
+        
+        # Look for MSI in both root dist and build/dist directories
+        $msiFile = (Get-ChildItem -Path "dist\*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+        if (-not $msiFile) {
+            $msiFile = (Get-ChildItem -Path "build\dist\*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+        }
+        
+        if (-not $msiFile) {
+            Write-Host "##[error] MSI file not found in expected locations"
+            Write-Host "##[debug] Current directory: $(Get-Location)"
+            Write-Host "##[debug] Directory contents:"
+            Get-ChildItem -Recurse -Filter "*.msi" | Format-Table FullName
+            exit 1
+        }
+        
+        Write-Host "##[info] Found MSI file at: $msiFile"
         
         # Sign with SHA-256 and timestamp
         & "$signTool" sign `
@@ -194,7 +209,13 @@ jobs:
             "$msiFile"
         
         # Verify the signature (skip root trust check for self-signed cert)
-        & "$signTool" verify /pa /v /c "$msiFile"
+        if (Test-Path $msiFile) {
+            & "$signTool" verify /pa /v /c "$msiFile"
+        } else {
+            Write-Host "Error: MSI file not found at $msiFile"
+            Get-ChildItem -Path "dist" -Recurse | Format-Table FullName
+            exit 1
+        }
         
         # Clean up the certificate file
         if (Test-Path $certPath) {
