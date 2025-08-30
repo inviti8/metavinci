@@ -502,8 +502,14 @@ jobs:
     - name: Prepare release assets
       run: |
         mkdir -p release
+        # Linux .deb file
         cp installers/metavinci-linux-installer/*.deb release/
-        cp installers/metavinci-windows-msi-installer/*.msi release/
+        
+        # Windows files (MSI and cert script)
+        cp installers/metavinci-windows-msi-installer/dist/*.msi release/
+        cp installers/metavinci-windows-msi-installer/scripts/install-win-metavinci-cert.ps1 release/
+        
+        # macOS DMG files
         cp installers/metavinci-macos-installer-amd64/*.dmg release/
         cp installers/metavinci-macos-installer-arm64/*.dmg release/
 
