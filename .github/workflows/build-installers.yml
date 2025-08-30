@@ -193,8 +193,8 @@ jobs:
             /v `
             "$msiFile"
         
-        # Verify the signature
-        & "$signTool" verify /pa /v "$msiFile"
+        # Verify the signature (skip root trust check for self-signed cert)
+        & "$signTool" verify /pa /v /c "$msiFile"
         
         # Clean up the certificate file
         if (Test-Path $certPath) {
