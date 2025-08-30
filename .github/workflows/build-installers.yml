@@ -170,12 +170,44 @@ jobs:
       run: |
         curl -L -o lessmsi.zip https://github.com/activescott/lessmsi/releases/download/v1.10.0/lessmsi-v1.10.0.zip
         tar -xf lessmsi.zip
+        
+    - name: Sign Windows MSI
+      if: success()
+      run: |
+        # Write the certificate to a secure temporary file
+        $certBytes = [System.Convert]::FromBase64String("${{ secrets.WINDOWS_SIGNING_CERT }}")
+        $certPath = "$env:RUNNER_TEMP\cert.pfx"
+        [System.IO.File]::WriteAllBytes($certPath, $certBytes)
+        
+        # Sign the MSI using the installed Windows SDK signtool
+        $signTool = "$env:ProgramFiles (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe"
+        $msiFile = (Get-ChildItem -Path "dist\*.msi").FullName
+        
+        # Sign with SHA-256 and timestamp
+        & "$signTool" sign `
+            /f "$certPath" `
+            /p "${{ secrets.WINDOWS_SIGNING_PASSWORD }}" `
+            /fd sha256 `
+            /td sha256 `
+            /tr "http://timestamp.digicert.com" `
+            /v `
+            "$msiFile"
+        
+        # Verify the signature
+        & "$signTool" verify /pa /v "$msiFile"
+        
+        # Clean up the certificate file
+        if (Test-Path $certPath) {
+            Remove-Item -Path $certPath -Force
+        }
 
-    - name: Upload Windows MSI installer
+    - name: Upload Windows MSI installer and certificate script
       uses: actions/upload-artifact@v4
       with:
-        name: metavinci-windows-msi-installer
-        path: dist/*.msi
+        name: metavinci-windows-installer
+        path: |
+          dist/*.msi
+          scripts/install-win-metavinci-cert.ps1
         retention-days: 30
 
   build-macos-installer:
