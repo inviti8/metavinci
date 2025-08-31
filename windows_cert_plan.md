@@ -70,25 +70,24 @@ This document outlines the process for implementing code signing for Windows ins
 
 4. **Create PKCS#12 (PFX) file** (for Windows compatibility):
    ```bash
-   # Set a strong password
-   CERT_PASSWORD="YourSecurePassword123!"
+
+   CERT_PASSWORD="STRONG_PW"\
    
-   # Create PFX file
    openssl pkcs12 -export \
-       -out metavinci.pfx \
-       -inkey metavinci.key \
-       -in metavinci.crt \
+       -out /media/desktop/_dsk/dev/metavinci/metavinci.pfx \
+       -inkey /media/desktop/_dsk/dev/metavinci/metavinci.key \
+       -in /media/desktop/_dsk/dev/metavinci/metavinci.crt \
        -password pass:${CERT_PASSWORD} \
        -name "Metavinci Code Signing"
    
    # Create CER file (for distribution)
-   openssl x509 -inform PEM -in metavinci.crt -outform DER -out metavinci.cer
+   openssl x509 -inform PEM -in /media/desktop/_dsk/dev/metavinci/metavinci.crt -outform DER -out /media/desktop/_dsk/dev/metavinci/metavinci.cer
    ```
 
 5. **Prepare for GitHub Actions**:
    ```bash
    # Convert PFX to base64 for GitHub Secrets
-   base64 -w 0 metavinci.pfx > certificate.txt
+   base64 -w 0 /media/desktop/_dsk/dev/metavinci/metavinci.pfx > /media/desktop/_dsk/dev/metavinci/certificate.txt
    
    # The password will also be needed in GitHub Secrets
    echo "Certificate password: ${CERT_PASSWORD}"

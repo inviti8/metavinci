@@ -9,7 +9,7 @@ import time
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QMovie, QPixmap
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, 
-                           QVBoxLayout, QWidget, QLabel, QSplashScreen)
+                           QVBoxLayout, QWidget, QLabel, QSplashScreen, QMessageBox)
 from PIL import Image
 
 class WorkerThread(QThread):
@@ -29,27 +29,8 @@ class LoadingSplash(QSplashScreen):
     def __init__(self, gif_path, parent=None):
         print(f"Creating LoadingSplash with GIF: {gif_path}")
         
-        # First, use PIL to get the GIF dimensions
-        try:
-            with Image.open(gif_path) as img:
-                gif_size = img.size
-                print(f"GIF dimensions from PIL: {gif_size}")
-                # Create a pixmap with the GIF dimensions
-                pixmap = QPixmap(*gif_size)
-        except Exception as e:
-            print(f"Error getting GIF dimensions: {e}")
-            # Fallback to a default size
-            pixmap = QPixmap(200, 200)
-            gif_size = (200, 200)
-        
-        # Fill with a transparent background
-        pixmap.fill(Qt.transparent)
-        
-        # Initialize with the pixmap
-        super().__init__(pixmap)
-        
-        # Store the original size
-        self.original_size = gif_size
+        # Initialize with a default pixmap (will be updated by the movie)
+        super().__init__(QPixmap(1, 1))
         
         # Set window flags to make it stay on top and frameless
         self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
@@ -62,18 +43,21 @@ class LoadingSplash(QSplashScreen):
             print(f"Error: Could not load animation from {gif_path}")
             # Fallback to a simple message if GIF loading fails
             self.showMessage("Loading...", Qt.AlignBottom | Qt.AlignCenter, Qt.white)
+            self.setFixedSize(200, 200)  # Default size for fallback
         else:
             print(f"Movie frame count: {self.movie.frameCount()}")
             print(f"Movie size: {self.movie.scaledSize()}")
-            
-            # Set the window size to match the GIF dimensions
-            self.setFixedSize(*gif_size)
             
             # Connect the frame changed signal
             self.movie.frameChanged.connect(self.update_pixmap)
             
             # Start the animation
             self.movie.start()
+            
+            # Set initial size based on the first frame
+            first_frame = self.movie.currentPixmap()
+            if not first_frame.isNull():
+                self.setFixedSize(first_frame.size())
         
         # Center on screen
         screen = QApplication.primaryScreen().availableGeometry()
@@ -92,24 +76,23 @@ class LoadingSplash(QSplashScreen):
             if hasattr(self, 'movie') and self.movie.state() == QMovie.Running:
                 current_pixmap = self.movie.currentPixmap()
                 if not current_pixmap.isNull():
-                    # Set the pixmap directly without scaling
+                    # Set the pixmap
                     self.setPixmap(current_pixmap)
                     # Set the mask to make the background transparent
                     self.setMask(current_pixmap.mask())
-                    # Force update
-                    self.repaint()
-                    QApplication.processEvents()
         except Exception as e:
             print(f"Error updating pixmap: {e}")
     
     def update_progress(self, value):
-        """Update the progress message."""
-        self.showMessage(
-            f"Loading... {value}%",
-            Qt.AlignBottom | Qt.AlignCenter,
-            Qt.white
-        )
-        QApplication.processEvents()
+        """Optional: Update the progress message if needed.
+        This is not required for the animation to work.
+        """
+        if hasattr(self, 'movie') and self.movie.isValid():
+            self.showMessage(
+                f"Loading... {value}%",
+                Qt.AlignBottom | Qt.AlignCenter,
+                Qt.white
+            )
 
 class TestWindow(QMainWindow):
     """Main test window with a button to trigger the loading animation."""
@@ -139,23 +122,48 @@ class TestWindow(QMainWindow):
         self.show()
     
     def find_loading_gif(self):
-        """Find the loading GIF in common locations."""
-        # Try resource path first (for built app)
-        resource_path = ":/images/loading.gif"
-        if QMovie(resource_path).isValid():
-            print("Using resource path:", resource_path)
-            return resource_path
+        """Find the loading GIF in multiple possible locations.
+        
+        This method checks several locations in order:
+        1. Qt resource path (for built app)
+        2. Next to the executable (for frozen app)
+        3. In an images/ subdirectory (for development)
+        4. Fallback to a built-in animation if no file is found
+        """
+        possible_paths = [
+            # 1. Qt resource path (works in built app)
+            (":/images/loading.gif", "Qt resource path"),
             
-        # Try relative path (for development)
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        dev_path = os.path.join(script_dir, "images", "loading.gif")
-        if os.path.exists(dev_path):
-            print("Using development path:", dev_path)
-            return dev_path
+            # 2. Next to executable (for frozen app)
+            (os.path.join(sys._MEIPASS, "images", "loading.gif") if hasattr(sys, '_MEIPASS') else None, 
+             "MEIPATH bundle"),
             
-        # Fallback to a simple built-in animation
-        print("Warning: Could not find loading.gif, using built-in animation")
-        return None
+            # 3. In application directory (for frozen app on some platforms)
+            (os.path.join(os.path.dirname(sys.executable), "images", "loading.gif") 
+             if getattr(sys, 'frozen', False) else None, "executable directory"),
+            
+            # 4. In development directory
+            (os.path.join(os.path.dirname(os.path.abspath(__file__)), "images", "loading.gif"), 
+             "development directory"),
+        ]
+        
+        for path, path_type in possible_paths:
+            if not path:  # Skip None paths (conditional paths that didn't apply)
+                continue
+                
+            # For Qt resource paths
+            if path.startswith(':'):
+                if QMovie(path).isValid():
+                    print(f"Found loading GIF at {path_type}: {path}")
+                    return path
+            # For filesystem paths
+            elif os.path.exists(path):
+                print(f"Found loading GIF at {path_type}: {path}")
+                return path
+        
+        # If we get here, no valid path was found
+        print("Warning: Could not find loading.gif in any standard location")
+        return None  # Let the caller handle the fallback
     
     def start_long_operation(self):
         """Start a long operation with loading animation."""
