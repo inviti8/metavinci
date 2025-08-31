@@ -328,123 +328,119 @@ class LoadingWindow(QWidget):
 
 
 
-class AnimatedLoadingWindow(QWidget):
+class AnimatedLoadingWindow(QSplashScreen):
     """
     A non-blocking animated loading indicator window with GIF animation.
+    Uses QSplashScreen for better cross-platform compatibility and performance.
     """
     def __init__(self, parent, prompt, gif_path):
-        super().__init__(parent)
-        # Use window flags for a top-level window that stays on top
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Window)
+        # Initialize with a default pixmap (will be updated by the movie)
+        super().__init__(QPixmap(1, 1))
         
-        # Create layout
-        layout = QVBoxLayout()
-        self.setLayout(layout)
+        # Store prompt for later use
+        self._prompt = prompt
+        self._gif_path = gif_path
         
-        # Create and configure animated label
-        self.animated_label = QLabel()
-        self.animated_label.setAlignment(Qt.AlignCenter)
-        self.animated_label.setMinimumSize(64, 64)  # Ensure minimum size for visibility
-        layout.addWidget(self.animated_label)
+        # Set window flags for a top-level window that stays on top
+        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
         
-        # Create and configure text label
-        self.text_label = QLabel(prompt)
-        self.text_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.text_label)
+        # Set up the movie
+        self._setup_movie()
         
-        # Set up the GIF animation - create only ONE instance
-        self.gif_path = gif_path
-        self.movie = QMovie(gif_path)
-        self.movie.setCacheMode(QMovie.CacheAll)
-        self._sized_from_frame = False
-        # Size window once the first valid frame arrives (frameCount can be -1 until fully loaded)
-        self.movie.frameChanged.connect(self._on_movie_frame_changed)
-
-        # Set up the label with the movie
-        self.animated_label.setMovie(self.movie)
-        
-        # Try to pre-compute window size before animation starts
-        self.size_window_to_gif()
-        
-        # Center the window
-        self.center_window()
+        # Show the initial message
+        self.update_text(prompt)
         
         # Ensure window is visible and on top
         self.raise_()
         self.activateWindow()
-
-        # Start animation immediately for reliability on macOS/Linux
-        self.movie.setSpeed(120)
-        self.movie.start()
-        # Keep animation ticking (QMovie requires regular event processing)
-        self._keep_alive_timer = QTimer(self)
-        self._keep_alive_timer.timeout.connect(self.ensure_animation_running)
-        self._keep_alive_timer.start(500)
-        
-    def size_window_to_gif(self):
-        """Size the window based on the GIF dimensions plus padding for text."""
-        # Get the GIF size from the current pixmap if available
-        gif_size = self.movie.currentPixmap().size()
-
-        if gif_size.isValid() and gif_size.width() > 0 and gif_size.height() > 0:
-            # Add padding for text label and margins
-            window_width = gif_size.width() + 80  # 20px padding on each side
-            window_height = gif_size.height() + 200  # Extra space for text label
-            self.setFixedSize(window_width, window_height)
-        else:
-            # Fallback: use image reader to query dimensions without loading frames
-            try:
-                reader = QImageReader(self.gif_path)
-                size = reader.size()
-                if size.isValid() and size.width() > 0 and size.height() > 0:
-                    window_width = size.width() + 80
-                    window_height = size.height() + 200
-                    self.setFixedSize(window_width, window_height)
-                else:
-                    # Final fallback size if dimensions can't be determined yet
-                    self.setFixedSize(300, 200)
-            except Exception:
-                self.setFixedSize(300, 200)
-
-    def _on_movie_frame_changed(self, frame_index: int):
-        # The first valid frame guarantees we know the size; only adjust once
-        if not self._sized_from_frame:
-            pix = self.movie.currentPixmap()
-            if not pix.isNull() and pix.size().isValid():
-                self.size_window_to_gif()
-                self._sized_from_frame = True
-        
-    def center_window(self):
-        """Center the window on screen using the same method as the main window."""
-        qr = self.frameGeometry()
-        cp = QDesktopWidget().availableGeometry().center()
-        qr.moveCenter(cp)
-        self.move(qr.topLeft())
     
+    def _setup_movie(self):
+        """Set up the movie with error handling and proper sizing."""
+        try:
+            self.movie = QMovie(self._gif_path)
+            if not self.movie.isValid():
+                raise Exception(f"Invalid GIF file: {self._gif_path}")
+                
+            # Connect the frame changed signal
+            self.movie.frameChanged.connect(self._update_pixmap)
+            
+            # Start the animation
+            self.movie.start()
+            
+            # Set initial size based on the first frame
+            first_frame = self.movie.currentPixmap()
+            if not first_frame.isNull():
+                self.setFixedSize(first_frame.size())
+            
+            # Center on screen
+            self._center_on_screen()
+            
+        except Exception as e:
+            print(f"Error loading animation: {e}")
+            # Fallback to a simple message if GIF loading fails
+            self.showMessage(
+                self._prompt,
+                Qt.AlignBottom | Qt.AlignCenter,
+                Qt.white
+            )
+            self.setFixedSize(300, 200)
+    
+    def _update_pixmap(self, frame_number=None):
+        """Update the splash screen with the current frame."""
+        try:
+            if hasattr(self, 'movie') and self.movie.state() == QMovie.Running:
+                current_pixmap = self.movie.currentPixmap()
+                if not current_pixmap.isNull():
+                    # Set the pixmap and mask for transparency
+                    self.setPixmap(current_pixmap)
+                    self.setMask(current_pixmap.mask())
+        except Exception as e:
+            print(f"Error updating pixmap: {e}")
+    
+    def _center_on_screen(self):
+        """Center the window on the primary screen."""
+        screen = QApplication.primaryScreen().availableGeometry()
+        x = (screen.width() - self.width()) // 2
+        y = (screen.height() - self.height()) // 2
+        self.move(x, y)
+    
+    def update_text(self, text):
+        """Update the loading text."""
+        self.showMessage(text, Qt.AlignBottom | Qt.AlignCenter, Qt.white)
+    
+    # Backward compatibility methods
     def start_animation(self):
-        """Start the GIF animation."""
-        self.movie.setSpeed(120)
-        self.movie.start()
-
+        """Start the animation (for backward compatibility)."""
+        if hasattr(self, 'movie'):
+            self.movie.start()
+    
     def stop_animation(self):
-        """Stop the GIF animation."""
-        self.movie.stop()
+        """Stop the animation (for backward compatibility)."""
+        if hasattr(self, 'movie'):
+            self.movie.stop()
+        self.close()
     
     def set_animation_speed(self, speed_percent):
-        """
-        Set the animation speed as a percentage.
-        100 = normal speed
-        > 100 = faster (e.g., 200 = 2x speed)
-        < 100 = slower (e.g., 50 = half speed)
-        """
-        self.movie.setSpeed(speed_percent)
+        """Set animation speed (for backward compatibility)."""
+        if hasattr(self, 'movie'):
+            self.movie.setSpeed(speed_percent)
+        
+    # Deprecated methods (kept for backward compatibility)
+    def size_window_to_gif(self):
+        """Deprecated: Window sizing is now handled automatically."""
+        pass
+        
+    def _on_movie_frame_changed(self, frame_index: int):
+        """Deprecated: Frame handling is now done in _update_pixmap."""
+        pass
+        
+    def center_window(self):
+        """Deprecated: Use _center_on_screen instead."""
+        self._center_on_screen()
     
     def ensure_animation_running(self):
-        """
-        Call this method periodically to ensure the animation continues running.
-        This is needed because QMovie requires regular event processing.
-        """
-        QApplication.processEvents()
+        """Deprecated: Not needed with QSplashScreen."""
+        pass
 
 
 # Remove HVYM_VERSION
