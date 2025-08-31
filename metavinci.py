@@ -862,20 +862,20 @@ class Metavinci(QMainWindow):
         self.install_pintheon_action = QAction(self.install_icon, "Install Pintheon", self)
         self.install_pintheon_action.triggered.connect(self._install_pintheon)
 
-        run_press_action = QAction(self.press_icon, "Run press", self)
-        run_press_action.triggered.connect(self.run_press)
+        self.run_press_action = QAction(self.press_icon, "Run press", self)
+        self.run_press_action.triggered.connect(self.run_press)
 
-        install_press_action = QAction(self.install_icon, "Install press", self)
-        install_press_action.triggered.connect(self._install_press)
+        self.install_press_action = QAction(self.install_icon, "Install press", self)
+        self.install_press_action.triggered.connect(self._install_press)
 
-        update_press_action = QAction(self.update_icon, "Update press", self)
-        update_press_action.triggered.connect(self._update_press)
+        self.update_press_action = QAction(self.update_icon, "Update press", self)
+        self.update_press_action.triggered.connect(self._update_press)
 
-        install_addon_action = QAction(self.install_icon, "Install Blender Addon", self)
-        install_addon_action.triggered.connect(self._install_blender_addon)
+        self.install_addon_action = QAction(self.install_icon, "Install Blender Addon", self)
+        self.install_addon_action.triggered.connect(self._install_blender_addon)
 
-        update_addon_action = QAction(self.update_icon, "Update Blender Addon", self)
-        update_addon_action.triggered.connect(self._update_blender_addon)
+        self.update_addon_action = QAction(self.update_icon, "Update Blender Addon", self)
+        self.update_addon_action.triggered.connect(self._update_blender_addon)
 
         # install_didc_action = QAction(self.install_icon, "Install didc", self)
         # install_didc_action.triggered.connect(self.hvym_install_didc)
@@ -936,26 +936,37 @@ class Metavinci(QMainWindow):
             # tray_ic_accounts_menu.addAction(icp_remove_account_action)
 
         self.tray_tools_menu = tray_menu.addMenu("Tools")
+        self.tray_tools_menu.addAction(self.run_press_action)
 
         if self.PRESS.is_file():
-            self.tray_tools_menu.addAction(run_press_action)
+            self.run_press_action.setVisible(True)
+        else:
+            self.run_press_action.setVisible(False)
 
         self.tray_tools_update_menu = self.tray_tools_menu.addMenu("Installations")
+        self.tray_tools_update_menu.addAction(self.install_hvym_action)
+        self.tray_tools_update_menu.addAction(self.update_hvym_action)
+        self.tray_tools_update_menu.addAction(self.install_press_action)
+        self.tray_tools_update_menu.addAction(self.update_press_action)
 
         if not self.HVYM.is_file():
-            self.tray_tools_update_menu.addAction(self.install_hvym_action)
+            self.install_hvym_action.setVisible(True)
+            self.update_hvym_action.setVisible(False)
         else:
-            self.tray_tools_update_menu.addAction(self.update_hvym_action)
+            self.install_hvym_action.setVisible(False)
+            self.update_hvym_action.setVisible(True)
             self._update_pintheon_ui_state()
 
         if not self.PRESS.is_file():
             # Only show press installation if hvym_press is supported on current architecture
             if self.platform_manager.is_hvym_press_supported():
-                self.tray_tools_update_menu.addAction(install_press_action)
+                self.update_press_action.setVisible(True)
+                self.install_press_action.setVisible(False)
         else:
             # Only show press update if hvym_press is supported on current architecture
             if self.platform_manager.is_hvym_press_supported():
-                self.tray_tools_update_menu.addAction(update_press_action)
+                self.update_press_action.setVisible(False)
+                self.install_press_action.setVisible(True)
 
         # if not self.ADDON_PATH.exists():
         #     tray_tools_update_menu.addAction(install_addon_action)
