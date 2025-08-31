@@ -1,8 +1,50 @@
-test.py
-/build/data
-/build/build
-/build/images
-/build/service
-/package
-
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+
+# Build directories
+/build
+dist/
+build/
+*.egg-info/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Certificate files
+*.key
+*.pem
+*.crt
+*.cer
+*.pfx
+*metavinci-cert.cnf
+*heavymeta-cert.cnf
+certificate.txt
+
+# Environment variables
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local development
+.DS_Store
+Thumbs.db
+
+# Package files
+*.msi
+*.exe
+*.dmg
+*.pkg
+*.deb
+*.rpm
+*.app

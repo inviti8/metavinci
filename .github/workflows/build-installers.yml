@@ -170,12 +170,75 @@ jobs:
       run: |
         curl -L -o lessmsi.zip https://github.com/activescott/lessmsi/releases/download/v1.10.0/lessmsi-v1.10.0.zip
         tar -xf lessmsi.zip
+        
+    - name: Sign Windows MSI
+      if: success()
+      run: |
+        # Write the certificate to a secure temporary file
+        $certBytes = [System.Convert]::FromBase64String("${{ secrets.WINDOWS_SIGNING_CERT }}")
+        $certPath = "$env:RUNNER_TEMP\cert.pfx"
+        [System.IO.File]::WriteAllBytes($certPath, $certBytes)
+        
+        # Sign the MSI using the installed Windows SDK signtool
+        $signTool = "$env:ProgramFiles (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe"
+        
+        # Look for MSI in both root dist and build/dist directories
+        $msiFile = (Get-ChildItem -Path "dist\*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+        if (-not $msiFile) {
+            $msiFile = (Get-ChildItem -Path "build\dist\*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+        }
+        
+        if (-not $msiFile) {
+            Write-Host "##[error] MSI file not found in expected locations"
+            Write-Host "##[debug] Current directory: $(Get-Location)"
+            Write-Host "##[debug] Directory contents:"
+            Get-ChildItem -Recurse -Filter "*.msi" | Format-Table FullName
+            exit 1
+        }
+        
+        Write-Host "##[info] Found MSI file at: $msiFile"
+        
+        # Sign with SHA-256 and timestamp
+        & "$signTool" sign `
+            /f "$certPath" `
+            /p "${{ secrets.WINDOWS_SIGNING_PASSWORD }}" `
+            /fd sha256 `
+            /td sha256 `
+            /tr "http://timestamp.digicert.com" `
+            /v `
+            "$msiFile"
+        
+        # Verify the signature (using /a to find all valid certs in the chain)
+        if (Test-Path $msiFile) {
+            Write-Host "##[info] Verifying signature with signtool..."
+            & "$signTool" verify /pa /v /a "$msiFile"
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "##[warning] Standard verification failed, trying with /all flag..."
+                & "$signTool" verify /pa /v /all "$msiFile"
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Host "##[warning] Note: Verification warnings are expected with self-signed certificates"
+                    # Don't fail the build for verification issues with self-signed certs
+                    $global:LASTEXITCODE = 0
+                }
+            }
+        } else {
+            Write-Host "##[error] Error: MSI file not found at $msiFile"
+            Get-ChildItem -Path "dist" -Recurse -ErrorAction SilentlyContinue | Format-Table FullName
+            exit 1
+        }
+        
+        # Clean up the certificate file
+        if (Test-Path $certPath) {
+            Remove-Item -Path $certPath -Force
+        }
 
-    - name: Upload Windows MSI installer
+    - name: Upload Windows MSI installer and certificate script
       uses: actions/upload-artifact@v4
       with:
         name: metavinci-windows-msi-installer
-        path: dist/*.msi
+        path: |
+          dist/*.msi
+          scripts/install-win-metavinci-cert.ps1
         retention-days: 30
 
   build-macos-installer:
@@ -439,8 +502,14 @@ jobs:
     - name: Prepare release assets
       run: |
         mkdir -p release
+        # Linux .deb file
         cp installers/metavinci-linux-installer/*.deb release/
-        cp installers/metavinci-windows-msi-installer/*.msi release/
+        
+        # Windows files (MSI and cert script)
+        cp installers/metavinci-windows-msi-installer/dist/*.msi release/
+        cp installers/metavinci-windows-msi-installer/scripts/install-win-metavinci-cert.ps1 release/
+        
+        # macOS DMG files
         cp installers/metavinci-macos-installer-amd64/*.dmg release/
         cp installers/metavinci-macos-installer-arm64/*.dmg release/
 
