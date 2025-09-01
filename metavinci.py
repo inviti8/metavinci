@@ -847,7 +847,7 @@ class Metavinci(QMainWindow):
 
         self.set_tunnel_token_action = QAction(self.tunnel_token_icon, "Set Pinggy Token", self)
         self.set_tunnel_token_action.triggered.connect(self._set_tunnel_token)
-        self.set_tunnel_token_action.setVisible(True)
+        self.set_tunnel_token_action.setVisible(False)
 
         self.run_pintheon_action = QAction(self.pintheon_icon, "Start Pintheon", self)
         self.run_pintheon_action.triggered.connect(self._start_pintheon)
@@ -964,6 +964,7 @@ class Metavinci(QMainWindow):
         self.tray_pintheon_menu.addAction(self.run_pintheon_action)
         self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
         self.tray_pintheon_menu.addAction(self.open_tunnel_action)
+        self.tray_pintheon_menu.setVisible(False)
         self.tray_tools_update_menu.addAction(self.install_pintheon_action)
         self.install_pintheon_action.setVisible(False)
         self.run_pintheon_action.setVisible(False)
@@ -976,7 +977,7 @@ class Metavinci(QMainWindow):
         else:
             self.install_hvym_action.setVisible(False)
             self.update_hvym_action.setVisible(True)
-            self._update_pintheon_ui_state()
+            self._refresh_pintheon_ui_state()
 
         if not self.PRESS.is_file():
             # Only show press installation if hvym_press is supported on current architecture
@@ -1276,6 +1277,7 @@ class Metavinci(QMainWindow):
         msg = QMessageBox(self)
         msg.setWindowTitle("!")
         msg.setText(prompt)
+        msg.raise_()
         msg.exec_()
     
     def open_option_dialog(self, prompt, options):
@@ -1890,10 +1892,6 @@ class Metavinci(QMainWindow):
             # Refresh press UI state
             self._refresh_press_ui_state()
             self._ensure_press_menu()
-            
-            # Refresh pintheon UI state if hvym is available
-            if self.HVYM.is_file():
-                self._refresh_pintheon_ui_state()
                 
         except Exception as e:
             print(f"Error refreshing startup UI state: {e}")
@@ -2103,14 +2101,8 @@ class Metavinci(QMainWindow):
         self.PINTHEON_INSTALLED = "True"
         self.DOCKER_INSTALLED = "True"
         
-        # Update database
-        self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
-        
         # Refresh UI to show start/stop actions
-        self.tray_pintheon_menu.setVisible(True)       
-        self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
-        self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
-        self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE and len(self.TUNNEL_TOKEN) >= 7)
+        self._refresh_pintheon_ui_state()
         # Show success message
         self.open_msg_dialog(success_msg)
         
@@ -2142,64 +2134,25 @@ class Metavinci(QMainWindow):
         except Exception:
             return False
         
-    def _update_pintheon_ui_state(self):
+    def _refresh_pintheon_ui_state(self):
         if self.DOCKER_INSTALLED == "True":
             if self.PINTHEON_INSTALLED == "True":
-                self.tray_pintheon_menu.setVisible(True)       
+                self.tray_pintheon_menu.setVisible(True)
+                self.pintheon_settings_menu.setVisible(True)
+                self.set_tunnel_token_action.setVisible(True)      
                 self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
                 self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
                 self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE and len(self.TUNNEL_TOKEN) >= 7)
             else:
+                self.tray_pintheon_menu.setVisible(False)
+                self.pintheon_settings_menu.setVisible(False)
+                self.set_tunnel_token_action.setVisible(False)
+                self.open_tunnel_action.setVisible(False)
                 self.tray_tools_update_menu.setVisible(True)
                 self.install_pintheon_action.setVisible(True)
         else:
             self.tray_tools_menu.addMenu("!!DOCKER NOT INSTALLED!!")
 
-    def _refresh_pintheon_ui_state(self):
-        self.DOCKER_INSTALLED = self.hvym_docker_installed()
-        self.DOCKER_INSTALLED = self._clean_cli_bool(self.DOCKER_INSTALLED)
-
-        if self.DOCKER_INSTALLED == "True":
-            self.PINTHEON_INSTALLED = self.hvym_pintheon_exists()
-            self.PINTHEON_INSTALLED = self._clean_cli_bool(self.PINTHEON_INSTALLED)
-
-            if self.PINTHEON_INSTALLED  == "True":
-                # Remove install action from Installations menu if present
-                if self.install_pintheon_action in self.tray_tools_update_menu.actions():
-                    self.tray_tools_update_menu.removeAction(self.install_pintheon_action)
-                # Ensure Pintheon submenu exists and is populated
-                if not hasattr(self, 'tray_pintheon_menu') or self.tray_pintheon_menu is None:
-                    self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
-                else:
-                    self.tray_pintheon_menu.clear()
-                self.tray_pintheon_menu.setIcon(self.pintheon_icon)
-                self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
-                self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
-                self.tray_pintheon_menu.addAction(self.run_pintheon_action)
-                self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
-                self.tray_pintheon_menu.addAction(self.open_tunnel_action)
-                # Visibility according to active state
-                self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
-                self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
-                self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE and len(self.TUNNEL_TOKEN) >= 7)
-            else:
-                # Remove Pintheon submenu if present
-                if hasattr(self, 'tray_pintheon_menu') and self.tray_pintheon_menu is not None:
-                    try:
-                        self.tray_tools_menu.removeAction(self.tray_pintheon_menu.menuAction())
-                    except Exception:
-                        pass
-                    self.tray_pintheon_menu = None
-                # Ensure install action is visible in Installations menu
-                if self.install_pintheon_action not in self.tray_tools_update_menu.actions():
-                    self.tray_tools_update_menu.addAction(self.install_pintheon_action)
-                self.install_pintheon_action.setVisible(True)
-                # Hide runtime actions
-                self.run_pintheon_action.setVisible(False)
-                self.stop_pintheon_action.setVisible(False)
-                self.open_tunnel_action.setVisible(False)
-        else:
-            menu = self.tray_tools_menu.addMenu("!!DOCKER NOT INSTALLED!!")
 
     def _refresh_press_ui_state(self):
         """Refresh press-related UI elements based on installation status."""
