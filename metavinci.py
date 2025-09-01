@@ -938,6 +938,8 @@ class Metavinci(QMainWindow):
         self.tray_tools_menu = tray_menu.addMenu("Tools")
         self.tray_tools_menu.addAction(self.run_press_action)
 
+        self.tray_tools_menu.addAction(test_animated_action)
+
         if self.PRESS.is_file():
             self.run_press_action.setVisible(True)
         else:
@@ -948,6 +950,8 @@ class Metavinci(QMainWindow):
         self.tray_tools_update_menu.addAction(self.update_hvym_action)
         self.tray_tools_update_menu.addAction(self.install_press_action)
         self.tray_tools_update_menu.addAction(self.update_press_action)
+        self.update_press_action.setVisible(False)
+        self.install_press_action.setVisible(False)
 
         if not self.HVYM.is_file():
             self.install_hvym_action.setVisible(True)
@@ -2077,6 +2081,8 @@ class Metavinci(QMainWindow):
         loading_window.close()
         self.hide()
         worker.deleteLater()
+
+        self.PINTHEON_INSTALLED = "True"
         
         # Update UI - create/refresh Pintheon menu
         self._ensure_pintheon_menu()
