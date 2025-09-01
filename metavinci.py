@@ -2107,7 +2107,10 @@ class Metavinci(QMainWindow):
         self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
         
         # Refresh UI to show start/stop actions
-        self._update_pintheon_ui_state()
+        self.tray_pintheon_menu.setVisible(True)       
+        self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
+        self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
+        self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE and len(self.TUNNEL_TOKEN) >= 7)
         # Show success message
         self.open_msg_dialog(success_msg)
         
