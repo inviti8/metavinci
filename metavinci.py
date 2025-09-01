@@ -955,16 +955,16 @@ class Metavinci(QMainWindow):
 
         self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
         self.tray_pintheon_menu.setIcon(self.pintheon_icon)
-        self.tray_pintheon_menu.setVisible(False)
+        self.tray_pintheon_menu.setEnabled(False)
 
         self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
         self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
-        self.pintheon_settings_menu.setVisible(False)
+        self.pintheon_settings_menu.setEnabled(False)
 
         self.tray_pintheon_menu.addAction(self.run_pintheon_action)
         self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
         self.tray_pintheon_menu.addAction(self.open_tunnel_action)
-        self.tray_pintheon_menu.setVisible(False)
+
         self.tray_tools_update_menu.addAction(self.install_pintheon_action)
         self.install_pintheon_action.setVisible(False)
         self.run_pintheon_action.setVisible(False)
@@ -2137,15 +2137,15 @@ class Metavinci(QMainWindow):
     def _refresh_pintheon_ui_state(self):
         if self.DOCKER_INSTALLED == "True":
             if self.PINTHEON_INSTALLED == "True":
-                self.tray_pintheon_menu.setVisible(True)
-                self.pintheon_settings_menu.setVisible(True)
+                self.tray_pintheon_menu.setEnabled(True)
+                self.pintheon_settings_menu.setEnabled(True)
                 self.set_tunnel_token_action.setVisible(True)      
                 self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
                 self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
                 self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE and len(self.TUNNEL_TOKEN) >= 7)
             else:
-                self.tray_pintheon_menu.setVisible(False)
-                self.pintheon_settings_menu.setVisible(False)
+                self.tray_pintheon_menu.setEnabled(False)
+                self.pintheon_settings_menu.setEnabled(False)
                 self.set_tunnel_token_action.setVisible(False)
                 self.open_tunnel_action.setVisible(False)
                 self.tray_tools_update_menu.setVisible(True)
