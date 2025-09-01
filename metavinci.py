@@ -691,8 +691,8 @@ class Metavinci(QMainWindow):
         if QThread.currentThread() == QApplication.instance().thread():
             splash = self.splash_window()
         self.LOGO_IMG_ACTIVE = os.path.join(self.FILE_PATH, 'images', 'hvym_logo_64_active.png')
-        # Prefer Qt resource path for loading gif (bundled via resources.qrc), fallback to filesystem for local runs
-        self.LOADING_GIF = ':/images/loading.gif' if resources_rc is not None else os.path.join(self.FILE_PATH, 'images', 'loading.gif')
+        # Always use filesystem path for loading gif to ensure consistency in both dev and built environments
+        self.LOADING_GIF = os.path.join(self.FILE_PATH, 'images', 'loading.gif')
         self.UPDATE_IMG = os.path.join(self.FILE_PATH, 'images', 'update.png')
         self.INSTALL_IMG = os.path.join(self.FILE_PATH, 'images', 'install.png')
         self.ICP_LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_logo.png')
@@ -1888,7 +1888,7 @@ class Metavinci(QMainWindow):
             worker = HvymInstallWorker(self.HVYM)
 
             # Create animated loading window
-            loading_window = AnimatedLoadingWindow(self, 'INSTALLING HVYM', 'images/loading.gif')
+            loading_window = AnimatedLoadingWindow(self, 'INSTALLING HVYM', self.LOADING_GIF)
             loading_window.show()
             loading_window.raise_()
             loading_window.activateWindow()
@@ -1926,7 +1926,7 @@ class Metavinci(QMainWindow):
             worker = HvymInstallWorker(self.HVYM)  # Reuse the same worker class
             
             # Create animated loading window
-            loading_window = AnimatedLoadingWindow(self, 'UPDATING HVYM', 'images/loading.gif')
+            loading_window = AnimatedLoadingWindow(self, 'UPDATING HVYM', self.LOADING_GIF)
             loading_window.show()
             loading_window.raise_()
             loading_window.activateWindow()
@@ -2057,7 +2057,7 @@ class Metavinci(QMainWindow):
             worker = PintheonInstallWorker(self.HVYM)
             
             # Create animated loading window
-            loading_window = AnimatedLoadingWindow(self, 'INSTALLING PINTHEON', 'images/loading.gif')
+            loading_window = AnimatedLoadingWindow(self, 'INSTALLING PINTHEON', self.LOADING_GIF)
             loading_window.show()
             loading_window.raise_()
             loading_window.activateWindow()
@@ -2310,7 +2310,7 @@ class Metavinci(QMainWindow):
             worker = HvymPressInstallWorker(self.PRESS)
             
             # Create animated loading window for consistency with hvym installation
-            loading_window = AnimatedLoadingWindow(self, 'INSTALLING HVYM PRESS', 'images/loading.gif')
+            loading_window = AnimatedLoadingWindow(self, 'INSTALLING HVYM PRESS', self.LOADING_GIF)
             loading_window.show()
             loading_window.raise_()
             loading_window.activateWindow()
@@ -2340,8 +2340,6 @@ class Metavinci(QMainWindow):
         # Show success message
         self.open_msg_dialog(success_msg)
         
-
-
     def _on_press_update_success(self, loading_window, worker, success_msg):
         """Handle successful Press update."""
         loading_window.close()
@@ -2369,7 +2367,7 @@ class Metavinci(QMainWindow):
             worker = HvymPressInstallWorker(self.PRESS)
             
             # Create animated loading window for consistency with hvym installation
-            loading_window = AnimatedLoadingWindow(self, 'UPDATING HVYM PRESS', 'images/loading.gif')
+            loading_window = AnimatedLoadingWindow(self, 'UPDATING HVYM PRESS', self.LOADING_GIF)
             loading_window.show()
             loading_window.raise_()
             loading_window.activateWindow()
