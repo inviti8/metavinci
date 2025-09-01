@@ -2103,9 +2103,6 @@ class Metavinci(QMainWindow):
         self.PINTHEON_INSTALLED = "True"
         self.DOCKER_INSTALLED = "True"
         
-        # Update UI - create/refresh Pintheon menu
-        self._ensure_pintheon_menu()
-        
         # Update database
         self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
         
@@ -2144,13 +2141,14 @@ class Metavinci(QMainWindow):
         
     def _update_pintheon_ui_state(self):
         if self.DOCKER_INSTALLED == "True":
-            if self.PINTHEON_INSTALLED == "True":       
+            if self.PINTHEON_INSTALLED == "True":
+                self.tray_pintheon_menu.setVisible(True)       
                 self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
                 self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
                 self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE and len(self.TUNNEL_TOKEN) >= 7)
             else:
-                self.install_pintheon_action.setVisible(True)
                 self.tray_tools_update_menu.setVisible(True)
+                self.install_pintheon_action.setVisible(True)
         else:
             self.tray_tools_menu.addMenu("!!DOCKER NOT INSTALLED!!")
 
