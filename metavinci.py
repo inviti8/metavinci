@@ -2078,11 +2078,13 @@ class Metavinci(QMainWindow):
     
     def _on_pintheon_install_success(self, loading_window, worker, success_msg):
         """Handle successful Pintheon installation."""
+
         loading_window.close()
         self.hide()
         worker.deleteLater()
 
         self.PINTHEON_INSTALLED = "True"
+        self.DOCKER_INSTALLED = "True"
         
         # Update UI - create/refresh Pintheon menu
         self._ensure_pintheon_menu()
@@ -2091,7 +2093,7 @@ class Metavinci(QMainWindow):
         self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
         
         # Refresh UI to show start/stop actions
-        self._refresh_pintheon_ui_state()
+        self._update_pintheon_ui_state()
         # Show success message
         self.open_msg_dialog(success_msg)
         
