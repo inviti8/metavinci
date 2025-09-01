@@ -938,7 +938,7 @@ class Metavinci(QMainWindow):
         self.tray_tools_menu = tray_menu.addMenu("Tools")
         self.tray_tools_menu.addAction(self.run_press_action)
 
-        self.tray_tools_menu.addAction(test_animated_action)
+        # self.tray_tools_menu.addAction(test_animated_action)
 
         if self.PRESS.is_file():
             self.run_press_action.setVisible(True)
@@ -2139,7 +2139,8 @@ class Metavinci(QMainWindow):
             if self.PINTHEON_INSTALLED == "True":
                 self.tray_pintheon_menu.setEnabled(True)
                 self.pintheon_settings_menu.setEnabled(True)
-                self.set_tunnel_token_action.setVisible(True)      
+                self.set_tunnel_token_action.setVisible(True)
+                self.install_pintheon_action.setVisible(False)      
                 self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
                 self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
                 self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE and len(self.TUNNEL_TOKEN) >= 7)
