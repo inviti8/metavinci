@@ -1662,6 +1662,10 @@ class Metavinci(QMainWindow):
         # Only run the CLI; UI updates must occur on main thread after completion
         return self._subprocess_hvym([str(self.HVYM), 'pintheon-start'])
     
+    def hvym_open_pintheon(self):
+        # Only run the CLI; UI updates must occur on main thread after completion
+        return self._subprocess_hvym([str(self.HVYM), 'pintheon-open'])
+    
     def hvym_stop_pintheon(self):
         # Only run the CLI; UI updates must occur on main thread after completion
         return self._subprocess_hvym([str(self.HVYM), 'pintheon-stop'])
@@ -2204,6 +2208,7 @@ class Metavinci(QMainWindow):
             if result is not None:
                 self.PINTHEON_ACTIVE = True
                 self._update_ui_on_pintheon_started()
+                self.hvym_open_pintheon()
             else:
                 self.open_msg_dialog('Failed to start Pintheon. Check logs for details.')
     
@@ -2220,8 +2225,10 @@ class Metavinci(QMainWindow):
         self.stop_pintheon_action.setVisible(True)
         self.open_tunnel_action.setVisible(len(self.TUNNEL_TOKEN) >= 7)
 
-    def _stop_pintheon(self):
-        stop = self.open_confirm_dialog('Stop Pintheon Gateway?')
+    def _stop_pintheon(self, confirm=True):
+        stop = True
+        if confirm:
+            stop = self.open_confirm_dialog('Stop Pintheon Gateway?')
         if stop:
             # Run synchronously on main thread
             result = self.hvym_stop_pintheon()
