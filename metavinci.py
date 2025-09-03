@@ -936,14 +936,9 @@ class Metavinci(QMainWindow):
             # tray_ic_accounts_menu.addAction(icp_remove_account_action)
 
         self.tray_tools_menu = tray_menu.addMenu("Tools")
-        self.tray_tools_menu.addAction(self.run_press_action)
 
         # self.tray_tools_menu.addAction(test_animated_action)
 
-        if self.PRESS.is_file():
-            self.run_press_action.setVisible(True)
-        else:
-            self.run_press_action.setVisible(False)
 
         self.tray_tools_update_menu = self.tray_tools_menu.addMenu("Installations")
         self.tray_tools_update_menu.addAction(self.install_hvym_action)
@@ -979,16 +974,10 @@ class Metavinci(QMainWindow):
             self.update_hvym_action.setVisible(True)
             self._refresh_pintheon_ui_state()
 
-        if not self.PRESS.is_file():
-            # Only show press installation if hvym_press is supported on current architecture
-            if self.platform_manager.is_hvym_press_supported():
-                self.update_press_action.setVisible(True)
-                self.install_press_action.setVisible(False)
-        else:
-            # Only show press update if hvym_press is supported on current architecture
-            if self.platform_manager.is_hvym_press_supported():
-                self.update_press_action.setVisible(False)
-                self.install_press_action.setVisible(True)
+        self.tray_press_menu = self.tray_tools_menu.addMenu("Press")
+        self.tray_press_menu.addAction(self.run_press_action)
+
+        self._refresh_press_ui_state()
 
         # if not self.ADDON_PATH.exists():
         #     tray_tools_update_menu.addAction(install_addon_action)
@@ -1873,7 +1862,6 @@ class Metavinci(QMainWindow):
                 print('hvym_press is installed')
                 # Update UI to reflect press availability
                 self._update_ui_on_press_installed()
-                self._ensure_press_menu()
             else:
                 print('hvym_press is not installed')
                 # Ensure install action is visible if supported on current architecture
@@ -1885,8 +1873,6 @@ class Metavinci(QMainWindow):
                 # Hide run action if it exists
                 if hasattr(self, 'run_press_action'):
                     self.run_press_action.setVisible(False)
-                # Ensure press menu is properly set up
-                self._ensure_press_menu()
         except Exception as e:
             print(f"Error checking press installation: {e}")
 
@@ -1895,7 +1881,6 @@ class Metavinci(QMainWindow):
         try:
             # Refresh press UI state
             self._refresh_press_ui_state()
-            self._ensure_press_menu()
                 
         except Exception as e:
             print(f"Error refreshing startup UI state: {e}")
@@ -2161,44 +2146,20 @@ class Metavinci(QMainWindow):
 
     def _refresh_press_ui_state(self):
         """Refresh press-related UI elements based on installation status."""
-        try:
-            # Check if press is actually installed
-            press_installed = self.PRESS.is_file()
-            
-            if press_installed:
-                # Press is installed - ensure run action is visible
-                if hasattr(self, 'run_press_action'):
-                    self.run_press_action.setVisible(True)
-                
-                # Update any other press-dependent UI elements
-                # For example, if there are press-specific menu items, show them here
-                
-            else:
-                # Press is not installed - hide run action
-                if hasattr(self, 'run_press_action'):
-                    self.run_press_action.setVisible(False)
-                
-                # Hide any other press-dependent UI elements
-                
-        except Exception as e:
-            print(f"Error refreshing press UI state: {e}")
-
-    def _ensure_press_menu(self):
-        """Ensure the press menu is properly set up and visible."""
-        try:
-            if self.PRESS.is_file():
-                # Press is installed - ensure run action is visible in Tools menu
-                if hasattr(self, 'run_press_action'):
-                    # Check if run_press_action is already in the tools menu
-                    if self.run_press_action not in self.tray_tools_menu.actions():
-                        self.tray_tools_menu.addAction(self.run_press_action)
-                    self.run_press_action.setVisible(True)
-            else:
-                # Press is not installed - hide run action
-                if hasattr(self, 'run_press_action'):
-                    self.run_press_action.setVisible(False)
-        except Exception as e:
-            print(f"Error ensuring press menu: {e}")
+        if self.PRESS.is_file():
+            # Only show press installation if hvym_press is supported on current architecture
+            if self.platform_manager.is_hvym_press_supported():
+                self.tray_press_menu.setEnabled(True)
+                self.run_press_action.setVisible(True)
+                self.update_press_action.setVisible(True)
+                self.install_press_action.setVisible(False)
+        else:
+            # Only show press update if hvym_press is supported on current architecture
+            if self.platform_manager.is_hvym_press_supported():
+                self.tray_press_menu.setEnabled(False)
+                self.run_press_action.setVisible(False)
+                self.update_press_action.setVisible(False)
+                self.install_press_action.setVisible(True)
 
     def _start_pintheon(self):
         start = self.open_confirm_dialog('Start Pintheon Gateway?')
