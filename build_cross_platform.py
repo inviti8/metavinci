@@ -60,6 +60,7 @@ class CrossPlatformBuilder:
             ('platform_manager.py', 'platform_manager.py'),
             ('download_utils.py', 'download_utils.py'),
             ('file_utils.py', 'file_utils.py'),
+            ('hosts_utils.py', 'hosts_utils.py'),
             ('macos_install_helper.py', 'macos_install_helper.py'),
             ('resources.qrc', 'resources.qrc'),
         ]

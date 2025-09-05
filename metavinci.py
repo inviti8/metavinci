@@ -54,6 +54,7 @@ import sys
 from platform_manager import PlatformManager
 from download_utils import download_and_execute_script, download_and_extract_zip
 from file_utils import set_secure_permissions, create_secure_directory, ensure_config_directory
+from hosts_utils import ensure_hosts_entry
 import platform
 import urllib.request
 import tempfile
@@ -197,6 +198,15 @@ class PintheonInstallWorker(LoadingWorker):
                                            capture_output=True, check=False)
                     except Exception:
                         pass
+
+                # Update hosts file with local.pintheon.com entry
+                self.progress.emit("Updating hosts file...")
+                if not ensure_hosts_entry('local.pintheon.com'):
+                    logging.warning("Failed to update hosts file. You may need to add '127.0.0.1 local.pintheon.com' manually.")
+                    self.progress.emit("Warning: Could not update hosts file. Some features may not work.")
+                else:
+                    logging.info("Successfully updated hosts file with local.pintheon.com entry")
+                    self.progress.emit("Hosts file updated successfully")
 
                 # Verify Pintheon image exists
                 check_cmd = [str(self.hvym_path), 'pintheon-image-exists']
