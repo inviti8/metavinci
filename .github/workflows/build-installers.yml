@@ -310,7 +310,6 @@ jobs:
         name: metavinci-windows-msi-installer
         path: windows-artifacts/*
         retention-days: 30
-        retention-days: 30
 
   build-macos-installer:
     environment: installers
