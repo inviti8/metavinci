@@ -171,13 +171,23 @@ jobs:
         curl -L -o lessmsi.zip https://github.com/activescott/lessmsi/releases/download/v1.10.0/lessmsi-v1.10.0.zip
         tar -xf lessmsi.zip
         
-    - name: Sign Windows MSI
+    - name: Sign Windows MSI and prepare certificate
       if: success()
       run: |
-        # Write the certificate to a secure temporary file
+        # Create a temporary directory for certificate files
+        $tempDir = "$env:RUNNER_TEMP\certs"
+        New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+        
+        # Write the PFX certificate to a secure temporary file
         $certBytes = [System.Convert]::FromBase64String("${{ secrets.WINDOWS_SIGNING_CERT }}")
-        $certPath = "$env:RUNNER_TEMP\cert.pfx"
-        [System.IO.File]::WriteAllBytes($certPath, $certBytes)
+        $pfxPath = "$tempDir\heavymeta-code-sign.pfx"
+        [System.IO.File]::WriteAllBytes($pfxPath, $certBytes)
+        
+        # Export the public certificate
+        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+        $cert.Import($pfxPath, "${{ secrets.WINDOWS_SIGNING_PASSWORD }}", [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+        $publicCertPath = "$tempDir\heavymeta-code-sign.cer"
+        [System.IO.File]::WriteAllBytes($publicCertPath, $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
         
         # Sign the MSI using the installed Windows SDK signtool
         $signTool = "$env:ProgramFiles (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe"
@@ -232,13 +242,14 @@ jobs:
             Remove-Item -Path $certPath -Force
         }
 
-    - name: Upload Windows MSI installer and certificate script
+    - name: Upload Windows MSI installer, certificate, and script
       uses: actions/upload-artifact@v4
       with:
         name: metavinci-windows-msi-installer
         path: |
           dist/*.msi
           scripts/install-win-metavinci-cert.ps1
+          ${{ env.RUNNER_TEMP }}/certs/heavymeta-code-sign.cer
         retention-days: 30
 
   build-macos-installer:
@@ -505,9 +516,10 @@ jobs:
         # Linux .deb file
         cp installers/metavinci-linux-installer/*.deb release/
         
-        # Windows files (MSI and cert script)
+        # Windows files (MSI, cert script, and certificate)
         cp installers/metavinci-windows-msi-installer/dist/*.msi release/
         cp installers/metavinci-windows-msi-installer/scripts/install-win-metavinci-cert.ps1 release/
+        cp installers/metavinci-windows-msi-installer/heavymeta-code-sign.cer release/
         
         # macOS DMG files
         cp installers/metavinci-macos-installer-amd64/*.dmg release/
