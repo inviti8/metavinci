@@ -183,11 +183,35 @@ jobs:
         $pfxPath = "$tempDir\heavymeta-code-sign.pfx"
         [System.IO.File]::WriteAllBytes($pfxPath, $certBytes)
         
-        # Export the public certificate
-        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
-        $cert.Import($pfxPath, "${{ secrets.WINDOWS_SIGNING_PASSWORD }}", [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+        # Export the public certificate using certutil (more reliable cross-platform)
         $publicCertPath = "$tempDir\heavymeta-code-sign.cer"
-        [System.IO.File]::WriteAllBytes($publicCertPath, $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+        $password = "${{ secrets.WINDOWS_SIGNING_PASSWORD }}"
+        
+        # First, import the certificate to the temporary store
+        $certStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("My", "CurrentUser")
+        $certStore.Open("ReadWrite")
+        
+        try {
+            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
+                $pfxPath,
+                $password,
+                [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
+            )
+            $certStore.Add($cert)
+            
+            # Export the public certificate
+            $publicCertData = $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+            [System.IO.File]::WriteAllBytes($publicCertPath, $publicCertData)
+            
+            Write-Host "Successfully exported public certificate to: $publicCertPath"
+        }
+        finally {
+            # Clean up the certificate from the store
+            if ($cert) {
+                $certStore.Remove($cert)
+            }
+            $certStore.Close()
+        }
         
         # Sign the MSI using the installed Windows SDK signtool
         $signTool = "$env:ProgramFiles (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe"
