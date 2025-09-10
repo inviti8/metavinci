@@ -232,15 +232,29 @@ jobs:
         
         Write-Host "##[info] Found MSI file at: $msiFile"
         
-        # Sign with SHA-256 and timestamp
+        # First, try to sign with the original PFX file
+        Write-Host "##[info] Attempting to sign with PFX file..."
         & "$signTool" sign `
-            /f "$certPath" `
-            /p "${{ secrets.WINDOWS_SIGNING_PASSWORD }}" `
+            /f "$pfxPath" `
+            /p "$password" `
             /fd sha256 `
             /td sha256 `
             /tr "http://timestamp.digicert.com" `
             /v `
             "$msiFile"
+        
+        # If that fails, try with the certificate from the store
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "##[warning] PFX signing failed, trying with certificate from store..."
+            $certThumbprint = $cert.Thumbprint
+            & "$signTool" sign `
+                /sha1 "$certThumbprint" `
+                /fd sha256 `
+                /td sha256 `
+                /tr "http://timestamp.digicert.com" `
+                /v `
+                "$msiFile"
+        }
         
         # Verify the signature (using /a to find all valid certs in the chain)
         if (Test-Path $msiFile) {
@@ -261,9 +275,9 @@ jobs:
             exit 1
         }
         
-        # Clean up the certificate file
-        if (Test-Path $certPath) {
-            Remove-Item -Path $certPath -Force
+        # Clean up the certificate files
+        if (Test-Path $pfxPath) {
+            Remove-Item -Path $pfxPath -Force -ErrorAction SilentlyContinue
         }
 
     - name: Upload Windows MSI installer, certificate, and script
