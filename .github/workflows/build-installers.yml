@@ -280,14 +280,36 @@ jobs:
             Remove-Item -Path $pfxPath -Force -ErrorAction SilentlyContinue
         }
 
-    - name: Upload Windows MSI installer, certificate, and script
+    - name: Prepare Windows artifacts
+      run: |
+        # Create a directory for Windows artifacts
+        $artifactDir = "windows-artifacts"
+        New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
+        
+        # Copy MSI files
+        Copy-Item -Path "dist\*.msi" -Destination $artifactDir -Force
+        
+        # Copy certificate script
+        Copy-Item -Path "scripts\install-win-metavinci-cert.ps1" -Destination $artifactDir -Force
+        
+        # Copy certificate to the artifact directory
+        $certSource = "$env:RUNNER_TEMP\certs\heavymeta-code-sign.cer"
+        if (Test-Path $certSource) {
+            Copy-Item -Path $certSource -Destination $artifactDir -Force
+        } else {
+            Write-Host "##[warning] Certificate file not found at: $certSource"
+        }
+        
+        # Verify files were copied
+        Write-Host "##[info] Windows artifacts prepared:"
+        Get-ChildItem -Path $artifactDir -Recurse | Format-Table FullName
+      
+    - name: Upload Windows artifacts
       uses: actions/upload-artifact@v4
       with:
         name: metavinci-windows-msi-installer
-        path: |
-          dist/*.msi
-          scripts/install-win-metavinci-cert.ps1
-          ${{ env.RUNNER_TEMP }}/certs/heavymeta-code-sign.cer
+        path: windows-artifacts/*
+        retention-days: 30
         retention-days: 30
 
   build-macos-installer:
@@ -551,13 +573,16 @@ jobs:
     - name: Prepare release assets
       run: |
         mkdir -p release
-        # Linux .deb file
-        cp installers/metavinci-linux-installer/*.deb release/
         
-        # Windows files (MSI, cert script, and certificate)
-        cp installers/metavinci-windows-msi-installer/dist/*.msi release/
-        cp installers/metavinci-windows-msi-installer/scripts/install-win-metavinci-cert.ps1 release/
-        cp installers/metavinci-windows-msi-installer/heavymeta-code-sign.cer release/
+        # Linux .deb file
+        cp installers/metavinci-linux-installer/*.deb release/ 2>/dev/null || echo "No Linux .deb files found"
+        
+        # Windows files (all in the root of the artifact)
+        cp installers/metavinci-windows-msi-installer/*.msi release/ 2>/dev/null || echo "No Windows MSI files found"
+        cp installers/metavinci-windows-msi-installer/install-win-metavinci-cert.ps1 release/ 2>/dev/null || echo "Certificate script not found"
+        cp installers/metavinci-windows-msi-installer/heavymeta-code-sign.cer release/ 2>/dev/null || echo "Certificate file not found"
+        
+        # macOS DMG files
         
         # macOS DMG files
         cp installers/metavinci-macos-installer-amd64/*.dmg release/
