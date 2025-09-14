@@ -171,18 +171,9 @@ jobs:
         curl -L -o lessmsi.zip https://github.com/activescott/lessmsi/releases/download/v1.10.0/lessmsi-v1.10.0.zip
         tar -xf lessmsi.zip
         
-    - name: Setup MSVC Environment
-      shell: pwsh
-      run: |
-        # This step ensures the MSVC environment is properly set up
-        Write-Host "##[info] Setting up MSVC environment..."
-        
-        # Output available Visual Studio installations
-        if (Test-Path "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe") {
-            Write-Host "##[info] Found Visual Studio installations:"
-            & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -all -format json | ConvertFrom-Json | 
-                Select-Object displayName, installationPath, installationVersion | Format-List | Out-String | Write-Host
-        }
+    - name: Add Signtool to PATH
+      uses: KamaranL/add-signtool-action@v1
+      id: signtool
 
     - name: Sign Windows MSI and prepare certificate
       if: success()
@@ -226,37 +217,8 @@ jobs:
             $certStore.Close()
         }
         
-        # Find signtool in the Windows SDK directory
-        $signTool = $null
-        
-        # First, try common Windows Kits locations
-        $signTool = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue |
-                    Where-Object { $_.Directory.Name -match '^\d+\.\d+\.\d+' } |
-                    Sort-Object { [version]($_.Directory.Name -replace '[^\d.].*$', '') } -Descending |
-                    Select-Object -ExpandProperty FullName -First 1
-        
-        # If not found, try vswhere
-        if (-not $signTool) {
-            Write-Host "##[warning] SignTool not found in Windows Kits, searching with vswhere..."
-            $signTool = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -find "**\x64\signtool.exe" | Select-Object -First 1
-        }
-        
-        # If still not found, try the VS2022 specific location
-        if (-not $signTool) {
-            $vs2022Path = "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\signtool.exe"
-            if (Test-Path $vs2022Path) {
-                $signTool = $vs2022Path
-            }
-        }
-        
-        if (-not $signTool) {
-            Write-Host "##[error] SignTool not found in any standard locations"
-            Write-Host "##[debug] Searching in Program Files..."
-            Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue | 
-                Select-Object FullName, Directory | Format-List | Out-String | ForEach-Object { Write-Host $_ }
-            exit 1
-        }
-        
+        # Use signtool from the add-signtool-action
+        $signTool = "${{ steps.signtool.outputs.signtool-x64 }}"
         Write-Host "##[info] Using SignTool from: $signTool"
         
         # Look for MSI in both root dist and build/dist directories
