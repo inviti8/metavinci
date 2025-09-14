@@ -741,6 +741,7 @@ class Metavinci(QMainWindow):
         else:
             self.TUNNEL_TOKEN = self.hvym_tunnel_token_exists()
 
+        self.PINTHEON_NETWORK = 'testnet'
         self.PINTHEON_ACTIVE = False
         self.win_icon = QIcon(self.HVYM_IMG)
         self.icon = QIcon(self.LOGO_IMG)
@@ -859,6 +860,10 @@ class Metavinci(QMainWindow):
         self.set_tunnel_token_action.triggered.connect(self._set_tunnel_token)
         self.set_tunnel_token_action.setVisible(False)
 
+        self.set_pintheon_network_action = QAction(self.tunnel_token_icon, "Set Network", self)
+        self.set_pintheon_network_action.triggered.connect(self._set_pintheon_network)
+        self.set_pintheon_network_action.setVisible(False)
+
         self.run_pintheon_action = QAction(self.pintheon_icon, "Start Pintheon", self)
         self.run_pintheon_action.triggered.connect(self._start_pintheon)
 
@@ -958,12 +963,18 @@ class Metavinci(QMainWindow):
         self.update_press_action.setVisible(False)
         self.install_press_action.setVisible(False)
 
-        self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
+        network_name = 'testnet'
+        
+        if 'mainnet' in self.PINTHEON_NETWORK:
+            network_name = 'mainnet'
+
+        self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon "+network_name)
         self.tray_pintheon_menu.setIcon(self.pintheon_icon)
         self.tray_pintheon_menu.setEnabled(False)
 
         self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
         self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
+        self.pintheon_settings_menu.addAction(self.set_pintheon_network_action)
         self.pintheon_settings_menu.setEnabled(False)
 
         self.tray_pintheon_menu.addAction(self.run_pintheon_action)
@@ -1691,6 +1702,12 @@ class Metavinci(QMainWindow):
     
     def hvym_set_tunnel_token(self):
         return self._subprocess_hvym([str(self.HVYM), 'pinggy-set-token'])
+    
+    def hvym_set_pintheon_network(self):
+        return self._subprocess_hvym([str(self.HVYM), 'pintheon-set-network'])
+    
+    def hvym_get_pintheon_network(self):
+        return self._subprocess_hvym([str(self.HVYM), 'pintheon-network'])
 
     def hvym_is_tunnel_open(self):
         return self._subprocess_hvym([str(self.HVYM), 'is-pintheon-tunnel-open'])
@@ -2134,11 +2151,28 @@ class Metavinci(QMainWindow):
             return False
         
     def _refresh_pintheon_ui_state(self):
+        self.PINTHEON_NETWORK = self.hvym_get_pintheon_network()
+        network_name = 'testnet'
+        
+        if 'mainnet' in self.PINTHEON_NETWORK:
+            network_name = 'mainnet'
+        
+        self.tray_pintheon_menu.setTitle("Pintheon "+network_name)
         if self.DOCKER_INSTALLED == "True":
+            
+            self.PINTHEON_INSTALLED = self.hvym_pintheon_exists()
+
+            if self.PINTHEON_INSTALLED is not None:
+                self.PINTHEON_INSTALLED = self._clean_cli_bool(self.PINTHEON_INSTALLED)
+
+            print('self.PINTHEON_INSTALLED')
+            print(self.PINTHEON_INSTALLED)
+
             if self.PINTHEON_INSTALLED == "True":
                 self.tray_pintheon_menu.setEnabled(True)
                 self.pintheon_settings_menu.setEnabled(True)
                 self.set_tunnel_token_action.setVisible(True)
+                self.set_pintheon_network_action.setVisible(True)
                 self.install_pintheon_action.setVisible(False)      
                 self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
                 self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
@@ -2147,6 +2181,7 @@ class Metavinci(QMainWindow):
                 self.tray_pintheon_menu.setEnabled(False)
                 self.pintheon_settings_menu.setEnabled(False)
                 self.set_tunnel_token_action.setVisible(False)
+                self.set_pintheon_network_action.setVisible(False)
                 self.open_tunnel_action.setVisible(False)
                 self.tray_tools_update_menu.setVisible(True)
                 self.install_pintheon_action.setVisible(True)
@@ -2241,6 +2276,10 @@ class Metavinci(QMainWindow):
             self.open_tunnel_action.setVisible(False)
         else:
             self.open_tunnel_action.setVisible(True)
+
+    def _set_pintheon_network(self):
+        self.hvym_set_pintheon_network()
+        self._refresh_pintheon_ui_state()
 
     def _install_press(self):
         # Check if hvym_press is supported on current architecture
