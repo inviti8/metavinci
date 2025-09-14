@@ -171,10 +171,18 @@ jobs:
         curl -L -o lessmsi.zip https://github.com/activescott/lessmsi/releases/download/v1.10.0/lessmsi-v1.10.0.zip
         tar -xf lessmsi.zip
         
-    - name: Setup MSVC
-      uses: ms-vscode/cmake-tools@v1.9.2
-      with:
-        cmake: '3.25.1'
+    - name: Setup MSVC Environment
+      shell: pwsh
+      run: |
+        # This step ensures the MSVC environment is properly set up
+        Write-Host "##[info] Setting up MSVC environment..."
+        
+        # Output available Visual Studio installations
+        if (Test-Path "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe") {
+            Write-Host "##[info] Found Visual Studio installations:"
+            & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -all -format json | ConvertFrom-Json | 
+                Select-Object displayName, installationPath, installationVersion | Format-List | Out-String | Write-Host
+        }
 
     - name: Sign Windows MSI and prepare certificate
       if: success()
