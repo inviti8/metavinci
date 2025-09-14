@@ -191,14 +191,21 @@ jobs:
         # Fallback to common Windows SDK locations
         $sdkPath = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
         if (Test-Path $sdkPath) {
-            $signToolPath = Get-ChildItem -Path $sdkPath -Recurse -Filter "signtool.exe" | 
-                Sort-Object { [version]($_.Directory.Name -replace '[^\d.]') } -Descending | 
-                Select-Object -First 1 -ExpandProperty FullName
+            # Get all signtool.exe files
+            $signTools = Get-ChildItem -Path $sdkPath -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue
+            
+            if ($signTools) {
+                # Sort by path length (shorter path = higher in the directory tree)
+                # This is a simple way to get the latest version without parsing version numbers
+                $latestSignTool = $signTools | 
+                    Sort-Object { $_.FullName.Length } | 
+                    Select-Object -First 1 -ExpandProperty FullName
                 
-            if ($signToolPath) {
-                Write-Host "##[info] Found signtool at: $signToolPath"
-                echo "SIGNTOOL_PATH=$signToolPath" >> $env:GITHUB_ENV
-                exit 0
+                if ($latestSignTool) {
+                    Write-Host "##[info] Found signtool at: $latestSignTool"
+                    echo "SIGNTOOL_PATH=$latestSignTool" >> $env:GITHUB_ENV
+                    exit 0
+                }
             }
         }
         
