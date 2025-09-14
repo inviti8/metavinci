@@ -171,6 +171,14 @@ jobs:
         curl -L -o lessmsi.zip https://github.com/activescott/lessmsi/releases/download/v1.10.0/lessmsi-v1.10.0.zip
         tar -xf lessmsi.zip
         
+    - name: Install Windows 10 SDK
+      if: success()
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+        sdk: 10.0.22621.0
+        toolset: 14.3x
+
     - name: Sign Windows MSI and prepare certificate
       if: success()
       run: |
@@ -213,8 +221,29 @@ jobs:
             $certStore.Close()
         }
         
-        # Sign the MSI using the installed Windows SDK signtool
-        $signTool = "$env:ProgramFiles (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe"
+        # Find signtool in the Windows SDK directory
+        $signTool = "${env:WindowsSdkDir}bin\${env:WindowsSDKLibVersion}\x64\signtool.exe"
+        
+        # Fallback to vswhere if the above doesn't work
+        if (-not (Test-Path $signTool)) {
+            Write-Host "##[warning] SignTool not found at default location, searching with vswhere..."
+            $signTool = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -find "**\x64\signtool.exe" | Select-Object -First 1
+            
+            if (-not $signTool) {
+                # Last resort: search in common Windows Kits locations
+                $signTool = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue | 
+                            Sort-Object { [version]($_.Directory.Name -replace '[^\d.]') } -Descending |
+                            Select-Object -ExpandProperty FullName -First 1
+                
+                if (-not $signTool) {
+                    Write-Host "##[error] SignTool not found in any standard locations"
+                    Write-Host "##[error] Please ensure Windows 10 SDK is properly installed"
+                    exit 1
+                }
+            }
+        }
+        
+        Write-Host "##[info] Using SignTool from: $signTool"
         
         # Look for MSI in both root dist and build/dist directories
         $msiFile = (Get-ChildItem -Path "dist\*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
