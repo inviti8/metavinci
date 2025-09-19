@@ -515,35 +515,102 @@ def get_latest_hvym_release_asset_url():
 
 def _extract_with_tar(archive_path: str, extract_dir: str) -> bool:
     """Extract .tar.gz file using Python's tarfile module."""
+    logging.info(f"Attempting Python tarfile extraction of {archive_path} to {extract_dir}")
     try:
         with tarfile.open(archive_path, "r:gz") as tar:
+            logging.info(f"Archive members: {len(tar.getmembers())} files")
+            # Log first few files for debugging
+            for i, member in enumerate(tar.getmembers()[:5]):
+                logging.info(f"  - {member.name} ({member.size} bytes)")
+            if len(tar.getmembers()) > 5:
+                logging.info(f"  ... and {len(tar.getmembers()) - 5} more files")
+                
             tar.extractall(path=extract_dir)
+            
+        # Verify extraction
+        extracted = list(Path(extract_dir).rglob('*'))
+        logging.info(f"Extracted {len(extracted)} files to {extract_dir}")
+        if extracted:
+            for f in extracted[:5]:  # Log first 5 extracted files
+                logging.info(f"  - {f} ({f.stat().st_size} bytes)")
+            if len(extracted) > 5:
+                logging.info(f"  ... and {len(extracted) - 5} more files")
+        
         return True
     except (tarfile.TarError, EOFError, OSError) as e:
-        logging.warning(f"tarfile extraction failed: {e}")
+        logging.error(f"tarfile extraction failed: {str(e)}", exc_info=True)
         return False
 
 def _extract_with_zip(archive_path: str, extract_dir: str) -> bool:
     """Extract .zip file using Python's zipfile module."""
+    logging.info(f"Attempting Python zipfile extraction of {archive_path} to {extract_dir}")
     try:
         with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+            file_list = zip_ref.namelist()
+            logging.info(f"Archive contains {len(file_list)} files")
+            for i, name in enumerate(file_list[:5]):  # Log first 5 files
+                info = zip_ref.getinfo(name)
+                logging.info(f"  - {name} ({info.file_size} bytes, compressed: {info.compress_size} bytes)")
+            if len(file_list) > 5:
+                logging.info(f"  ... and {len(file_list) - 5} more files")
+                
             zip_ref.extractall(extract_dir)
+            
+        # Verify extraction
+        extracted = list(Path(extract_dir).rglob('*'))
+        logging.info(f"Extracted {len(extracted)} files to {extract_dir}")
+        if extracted:
+            for f in extracted[:5]:  # Log first 5 extracted files
+                try:
+                    logging.info(f"  - {f} ({f.stat().st_size} bytes)")
+                except Exception as e:
+                    logging.error(f"  - {f} (error getting size: {e})")
+            if len(extracted) > 5:
+                logging.info(f"  ... and {len(extracted) - 5} more files")
+                
         return True
     except (zipfile.BadZipFile, OSError) as e:
-        logging.warning(f"zipfile extraction failed: {e}")
+        logging.error(f"zipfile extraction failed: {str(e)}", exc_info=True)
         return False
 
 def _extract_with_system_tar(archive_path: str, extract_dir: str) -> bool:
     """Extract .tar.gz using system tar command."""
+    logging.info(f"Attempting system tar extraction of {archive_path} to {extract_dir}")
     try:
-        cmd = ['tar', 'xzf', archive_path, '-C', extract_dir]
+        # First check if tar is available
+        tar_check = subprocess.run(['which', 'tar'], capture_output=True, text=True)
+        if tar_check.returncode != 0:
+            logging.warning("System tar command not found")
+            return False
+            
+        # Get archive listing first
+        list_cmd = ['tar', 'tzf', archive_path]
+        list_result = subprocess.run(list_cmd, capture_output=True, text=True)
+        
+        if list_result.returncode == 0:
+            files = list_result.stdout.splitlines()
+            logging.info(f"Archive contains {len(files)} files")
+            for f in files[:5]:  # Log first 5 files
+                logging.info(f"  - {f}")
+            if len(files) > 5:
+                logging.info(f"  ... and {len(files) - 5} more files")
+        
+        # Perform the actual extraction
+        cmd = ['tar', 'xzvf', archive_path, '-C', extract_dir]
+        logging.info(f"Running command: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True)
+        
         if result.returncode == 0:
+            logging.info(f"System tar extraction successful. Output:\n{result.stdout}")
             return True
-        logging.warning(f"System tar command failed: {result.stderr}")
+            
+        logging.error(f"System tar command failed with code {result.returncode}")
+        logging.error(f"STDERR: {result.stderr}")
+        logging.error(f"STDOUT: {result.stdout}")
         return False
+        
     except Exception as e:
-        logging.warning(f"System tar command execution failed: {e}")
+        logging.error(f"System tar command execution failed: {str(e)}", exc_info=True)
         return False
 
 def _extract_with_system_unzip(archive_path: str, extract_dir: str) -> bool:
@@ -581,25 +648,54 @@ def extract_archive(archive_path: str, extract_dir: str) -> bool:
     Returns:
         bool: True if extraction succeeded, False otherwise
     """
+    # Log start of extraction
+    logging.info(f"=== Starting archive extraction ===")
+    logging.info(f"Archive: {archive_path}")
+    logging.info(f"Extract to: {extract_dir}")
+    logging.info(f"File exists: {os.path.exists(archive_path)}")
+    
     if not os.path.exists(archive_path):
         logging.error(f"Archive not found: {archive_path}")
         return False
-        
-    if os.path.getsize(archive_path) == 0:
-        logging.error(f"Archive is empty: {archive_path}")
+    
+    try:
+        file_size = os.path.getsize(archive_path)
+        logging.info(f"File size: {file_size} bytes")
+        if file_size == 0:
+            logging.error(f"Archive is empty: {archive_path}")
+            return False
+    except Exception as e:
+        logging.error(f"Failed to get file size: {e}")
         return False
     
     # Create extract directory if it doesn't exist
-    os.makedirs(extract_dir, exist_ok=True)
+    try:
+        os.makedirs(extract_dir, exist_ok=True)
+        logging.info(f"Created extract directory: {extract_dir}")
+    except Exception as e:
+        logging.error(f"Failed to create extract directory {extract_dir}: {e}")
+        return False
+    
+    # Check if we can write to the extract directory
+    test_file = os.path.join(extract_dir, '.write_test')
+    try:
+        with open(test_file, 'w') as f:
+            f.write('test')
+        os.remove(test_file)
+    except Exception as e:
+        logging.error(f"Cannot write to extract directory {extract_dir}: {e}")
+        return False
     
     # Try different extraction methods based on file extension
     if archive_path.endswith('.tar.gz') or archive_path.endswith('.tgz'):
+        logging.info("Detected .tar.gz archive")
         methods = [
             ('Python tarfile', _extract_with_tar),
             ('System tar', _extract_with_system_tar),
             ('patoolib', _extract_with_patool) if HAS_PATOOL else None
         ]
     elif archive_path.endswith('.zip'):
+        logging.info("Detected .zip archive")
         methods = [
             ('Python zipfile', _extract_with_zip),
             ('System unzip', _extract_with_system_unzip),
@@ -611,23 +707,57 @@ def extract_archive(archive_path: str, extract_dir: str) -> bool:
     
     # Filter out None values (unavailable methods)
     methods = [m for m in methods if m is not None]
+    logging.info(f"Available extraction methods: {[m[0] for m in methods]}")
     
     # Try each method with retries
     for attempt in range(EXTRACT_RETRY_ATTEMPTS):
         if attempt > 0:
-            logging.info(f"Retry {attempt + 1}/{EXTRACT_RETRY_ATTEMPTS} for {archive_path}")
+            logging.warning(f"Retry {attempt + 1}/{EXTRACT_RETRY_ATTEMPTS} for {archive_path}")
             time.sleep(EXTRACT_RETRY_DELAY)
-            
+        
         for name, method in methods:
-            logging.info(f"Trying extraction with {name}...")
+            logging.info(f"\n=== Trying extraction with {name} (attempt {attempt + 1}/{EXTRACT_RETRY_ATTEMPTS}) ===")
             try:
-                if method(archive_path, extract_dir):
-                    logging.info(f"Successfully extracted with {name}")
+                success = method(archive_path, extract_dir)
+                if success:
+                    # Verify extraction
+                    extracted_files = list(Path(extract_dir).rglob('*'))
+                    logging.info(f"Extraction successful. Found {len(extracted_files)} files in {extract_dir}")
+                    if extracted_files:
+                        for f in extracted_files[:5]:
+                            try:
+                                logging.info(f"  - {f} ({f.stat().st_size} bytes)")
+                            except:
+                                logging.info(f"  - {f} (error getting size)")
+                        if len(extracted_files) > 5:
+                            logging.info(f"  ... and {len(extracted_files) - 5} more files")
                     return True
+                logging.warning(f"Extraction with {name} returned False")
             except Exception as e:
-                logging.warning(f"Extraction with {name} failed: {e}")
+                logging.error(f"Extraction with {name} failed with exception: {str(e)}", exc_info=True)
     
-    logging.error(f"All extraction methods failed for {archive_path}")
+    # If we get here, all methods failed
+    logging.error(f"=== All extraction methods failed for {archive_path} ===")
+    
+    # Log directory contents for debugging
+    try:
+        logging.info("\n=== Directory Contents ===")
+        for root, dirs, files in os.walk(extract_dir):
+            level = root.replace(extract_dir, '').count(os.sep)
+            indent = '  ' * level
+            logging.info(f"{indent}{os.path.basename(root)}/")
+            subindent = '  ' * (level + 1)
+            for f in files[:10]:  # Limit to first 10 files per directory
+                try:
+                    size = os.path.getsize(os.path.join(root, f))
+                    logging.info(f"{subindent}{f} ({size} bytes)")
+                except:
+                    logging.info(f"{subindent}{f} (error getting size)")
+            if len(files) > 10:
+                logging.info(f"{subindent}... and {len(files) - 10} more files")
+    except Exception as e:
+        logging.error(f"Failed to list directory contents: {e}")
+    
     return False
 
 def download_and_install_hvym_cli(dest_dir: str) -> str:
