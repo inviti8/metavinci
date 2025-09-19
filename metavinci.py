@@ -974,7 +974,7 @@ class Metavinci(QMainWindow):
 
         self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
         self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
-        self.pintheon_settings_menu.addAction(self.set_pintheon_network_action)
+        # self.pintheon_settings_menu.addAction(self.set_pintheon_network_action)
         self.pintheon_settings_menu.setEnabled(False)
 
         self.tray_pintheon_menu.addAction(self.run_pintheon_action)
@@ -2172,7 +2172,7 @@ class Metavinci(QMainWindow):
                 self.tray_pintheon_menu.setEnabled(True)
                 self.pintheon_settings_menu.setEnabled(True)
                 self.set_tunnel_token_action.setVisible(True)
-                self.set_pintheon_network_action.setVisible(True)
+                # self.set_pintheon_network_action.setVisible(True)
                 self.install_pintheon_action.setVisible(False)      
                 self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
                 self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
@@ -2181,7 +2181,7 @@ class Metavinci(QMainWindow):
                 self.tray_pintheon_menu.setEnabled(False)
                 self.pintheon_settings_menu.setEnabled(False)
                 self.set_tunnel_token_action.setVisible(False)
-                self.set_pintheon_network_action.setVisible(False)
+                # self.set_pintheon_network_action.setVisible(False)
                 self.open_tunnel_action.setVisible(False)
                 self.tray_tools_update_menu.setVisible(True)
                 self.install_pintheon_action.setVisible(True)
