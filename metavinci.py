@@ -64,6 +64,22 @@ import zipfile
 import shutil
 import requests
 import logging
+import subprocess
+import shlex
+from pathlib import Path
+from typing import Optional, Tuple, List, Dict, Any, Union, Callable
+import certifi
+
+# Try to import optional dependencies
+try:
+    import patoolib
+    HAS_PATOOL = True
+except ImportError:
+    HAS_PATOOL = False
+
+# Constants
+EXTRACT_RETRY_ATTEMPTS = 2
+EXTRACT_RETRY_DELAY = 1  # seconds
 
 # Import compiled Qt resources if present (built by pyrcc5)
 try:
@@ -497,12 +513,129 @@ def get_latest_hvym_release_asset_url():
         raise Exception(f"Asset {asset_name} not found in latest release")
     return url
 
-def download_and_install_hvym_cli(dest_dir):
+def _extract_with_tar(archive_path: str, extract_dir: str) -> bool:
+    """Extract .tar.gz file using Python's tarfile module."""
+    try:
+        with tarfile.open(archive_path, "r:gz") as tar:
+            tar.extractall(path=extract_dir)
+        return True
+    except (tarfile.TarError, EOFError, OSError) as e:
+        logging.warning(f"tarfile extraction failed: {e}")
+        return False
+
+def _extract_with_zip(archive_path: str, extract_dir: str) -> bool:
+    """Extract .zip file using Python's zipfile module."""
+    try:
+        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_dir)
+        return True
+    except (zipfile.BadZipFile, OSError) as e:
+        logging.warning(f"zipfile extraction failed: {e}")
+        return False
+
+def _extract_with_system_tar(archive_path: str, extract_dir: str) -> bool:
+    """Extract .tar.gz using system tar command."""
+    try:
+        cmd = ['tar', 'xzf', archive_path, '-C', extract_dir]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            return True
+        logging.warning(f"System tar command failed: {result.stderr}")
+        return False
+    except Exception as e:
+        logging.warning(f"System tar command execution failed: {e}")
+        return False
+
+def _extract_with_system_unzip(archive_path: str, extract_dir: str) -> bool:
+    """Extract .zip using system unzip command."""
+    try:
+        cmd = ['unzip', '-o', archive_path, '-d', extract_dir]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            return True
+        logging.warning(f"System unzip command failed: {result.stderr}")
+        return False
+    except Exception as e:
+        logging.warning(f"System unzip command execution failed: {e}")
+        return False
+
+def _extract_with_patool(archive_path: str, extract_dir: str) -> bool:
+    """Extract archive using patoolib if available."""
+    if not HAS_PATOOL:
+        return False
+    try:
+        patoolib.extract_archive(archive_path, outdir=extract_dir)
+        return True
+    except Exception as e:
+        logging.warning(f"patoolib extraction failed: {e}")
+        return False
+
+def extract_archive(archive_path: str, extract_dir: str) -> bool:
+    """
+    Extract an archive using multiple methods with fallbacks.
+    
+    Args:
+        archive_path: Path to the archive file
+        extract_dir: Directory to extract files to
+        
+    Returns:
+        bool: True if extraction succeeded, False otherwise
+    """
+    if not os.path.exists(archive_path):
+        logging.error(f"Archive not found: {archive_path}")
+        return False
+        
+    if os.path.getsize(archive_path) == 0:
+        logging.error(f"Archive is empty: {archive_path}")
+        return False
+    
+    # Create extract directory if it doesn't exist
+    os.makedirs(extract_dir, exist_ok=True)
+    
+    # Try different extraction methods based on file extension
+    if archive_path.endswith('.tar.gz') or archive_path.endswith('.tgz'):
+        methods = [
+            ('Python tarfile', _extract_with_tar),
+            ('System tar', _extract_with_system_tar),
+            ('patoolib', _extract_with_patool) if HAS_PATOOL else None
+        ]
+    elif archive_path.endswith('.zip'):
+        methods = [
+            ('Python zipfile', _extract_with_zip),
+            ('System unzip', _extract_with_system_unzip),
+            ('patoolib', _extract_with_patool) if HAS_PATOOL else None
+        ]
+    else:
+        logging.error(f"Unsupported archive format: {archive_path}")
+        return False
+    
+    # Filter out None values (unavailable methods)
+    methods = [m for m in methods if m is not None]
+    
+    # Try each method with retries
+    for attempt in range(EXTRACT_RETRY_ATTEMPTS):
+        if attempt > 0:
+            logging.info(f"Retry {attempt + 1}/{EXTRACT_RETRY_ATTEMPTS} for {archive_path}")
+            time.sleep(EXTRACT_RETRY_DELAY)
+            
+        for name, method in methods:
+            logging.info(f"Trying extraction with {name}...")
+            try:
+                if method(archive_path, extract_dir):
+                    logging.info(f"Successfully extracted with {name}")
+                    return True
+            except Exception as e:
+                logging.warning(f"Extraction with {name} failed: {e}")
+    
+    logging.error(f"All extraction methods failed for {archive_path}")
+    return False
+
+def download_and_install_hvym_cli(dest_dir: str) -> str:
     """
     Download and install the latest hvym CLI for the current platform.
     
     Args:
-        dest_dir (str): Directory where the hvym binary should be installed
+        dest_dir: Directory where the hvym binary should be installed
         
     Returns:
         str: Path to the installed hvym binary
@@ -535,91 +668,133 @@ def download_and_install_hvym_cli(dest_dir):
     with tempfile.TemporaryDirectory() as tmpdir:
         asset = os.path.basename(url)
         archive_path = os.path.join(tmpdir, asset)
-        # Use requests + certifi for robust SSL verification
-        import certifi
-        import requests
-        with requests.get(url, stream=True, timeout=30, verify=certifi.where(), headers={"User-Agent": "Metavinci/1.0"}) as r:
-            r.raise_for_status()
-            with open(archive_path, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-        # Verify archive integrity before extraction
+        
+        # Download the file
         try:
-            if not os.path.exists(archive_path) or os.path.getsize(archive_path) == 0:
-                raise Exception("Downloaded file is empty or missing")
-                
-            # Check file type and extract
-            if asset.endswith('.tar.gz'):
-                # Test if it's a valid tar.gz
-                try:
-                    with tarfile.open(archive_path, "r:gz") as test_tar:
-                        test_tar.getmembers()  # Test reading members
-                    print("Archive verified, extracting...")
-                    with tarfile.open(archive_path, "r:gz") as tar:
-                        tar.extractall(path=tmpdir)
-                except (tarfile.TarError, EOFError, OSError) as e:
-                    raise Exception(f"Invalid or corrupted tar.gz archive: {str(e)}")
-                    
-            elif asset.endswith('.zip'):
-                # Test if it's a valid zip
-                try:
-                    with zipfile.ZipFile(archive_path, 'r') as test_zip:
-                        test_zip.testzip()  # Test zip integrity
-                    print("Archive verified, extracting...")
-                    with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-                        zip_ref.extractall(tmpdir)
-                except (zipfile.BadZipFile, OSError) as e:
-                    raise Exception(f"Invalid or corrupted zip archive: {str(e)}")
-            else:
-                raise Exception(f"Unsupported archive format: {os.path.splitext(asset)[1]}")
-                
+            # Use requests + certifi for robust SSL verification
+            with requests.get(
+                url, 
+                stream=True, 
+                timeout=30, 
+                verify=certifi.where(), 
+                headers={"User-Agent": "Metavinci/1.0"}
+            ) as r:
+                r.raise_for_status()
+                with open(archive_path, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
         except Exception as e:
+            raise Exception(f"Failed to download file: {str(e)}")
+        
+        # Verify download
+        if not os.path.exists(archive_path) or os.path.getsize(archive_path) == 0:
+            raise Exception("Downloaded file is empty or missing")
+        
+        # Extract using our robust extraction function
+        if not extract_archive(archive_path, tmpdir):
             # Clean up potentially corrupted download
             if os.path.exists(archive_path):
                 try:
                     os.remove(archive_path)
                 except OSError:
                     pass
-            # Re-raise with user-friendly message
-            error_msg = f"Failed to extract archive: {str(e)}\n\n" \
-                       f"This could be due to a corrupted download. Please try again.\n" \
-                       f"If the problem persists, you may need to check your internet connection\n" \
-                       f"or manually download the latest version from GitHub."
-            raise Exception(error_msg)
-        # Find the hvym binary
+            
+            # Prepare error message with system information
+            system_info = (
+                f"System: {platform.system()} {platform.release()} {platform.machine()}\n"
+                f"Python: {platform.python_version()}\n"
+                f"Archive: {os.path.basename(archive_path)} ({os.path.getsize(archive_path)} bytes)"
+            )
+            
+            raise Exception(
+                "Failed to extract the downloaded archive.\n\n"
+                f"{system_info}\n\n"
+                "This could be due to:\n"
+                "1. Corrupted download (try again)\n"
+                "2. Missing extraction tools (install 'unzip' or 'tar')\n"
+                "3. Permission issues (check write access to temp directory)\n\n"
+                f"You can try manually downloading and extracting the file from:\n{url}"
+            )
+        
+        # Find the hvym binary in the extracted files
         hvym_binary = None
+        extracted_files = []
+        
+        # First, try to find the binary
         for root, dirs, files in os.walk(tmpdir):
             for file in files:
-                if file.startswith("hvym"):
-                    hvym_binary = file
-                    src = os.path.join(root, file)
-                    dst = os.path.join(dest_dir, file)
-                    
-                    # Ensure destination directory exists
-                    os.makedirs(dest_dir, exist_ok=True)
-                    
-                    # Move the binary
-                    try:
-                        shutil.move(src, dst)
-                        # Set executable permissions (except on Windows)
-                        if platform.system().lower() != "windows":
-                            os.chmod(dst, 0o755)
-                        print(f"Successfully installed hvym at {dst}")
-                        return dst
-                    except Exception as e:
-                        error_msg = f"Failed to install hvym binary: {str(e)}\n\n" \
-                                  f"Source: {src}\n" \
-                                  f"Destination: {dst}\n\n" \
-                                  f"Please ensure you have write permissions for {dest_dir}"
-                        raise Exception(error_msg)
+                full_path = os.path.join(root, file)
+                rel_path = os.path.relpath(full_path, tmpdir)
+                extracted_files.append(rel_path)
+                
+                if file.startswith("hvym") and not file.endswith('.dll') and not file.endswith('.so'):
+                    hvym_binary = full_path
+                    break
+            if hvym_binary:
+                break
         
-        # If we get here, no binary was found
-        raise Exception(
-            "hvym binary not found in the downloaded archive.\n\n"
-            "This could mean the release package structure has changed.\n"
-            "Please check the latest release on GitHub or contact support."
-        )
+        if not hvym_binary:
+            # No binary found, prepare detailed error message
+            error_msg = [
+                "Could not find 'hvym' binary in the downloaded archive.\n\n",
+                f"Archive content ({len(extracted_files)} items):"
+            ]
+            
+            # List up to 20 files for debugging
+            for i, f in enumerate(sorted(extracted_files)[:20], 1):
+                error_msg.append(f"  {i}. {f}")
+            
+            if len(extracted_files) > 20:
+                error_msg.append(f"  ... and {len(extracted_files) - 20} more files")
+            
+            error_msg.extend([
+                "\nThis might indicate that:\n",
+                "1. The release package structure has changed\n",
+                "2. The download was incomplete or corrupted\n",
+                "3. The package is not compatible with your system\n\n",
+                f"Please check the latest release at: {url}"
+            ])
+            
+            raise Exception("\n".join(error_msg))
+        
+        # Prepare destination path
+        binary_name = os.path.basename(hvym_binary)
+        dst = os.path.join(dest_dir, binary_name)
+        
+        try:
+            # Ensure destination directory exists
+            os.makedirs(dest_dir, exist_ok=True)
+            
+            # Move the binary to destination
+            if os.path.exists(dst):
+                os.remove(dst)  # Remove existing file if any
+                
+            shutil.move(hvym_binary, dst)
+            
+            # Set executable permissions (except on Windows)
+            if platform.system().lower() != "windows":
+                os.chmod(dst, 0o755)
+            
+            # Verify the binary is executable
+            if not os.access(dst, os.X_OK) and platform.system().lower() != "windows":
+                raise Exception(f"Failed to set executable permissions on {dst}")
+            
+            print(f"Successfully installed hvym at {dst}")
+            return dst
+            
+        except Exception as e:
+            error_msg = [
+                f"Failed to install hvym binary: {str(e)}\n\n",
+                f"Source: {hvym_binary}",
+                f"Destination: {dst}\n\n",
+                "Possible solutions:",
+                f"1. Check write permissions for: {dest_dir}",
+                "2. Ensure there's enough disk space",
+                "3. Try running with elevated permissions if needed",
+                f"4. Manually move the file from {hvym_binary} to {dst}"
+            ]
+            raise Exception("\n".join(error_msg))
 
 
 def get_latest_hvym_press_release_asset_url():
