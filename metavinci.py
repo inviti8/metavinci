@@ -773,6 +773,38 @@ def download_and_install_hvym_cli(dest_dir: str) -> str:
     Raises:
         Exception: If download, extraction, or installation fails
     """
+    # Ensure the destination directory and its parent exist with correct permissions
+    try:
+        # Create parent directories if they don't exist
+        os.makedirs(os.path.dirname(dest_dir), mode=0o755, exist_ok=True)
+        # Create the destination directory with proper permissions
+        os.makedirs(dest_dir, mode=0o755, exist_ok=True)
+        logging.info(f"Ensured directories exist: {os.path.dirname(dest_dir)} and {dest_dir}")
+        
+        # Test write permissions
+        test_file = os.path.join(dest_dir, '.write_test')
+        with open(test_file, 'w') as f:
+            f.write('test')
+        os.remove(test_file)
+        logging.info("Verified write permissions to destination directory")
+    except Exception as e:
+        error_msg = f"Cannot create or write to destination directory {dest_dir}: {e}"
+        logging.error(error_msg)
+        # Try to create with sudo if permission denied
+        if "Permission denied" in str(e) and platform.system().lower() == "linux":
+            try:
+                logging.warning("Permission denied, trying with sudo...")
+                cmd = f"sudo mkdir -p {os.path.dirname(dest_dir)} && sudo chown -R $USER:$USER {os.path.dirname(dest_dir)} && sudo chmod 755 {os.path.dirname(dest_dir)}"
+                subprocess.run(cmd, shell=True, check=True)
+                os.makedirs(dest_dir, mode=0o755, exist_ok=True)
+                logging.info("Successfully created directory with elevated permissions")
+            except Exception as sudo_e:
+                error_msg = f"Failed to create directory even with sudo: {sudo_e}"
+                logging.error(error_msg)
+                raise Exception(error_msg)
+        else:
+            raise Exception(error_msg)
+
     # Use macOS-specific installation helper if on macOS
     if platform.system().lower() == "darwin":
         try:
@@ -790,8 +822,14 @@ def download_and_install_hvym_cli(dest_dir: str) -> str:
     
     # Standard installation method for other platforms
     try:
-        url = get_latest_hvym_release_asset_url()
-        print(f"Downloading {url}...")
+        # Ensure temp directory exists
+        with tempfile.TemporaryDirectory() as tmpdir:
+            logging.info(f"Using temporary directory: {tmpdir}")
+            
+            # Get the download URL
+            url = get_latest_hvym_release_asset_url()
+            print(f"Downloading {url}...")
+            logging.info(f"Downloading from: {url}")
     except Exception as e:
         raise Exception(f"Failed to get latest release URL: {str(e)}\n\n"
                       f"Please check your internet connection and try again.")
@@ -893,25 +931,101 @@ def download_and_install_hvym_cli(dest_dir: str) -> str:
         dst = os.path.join(dest_dir, binary_name)
         
         try:
-            # Ensure destination directory exists
-            os.makedirs(dest_dir, exist_ok=True)
+            # Ensure destination directory exists with correct permissions
+            os.makedirs(os.path.dirname(dst), exist_ok=True, mode=0o755)
+            
+            # If destination exists, remove it first
+            if os.path.exists(dst):
+                try:
+                    os.remove(dst)
+                except PermissionError:
+                    # If we can't remove it, try with sudo on Linux
+                    if platform.system().lower() == "linux":
+                        try:
+                            subprocess.run(f"sudo rm -f {dst}", shell=True, check=True)
+                        except subprocess.CalledProcessError as e:
+                            raise Exception(f"Failed to remove existing binary: {e}")
+                    else:
+                        raise
             
             # Move the binary to destination
-            if os.path.exists(dst):
-                os.remove(dst)  # Remove existing file if any
-                
             shutil.move(hvym_binary, dst)
             
             # Set executable permissions (except on Windows)
             if platform.system().lower() != "windows":
-                os.chmod(dst, 0o755)
+                try:
+                    os.chmod(dst, 0o755)
+                except PermissionError:
+                    # If we can't set permissions, try with sudo on Linux
+                    if platform.system().lower() == "linux":
+                        try:
+                            subprocess.run(f"sudo chmod 755 {dst}", shell=True, check=True)
+                        except subprocess.CalledProcessError as e:
+                            raise Exception(f"Failed to set executable permissions: {e}")
+                    else:
+                        raise
             
-            # Verify the binary is executable
-            if not os.access(dst, os.X_OK) and platform.system().lower() != "windows":
-                raise Exception(f"Failed to set executable permissions on {dst}")
+            # Verify the binary exists and is executable
+            if not os.path.exists(dst):
+                raise Exception(f"Failed to move binary to {dst}")
+                
+            if platform.system().lower() != "windows" and not os.access(dst, os.X_OK):
+                # Try setting permissions again with elevated privileges if on Linux
+                if platform.system().lower() == "linux":
+                    try:
+                        subprocess.run(f"sudo chmod +x {dst}", shell=True, check=True)
+                        if not os.access(dst, os.X_OK):
+                            raise Exception(f"Failed to set executable permissions on {dst} even with sudo")
+                    except subprocess.CalledProcessError as e:
+                        raise Exception(f"Failed to set executable permissions with sudo: {e}")
+                else:
+                    os.chmod(dst, 0o755)
+                    if not os.access(dst, os.X_OK):
+                        raise Exception(f"Failed to set executable permissions on {dst}")
             
-            print(f"Successfully installed hvym at {dst}")
+            # Set ownership to current user if on Linux
+            if platform.system().lower() == "linux":
+                try:
+                    import pwd
+                    import grp
+                    uid = os.getuid()
+                    gid = os.getgid()
+                    os.chown(dst, uid, gid)
+                except Exception as e:
+                    logging.warning(f"Could not set ownership of {dst} to current user: {e}")
+                    # Try with sudo
+                    try:
+                        username = pwd.getpwuid(uid).pw_name
+                        subprocess.run(f"sudo chown {username}: {dst}", shell=True, check=True)
+                    except Exception as sudo_e:
+                        logging.warning(f"Failed to set ownership with sudo: {sudo_e}")
+            
+            logging.info(f"Successfully installed hvym at {dst}")
+            logging.info(f"File permissions: {oct(os.stat(dst).st_mode)[-3:]}")
+            logging.info(f"File owner: {os.stat(dst).st_uid}:{os.stat(dst).st_gid}")
+            
+            # Verify the binary can be executed
+            if platform.system().lower() != "windows":
+                try:
+                    result = subprocess.run([dst, '--version'], capture_output=True, text=True)
+                    if result.returncode != 0:
+                        logging.warning(f"Version check failed: {result.stderr}")
+                    else:
+                        logging.info(f"Binary version: {result.stdout.strip()}")
+                except Exception as e:
+                    logging.warning(f"Version check failed: {e}")
+            
             return dst
+            
+        except Exception as e:
+            logging.error(f"Error during binary installation: {e}")
+            # Clean up if something went wrong
+            if os.path.exists(dst):
+                try:
+                    os.remove(dst)
+                except:
+                    pass
+            raise
             
         except Exception as e:
             error_msg = [
