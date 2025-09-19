@@ -498,7 +498,18 @@ def get_latest_hvym_release_asset_url():
     return url
 
 def download_and_install_hvym_cli(dest_dir):
-    """Download and install the latest hvym CLI for the current platform."""
+    """
+    Download and install the latest hvym CLI for the current platform.
+    
+    Args:
+        dest_dir (str): Directory where the hvym binary should be installed
+        
+    Returns:
+        str: Path to the installed hvym binary
+        
+    Raises:
+        Exception: If download, extraction, or installation fails
+    """
     # Use macOS-specific installation helper if on macOS
     if platform.system().lower() == "darwin":
         try:
@@ -515,8 +526,12 @@ def download_and_install_hvym_cli(dest_dir):
             print(f"macOS installation helper error: {e}, falling back to standard method")
     
     # Standard installation method for other platforms
-    url = get_latest_hvym_release_asset_url()
-    print(f"Downloading {url} ...")
+    try:
+        url = get_latest_hvym_release_asset_url()
+        print(f"Downloading {url}...")
+    except Exception as e:
+        raise Exception(f"Failed to get latest release URL: {str(e)}\n\n"
+                      f"Please check your internet connection and try again.")
     with tempfile.TemporaryDirectory() as tmpdir:
         asset = os.path.basename(url)
         archive_path = os.path.join(tmpdir, asset)
@@ -529,27 +544,82 @@ def download_and_install_hvym_cli(dest_dir):
                 for chunk in r.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
-        # Extract
-        if asset.endswith('.tar.gz'):
-            with tarfile.open(archive_path, "r:gz") as tar:
-                tar.extractall(path=tmpdir)
-        elif asset.endswith('.zip'):
-            with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-                zip_ref.extractall(tmpdir)
-        else:
-            raise Exception("Unknown archive format")
+        # Verify archive integrity before extraction
+        try:
+            if not os.path.exists(archive_path) or os.path.getsize(archive_path) == 0:
+                raise Exception("Downloaded file is empty or missing")
+                
+            # Check file type and extract
+            if asset.endswith('.tar.gz'):
+                # Test if it's a valid tar.gz
+                try:
+                    with tarfile.open(archive_path, "r:gz") as test_tar:
+                        test_tar.getmembers()  # Test reading members
+                    print("Archive verified, extracting...")
+                    with tarfile.open(archive_path, "r:gz") as tar:
+                        tar.extractall(path=tmpdir)
+                except (tarfile.TarError, EOFError, OSError) as e:
+                    raise Exception(f"Invalid or corrupted tar.gz archive: {str(e)}")
+                    
+            elif asset.endswith('.zip'):
+                # Test if it's a valid zip
+                try:
+                    with zipfile.ZipFile(archive_path, 'r') as test_zip:
+                        test_zip.testzip()  # Test zip integrity
+                    print("Archive verified, extracting...")
+                    with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                        zip_ref.extractall(tmpdir)
+                except (zipfile.BadZipFile, OSError) as e:
+                    raise Exception(f"Invalid or corrupted zip archive: {str(e)}")
+            else:
+                raise Exception(f"Unsupported archive format: {os.path.splitext(asset)[1]}")
+                
+        except Exception as e:
+            # Clean up potentially corrupted download
+            if os.path.exists(archive_path):
+                try:
+                    os.remove(archive_path)
+                except OSError:
+                    pass
+            # Re-raise with user-friendly message
+            error_msg = f"Failed to extract archive: {str(e)}\n\n" \
+                       f"This could be due to a corrupted download. Please try again.\n" \
+                       f"If the problem persists, you may need to check your internet connection\n" \
+                       f"or manually download the latest version from GitHub."
+            raise Exception(error_msg)
         # Find the hvym binary
+        hvym_binary = None
         for root, dirs, files in os.walk(tmpdir):
             for file in files:
                 if file.startswith("hvym"):
+                    hvym_binary = file
                     src = os.path.join(root, file)
                     dst = os.path.join(dest_dir, file)
-                    shutil.move(src, dst)
-                    if platform.system().lower() != "windows":
-                        os.chmod(dst, 0o755)
-                    print(f"hvym installed at {dst}")
-                    return dst
-        raise Exception("hvym binary not found in archive")
+                    
+                    # Ensure destination directory exists
+                    os.makedirs(dest_dir, exist_ok=True)
+                    
+                    # Move the binary
+                    try:
+                        shutil.move(src, dst)
+                        # Set executable permissions (except on Windows)
+                        if platform.system().lower() != "windows":
+                            os.chmod(dst, 0o755)
+                        print(f"Successfully installed hvym at {dst}")
+                        return dst
+                    except Exception as e:
+                        error_msg = f"Failed to install hvym binary: {str(e)}\n\n" \
+                                  f"Source: {src}\n" \
+                                  f"Destination: {dst}\n\n" \
+                                  f"Please ensure you have write permissions for {dest_dir}"
+                        raise Exception(error_msg)
+        
+        # If we get here, no binary was found
+        raise Exception(
+            "hvym binary not found in the downloaded archive.\n\n"
+            "This could mean the release package structure has changed.\n"
+            "Please check the latest release on GitHub or contact support."
+        )
 
 
 def get_latest_hvym_press_release_asset_url():
