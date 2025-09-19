@@ -773,34 +773,71 @@ def download_and_install_hvym_cli(dest_dir: str) -> str:
     Raises:
         Exception: If download, extraction, or installation fails
     """
+    logger = logging.getLogger()
+    logger.info("=" * 80)
+    logger.info("Starting hvym CLI installation")
+    logger.info(f"Destination directory: {dest_dir}")
+    
     # Ensure the destination directory and its parent exist with correct permissions
     try:
         # Create parent directories if they don't exist
-        os.makedirs(os.path.dirname(dest_dir), mode=0o755, exist_ok=True)
+        parent_dir = os.path.dirname(dest_dir)
+        logger.info(f"Ensuring parent directory exists: {parent_dir}")
+        os.makedirs(parent_dir, mode=0o755, exist_ok=True)
+        
         # Create the destination directory with proper permissions
+        logger.info(f"Ensuring destination directory exists: {dest_dir}")
         os.makedirs(dest_dir, mode=0o755, exist_ok=True)
-        logging.info(f"Ensured directories exist: {os.path.dirname(dest_dir)} and {dest_dir}")
         
         # Test write permissions
         test_file = os.path.join(dest_dir, '.write_test')
-        with open(test_file, 'w') as f:
-            f.write('test')
-        os.remove(test_file)
-        logging.info("Verified write permissions to destination directory")
+        logger.info(f"Testing write permissions with file: {test_file}")
+        try:
+            with open(test_file, 'w') as f:
+                f.write('test')
+            os.remove(test_file)
+            logger.info("Write permissions verified")
+        except Exception as e:
+            error_msg = f"Cannot write to destination directory {dest_dir}: {e}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
+            
     except Exception as e:
         error_msg = f"Cannot create or write to destination directory {dest_dir}: {e}"
-        logging.error(error_msg)
-        # Try to create with sudo if permission denied
+        logger.error(error_msg)
+        
+        # Try to create with sudo if permission denied on Linux
         if "Permission denied" in str(e) and platform.system().lower() == "linux":
+            logger.warning("Permission denied, trying with sudo...")
             try:
-                logging.warning("Permission denied, trying with sudo...")
-                cmd = f"sudo mkdir -p {os.path.dirname(dest_dir)} && sudo chown -R $USER:$USER {os.path.dirname(dest_dir)} && sudo chmod 755 {os.path.dirname(dest_dir)}"
-                subprocess.run(cmd, shell=True, check=True)
+                # Create parent directory with sudo if needed
+                if not os.path.exists(parent_dir):
+                    logger.info(f"Creating parent directory with sudo: {parent_dir}")
+                    subprocess.run(
+                        ['sudo', 'mkdir', '-p', parent_dir],
+                        check=True
+                    )
+                
+                # Set ownership and permissions
+                logger.info(f"Setting ownership and permissions for {parent_dir}")
+                uid = os.getuid()
+                gid = os.getgid()
+                subprocess.run(
+                    ['sudo', 'chown', f"{uid}:{gid}", parent_dir],
+                    check=True
+                )
+                subprocess.run(
+                    ['sudo', 'chmod', '755', parent_dir],
+                    check=True
+                )
+                
+                # Create destination directory
                 os.makedirs(dest_dir, mode=0o755, exist_ok=True)
-                logging.info("Successfully created directory with elevated permissions")
+                logger.info("Successfully created directory with elevated permissions")
+                
             except Exception as sudo_e:
                 error_msg = f"Failed to create directory even with sudo: {sudo_e}"
-                logging.error(error_msg)
+                logger.error(error_msg)
                 raise Exception(error_msg)
         else:
             raise Exception(error_msg)
@@ -808,237 +845,163 @@ def download_and_install_hvym_cli(dest_dir: str) -> str:
     # Use macOS-specific installation helper if on macOS
     if platform.system().lower() == "darwin":
         try:
+            logger.info("macOS detected, attempting to use macOS installation helper")
             from macos_install_helper import MacOSInstallHelper
             helper = MacOSInstallHelper()
             hvym_path = helper.install_hvym_cli()
             if hvym_path:
+                logger.info(f"Successfully installed hvym using macOS helper: {hvym_path}")
                 return hvym_path
             else:
+                logger.warning("macOS installation helper returned no path, falling back to standard method")
                 raise Exception("macOS installation helper failed")
-        except ImportError:
-            print("macOS installation helper not available, falling back to standard method")
+        except ImportError as e:
+            logger.warning("macOS installation helper not available, falling back to standard method")
+            logger.debug(f"Import error: {e}")
         except Exception as e:
-            print(f"macOS installation helper error: {e}, falling back to standard method")
+            logger.warning(f"macOS installation helper error: {e}, falling back to standard method")
+            logger.debug(f"Error details: {traceback.format_exc()}")
     
     # Standard installation method for other platforms
+    logger.info("Using standard installation method")
+    
     try:
-        # Ensure temp directory exists
+        # Get the download URL
+        logger.info("Getting latest release URL")
+        url = get_latest_hvym_release_asset_url()
+        logger.info(f"Latest release URL: {url}")
+        
+        # Create a temporary directory for downloads
         with tempfile.TemporaryDirectory() as tmpdir:
-            logging.info(f"Using temporary directory: {tmpdir}")
+            logger.info(f"Using temporary directory: {tmpdir}")
             
-            # Get the download URL
-            url = get_latest_hvym_release_asset_url()
-            print(f"Downloading {url}...")
-            logging.info(f"Downloading from: {url}")
+            # Download the file
+            asset = os.path.basename(url)
+            archive_path = os.path.join(tmpdir, asset)
+            logger.info(f"Downloading {url} to {archive_path}")
+            
+            try:
+                # Use requests + certifi for robust SSL verification
+                with requests.get(
+                    url, 
+                    stream=True, 
+                    timeout=30, 
+                    verify=certifi.where(), 
+                    headers={"User-Agent": "Metavinci/1.0"}
+                ) as r:
+                    r.raise_for_status()
+                    total_size = int(r.headers.get('content-length', 0))
+                    logger.info(f"Download size: {total_size} bytes")
+                    
+                    with open(archive_path, 'wb') as f:
+                        downloaded = 0
+                        for chunk in r.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                if total_size > 0:
+                                    percent = (downloaded / total_size) * 100
+                                    if percent % 10 == 0:  # Log every 10% to avoid flooding logs
+                                        logger.debug(f"Download progress: {percent:.1f}% ({downloaded}/{total_size} bytes)")
+                    
+                    logger.info(f"Download completed: {os.path.getsize(archive_path)} bytes")
+                
+                # Verify download
+                if not os.path.exists(archive_path) or os.path.getsize(archive_path) == 0:
+                    raise Exception("Downloaded file is empty or missing")
+                
+                # Extract the archive
+                logger.info(f"Extracting archive: {archive_path}")
+                if not extract_archive(archive_path, tmpdir):
+                    raise Exception("Failed to extract archive")
+                
+                # Find the binary in the extracted files
+                logger.info("Looking for binary in extracted files...")
+                binary_name = 'hvym-linux' if platform.system().lower() == 'linux' else 'hvym-macos' if platform.system().lower() == 'darwin' else 'hvym.exe'
+                
+                for root, _, files in os.walk(tmpdir):
+                    if binary_name in files:
+                        binary_path = os.path.join(root, binary_name)
+                        logger.info(f"Found binary at: {binary_path}")
+                        
+                        # Set executable permissions
+                        os.chmod(binary_path, 0o755)
+                        
+                        # Create destination directory if it doesn't exist
+                        os.makedirs(dest_dir, exist_ok=True, mode=0o755)
+                        
+                        # Move binary to destination
+                        dest_path = os.path.join(dest_dir, binary_name)
+                        shutil.move(binary_path, dest_path)
+                        
+                        # Verify the binary works
+                        try:
+                            result = subprocess.run(
+                                [dest_path, '--version'],
+                                capture_output=True,
+                                text=True,
+                                timeout=10
+                            )
+                            logger.info(f"Binary version check: {result.stdout.strip()}")
+                            return dest_path
+                        except Exception as e:
+                            logger.error(f"Binary test failed: {e}")
+                            raise Exception(f"Downloaded binary is not working: {e}")
+                
+                # If we get here, no binary was found
+                # Prepare error message with system information
+                system_info = (
+                    f"System: {platform.system()} {platform.release()} {platform.machine()}\n"
+                    f"Python: {platform.python_version()}\n"
+                    f"Archive: {os.path.basename(archive_path)} ({os.path.getsize(archive_path) if os.path.exists(archive_path) else 0} bytes)"
+                )
+                
+                raise Exception(
+                    f"Could not find {binary_name} in the downloaded archive.\n\n"
+                    f"{system_info}\n\n"
+                    "Please check if the downloaded archive is valid and contains the expected files."
+                )
+                
+            except Exception as e:
+                # Log the detailed error
+                logger.error(f"Download or extraction failed: {e}")
+                logger.debug(f"Error details: {traceback.format_exc()}")
+                
+                # Prepare system information for the error message
+                system_info = (
+                    f"System: {platform.system()} {platform.release()} {platform.machine()}\n"
+                    f"Python: {platform.python_version()}"
+                )
+                
+                if os.path.exists(archive_path):
+                    system_info += f"\nArchive: {os.path.basename(archive_path)} ({os.path.getsize(archive_path)} bytes)"
+                
+                raise Exception(
+                    f"Installation failed: {str(e)}\n\n"
+                    f"{system_info}\n\n"
+                    "Please check your internet connection and try again. "
+                    "If the problem persists, please contact support with the above information."
+                )
+                
     except Exception as e:
-        raise Exception(f"Failed to get latest release URL: {str(e)}\n\n"
-                      f"Please check your internet connection and try again.")
-    with tempfile.TemporaryDirectory() as tmpdir:
-        asset = os.path.basename(url)
-        archive_path = os.path.join(tmpdir, asset)
+        # This is a fallback for any other unhandled exceptions
+        logger.error(f"Unexpected installation error: {e}")
+        logger.debug(f"Error details: {traceback.format_exc()}")
         
-        # Download the file
-        try:
-            # Use requests + certifi for robust SSL verification
-            with requests.get(
-                url, 
-                stream=True, 
-                timeout=30, 
-                verify=certifi.where(), 
-                headers={"User-Agent": "Metavinci/1.0"}
-            ) as r:
-                r.raise_for_status()
-                with open(archive_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-        except Exception as e:
-            raise Exception(f"Failed to download file: {str(e)}")
+        system_info = (
+            f"System: {platform.system()} {platform.release()} {platform.machine()}\n"
+            f"Python: {platform.python_version()}"
+        )
         
-        # Verify download
-        if not os.path.exists(archive_path) or os.path.getsize(archive_path) == 0:
-            raise Exception("Downloaded file is empty or missing")
-        
-        # Extract using our robust extraction function
-        if not extract_archive(archive_path, tmpdir):
-            # Clean up potentially corrupted download
-            if os.path.exists(archive_path):
-                try:
-                    os.remove(archive_path)
-                except OSError:
-                    pass
-            
-            # Prepare error message with system information
-            system_info = (
-                f"System: {platform.system()} {platform.release()} {platform.machine()}\n"
-                f"Python: {platform.python_version()}\n"
-                f"Archive: {os.path.basename(archive_path)} ({os.path.getsize(archive_path)} bytes)"
-            )
-            
-            raise Exception(
-                "Failed to extract the downloaded archive.\n\n"
-                f"{system_info}\n\n"
-                "This could be due to:\n"
-                "1. Corrupted download (try again)\n"
-                "2. Missing extraction tools (install 'unzip' or 'tar')\n"
-                "3. Permission issues (check write access to temp directory)\n\n"
-                f"You can try manually downloading and extracting the file from:\n{url}"
-            )
-        
-        # Find the hvym binary in the extracted files
-        hvym_binary = None
-        extracted_files = []
-        
-        # First, try to find the binary
-        for root, dirs, files in os.walk(tmpdir):
-            for file in files:
-                full_path = os.path.join(root, file)
-                rel_path = os.path.relpath(full_path, tmpdir)
-                extracted_files.append(rel_path)
-                
-                if file.startswith("hvym") and not file.endswith('.dll') and not file.endswith('.so'):
-                    hvym_binary = full_path
-                    break
-            if hvym_binary:
-                break
-        
-        if not hvym_binary:
-            # No binary found, prepare detailed error message
-            error_msg = [
-                "Could not find 'hvym' binary in the downloaded archive.\n\n",
-                f"Archive content ({len(extracted_files)} items):"
-            ]
-            
-            # List up to 20 files for debugging
-            for i, f in enumerate(sorted(extracted_files)[:20], 1):
-                error_msg.append(f"  {i}. {f}")
-            
-            if len(extracted_files) > 20:
-                error_msg.append(f"  ... and {len(extracted_files) - 20} more files")
-            
-            error_msg.extend([
-                "\nThis might indicate that:\n",
-                "1. The release package structure has changed\n",
-                "2. The download was incomplete or corrupted\n",
-                "3. The package is not compatible with your system\n\n",
-                f"Please check the latest release at: {url}"
-            ])
-            
-            raise Exception("\n".join(error_msg))
-        
-        # Prepare destination path
-        binary_name = os.path.basename(hvym_binary)
-        dst = os.path.join(dest_dir, binary_name)
-        
-        try:
-            # Ensure destination directory exists with correct permissions
-            os.makedirs(os.path.dirname(dst), exist_ok=True, mode=0o755)
-            
-            # If destination exists, remove it first
-            if os.path.exists(dst):
-                try:
-                    os.remove(dst)
-                except PermissionError:
-                    # If we can't remove it, try with sudo on Linux
-                    if platform.system().lower() == "linux":
-                        try:
-                            subprocess.run(f"sudo rm -f {dst}", shell=True, check=True)
-                        except subprocess.CalledProcessError as e:
-                            raise Exception(f"Failed to remove existing binary: {e}")
-                    else:
-                        raise
-            
-            # Move the binary to destination
-            shutil.move(hvym_binary, dst)
-            
-            # Set executable permissions (except on Windows)
-            if platform.system().lower() != "windows":
-                try:
-                    os.chmod(dst, 0o755)
-                except PermissionError:
-                    # If we can't set permissions, try with sudo on Linux
-                    if platform.system().lower() == "linux":
-                        try:
-                            subprocess.run(f"sudo chmod 755 {dst}", shell=True, check=True)
-                        except subprocess.CalledProcessError as e:
-                            raise Exception(f"Failed to set executable permissions: {e}")
-                    else:
-                        raise
-            
-            # Verify the binary exists and is executable
-            if not os.path.exists(dst):
-                raise Exception(f"Failed to move binary to {dst}")
-                
-            if platform.system().lower() != "windows" and not os.access(dst, os.X_OK):
-                # Try setting permissions again with elevated privileges if on Linux
-                if platform.system().lower() == "linux":
-                    try:
-                        subprocess.run(f"sudo chmod +x {dst}", shell=True, check=True)
-                        if not os.access(dst, os.X_OK):
-                            raise Exception(f"Failed to set executable permissions on {dst} even with sudo")
-                    except subprocess.CalledProcessError as e:
-                        raise Exception(f"Failed to set executable permissions with sudo: {e}")
-                else:
-                    os.chmod(dst, 0o755)
-                    if not os.access(dst, os.X_OK):
-                        raise Exception(f"Failed to set executable permissions on {dst}")
-            
-            # Set ownership to current user if on Linux
-            if platform.system().lower() == "linux":
-                try:
-                    import pwd
-                    import grp
-                    uid = os.getuid()
-                    gid = os.getgid()
-                    os.chown(dst, uid, gid)
-                except Exception as e:
-                    logging.warning(f"Could not set ownership of {dst} to current user: {e}")
-                    # Try with sudo
-                    try:
-                        username = pwd.getpwuid(uid).pw_name
-                        subprocess.run(f"sudo chown {username}: {dst}", shell=True, check=True)
-                    except Exception as sudo_e:
-                        logging.warning(f"Failed to set ownership with sudo: {sudo_e}")
-            
-            logging.info(f"Successfully installed hvym at {dst}")
-            logging.info(f"File permissions: {oct(os.stat(dst).st_mode)[-3:]}")
-            logging.info(f"File owner: {os.stat(dst).st_uid}:{os.stat(dst).st_gid}")
-            
-            # Verify the binary can be executed
-            if platform.system().lower() != "windows":
-                try:
-                    result = subprocess.run([dst, '--version'], capture_output=True, text=True)
-                    if result.returncode != 0:
-                        logging.warning(f"Version check failed: {result.stderr}")
-                    else:
-                        logging.info(f"Binary version: {result.stdout.strip()}")
-                except Exception as e:
-                    logging.warning(f"Version check failed: {e}")
-            
-            return dst
-            
-        except Exception as e:
-            logging.error(f"Error during binary installation: {e}")
-            # Clean up if something went wrong
-            if os.path.exists(dst):
-                try:
-                    os.remove(dst)
-                except:
-                    pass
-            raise
-            
-        except Exception as e:
-            error_msg = [
-                f"Failed to install hvym binary: {str(e)}\n\n",
-                f"Source: {hvym_binary}",
-                f"Destination: {dst}\n\n",
-                "Possible solutions:",
-                f"1. Check write permissions for: {dest_dir}",
-                "2. Ensure there's enough disk space",
-                "3. Try running with elevated permissions if needed",
-                f"4. Manually move the file from {hvym_binary} to {dst}"
-            ]
-            raise Exception("\n".join(error_msg))
+        raise Exception(
+            f"Unexpected error during installation: {str(e)}\n\n"
+            f"{system_info}\n\n"
+            "This could be due to:\n"
+            "1. Corrupted download (try again)\n"
+            "2. Missing extraction tools (install 'unzip' or 'tar')\n"
+            "3. Permission issues (check write access to temp directory)\n\n"
+            "Please try again or contact support if the problem persists."
+        )
 
 
 def get_latest_hvym_press_release_asset_url():
@@ -1153,29 +1116,40 @@ class Metavinci(QMainWindow):
                     QCoreApplication.addLibraryPath(_p)
         except Exception:
             pass
-        # Build a stable subprocess environment, especially for macOS (Finder launches have a minimal PATH)
-        self.proc_env = self._build_subprocess_env()
-        # Initialize file logging early
-        self._init_logging()
-        
+        # Set up basic paths first
         self.HOME = os.path.expanduser('~')
         self.PATH = self.platform_manager.get_config_path()
+        
+        # Build a stable subprocess environment, especially for macOS (Finder launches have a minimal PATH)
+        self.proc_env = self._build_subprocess_env()
+        
+        # Initialize file logging after paths are set
+        self._init_logging()
         self.BIN_PATH = self.platform_manager.get_bin_path()
         self.KEYSTORE = self.PATH / 'keystore.enc'
         self.ENC_KEY = self.PATH / 'encryption_key.key'
         self.DFX = self.platform_manager.get_dfx_path()
         self.HVYM = self.platform_manager.get_hvym_path()
+        
+        # Log the initial HVYM path
+        if hasattr(self, '_log_hvym_path'):
+            self._log_hvym_path()
+            
         self.DIDC = self.platform_manager.get_didc_path()
         self.PRESS = self.platform_manager.get_press_path()
         self.BLENDER_PATH = self.platform_manager.get_blender_path()
+        
         # Backward compatibility: if on macOS and arch-specific hvym not present, fall back to legacy filename
         try:
             if platform.system().lower() == 'darwin' and not self.HVYM.is_file():
                 legacy_hvym = self.BIN_PATH / 'hvym-macos'
                 if legacy_hvym.is_file():
                     self.HVYM = legacy_hvym
-        except Exception:
-            pass
+                    # Log again if we changed the HVYM path
+                    if hasattr(self, '_log_hvym_path'):
+                        self._log_hvym_path()
+        except Exception as e:
+            self.logger.warning(f"Error during macOS compatibility check: {e}")
         self.BLENDER_VERSIONS = []
         self.BLENDER_VERSION = None
         self.ADDON_INSTALL_PATH = self.BLENDER_PATH / str(self.BLENDER_VERSION) / 'scripts' / 'addons'
@@ -1546,32 +1520,122 @@ class Metavinci(QMainWindow):
         
 
     def _init_logging(self):
-        """Initialize application logging to a file under the config directory."""
+        # Configure basic logging to console first
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter(
+            '%(asctime)s [%(levelname)s] [%(filename)s:%(lineno)d] %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        console_handler.setFormatter(formatter)
+        
+        # Set up root logger with console handler
+        logger = logging.getLogger()
+        logger.setLevel(logging.DEBUG)
+        
+        # Clear any existing handlers to avoid duplicate logs
+        logger.handlers = []
+        logger.addHandler(console_handler)
+        
+        # Now try to set up file logging
         try:
-            logs_dir = self.platform_manager.get_config_path() / 'logs'
-            logs_dir.mkdir(parents=True, exist_ok=True)
-            log_path = logs_dir / 'metavinci.log'
-
-            self.logger = logging.getLogger('metavinci')
-            self.logger.setLevel(logging.INFO)
-            # Avoid duplicate handlers
-            if not self.logger.handlers:
-                fh = logging.FileHandler(str(log_path))
-                fh.setLevel(logging.INFO)
-                formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
-                fh.setFormatter(formatter)
-                self.logger.addHandler(fh)
-
-            # Capture uncaught exceptions
-            def _excepthook(exc_type, exc_value, exc_tb):
+            # Ensure logs directory exists with proper permissions
+            logs_dir = self.PATH / 'logs'
+            try:
+                logs_dir.mkdir(parents=True, exist_ok=True, mode=0o755)
+                # Verify directory was created and is writable
+                test_file = logs_dir / '.write_test'
+                with open(test_file, 'w') as f:
+                    f.write('test')
+                os.remove(test_file)
+            except Exception as e:
+                logger.warning(f"Could not create or write to logs directory {logs_dir}: {e}")
+                if platform.system().lower() == 'linux':
+                    try:
+                        logger.info("Attempting to create logs directory with elevated permissions...")
+                        import subprocess
+                        subprocess.run(['sudo', 'mkdir', '-p', str(logs_dir)], check=True)
+                        subprocess.run(['sudo', 'chmod', '755', str(logs_dir)], check=True)
+                        subprocess.run(['sudo', 'chown', f"{os.getuid()}:{os.getgid()}", str(logs_dir)], check=True)
+                        logger.info("Successfully created logs directory with elevated permissions")
+                    except Exception as sudo_e:
+                        logger.error(f"Failed to create logs directory even with sudo: {sudo_e}")
+                        # Continue without file logging
+                        self.logger = logger
+                        return
+            
+            # Set up file handler with rotation (10MB per file, keep 5 backups)
+            log_file = logs_dir / 'metavinci.log'
+            try:
+                file_handler = logging.handlers.RotatingFileHandler(
+                    str(log_file),  # Convert to string for Python 3.6 compatibility
+                    maxBytes=10*1024*1024,  # 10MB
+                    backupCount=5,
+                    encoding='utf-8'
+                )
+                file_handler.setLevel(logging.DEBUG)
+                file_handler.setFormatter(formatter)
+                logger.addHandler(file_handler)
+                logger.info(f"File logging initialized at {log_file.absolute()}")
+            except Exception as e:
+                logger.error(f"Failed to initialize file logging: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error initializing logging: {e}")
+        
+        # Log startup information
+        logger.info("=" * 80)
+        logger.info("Metavinci starting...")
+        logger.info(f"Python version: {platform.python_version()}")
+        logger.info(f"Platform: {platform.platform()}")
+        logger.info(f"Working directory: {os.getcwd()}")
+        logger.info(f"Installation directory: {self.PATH}")
+        logger.info(f"Log file: {log_file.absolute() if 'log_file' in locals() else 'Not available'}")
+        
+        # Log important paths and permissions
+        try:
+            logger.info(f"User ID: {os.getuid() if hasattr(os, 'getuid') else 'N/A'}")
+            logger.info(f"Group ID: {os.getgid() if hasattr(os, 'getgid') else 'N/A'}")
+            if hasattr(os, 'groups'):
+                logger.info(f"User groups: {os.getgroups()}")
+            
+            # Log directory permissions
+            for path in [self.PATH, logs_dir if 'logs_dir' in locals() else None]:
+                if path and path.exists():
+                    try:
+                        stat_info = os.stat(str(path))
+                        logger.info(f"Directory permissions for {path}: {oct(stat_info.st_mode)[-3:]}")
+                        logger.info(f"Directory owner: {stat_info.st_uid}:{stat_info.st_gid}")
+                    except Exception as e:
+                        logger.warning(f"Could not get permissions for {path}: {e}")
+        except Exception as e:
+            logger.warning(f"Could not log system information: {e}")
+        
+        # Store logger reference
+        self.logger = logger
+        
+        # Add a method to log HVYM path after it's initialized
+        def log_hvym_path():
+            if hasattr(self, 'HVYM') and self.HVYM is not None:
                 try:
-                    self.logger.exception('Uncaught exception', exc_info=(exc_type, exc_value, exc_tb))
-                except Exception:
-                    pass
-            sys.excepthook = _excepthook
-            self.logger.info('Logger initialized')
-        except Exception:
-            pass
+                    self.logger.info(f"HVYM path: {self.HVYM}")
+                    if hasattr(self.HVYM, 'exists') and callable(self.HVYM.exists):
+                        exists = self.HVYM.exists()
+                        self.logger.info(f"HVYM exists: {exists}")
+                        if not exists:
+                            self.logger.warning("HVYM binary not found at expected location")
+                except Exception as e:
+                    self.logger.warning(f"Error checking HVYM path: {e}")
+        
+        # Store the method for later use
+        self._log_hvym_path = log_hvym_path
+        
+        # Log environment variables that might affect the application
+        for var in ['PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH']:
+            if var in os.environ:
+                logger.debug(f"ENV {var}: {os.environ[var]}")
+        
+        # HVYM path will be logged when it's initialized
+        logger.debug("Logging system initialized")
 
     def _build_subprocess_env(self):
         """Create a robust environment for subprocesses to work when launched from Applications on macOS."""
