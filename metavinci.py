@@ -469,22 +469,6 @@ class AnimatedLoadingWindow(QSplashScreen):
         pass
 
 
-# Remove HVYM_VERSION
-# HVYM_VERSION = 'v0.00'
-
-
-class HVYM_SeedVault(TinyDB):
-    """
-        A class for encrypting & storing seed phrases
-    """
-    # Override the class constructor
-    def __init__(self, encryption_key, path, storage=enc_json.EncryptedJSONStorage):
-        # Be sure to call the super class method
-        TinyDB.__init__(self, encryption_key, path, storage)
-        self.HOME = os.path.expanduser('~')
-        self.PATH = self.HVYM = Path.home() / '.metavinci'
-
-
 def get_latest_hvym_release_asset_url():
     api_url = "https://api.github.com/repos/inviti8/heavymeta-cli-dev/releases/latest"
     response = requests.get(api_url, timeout=10)
@@ -1332,10 +1316,14 @@ class Metavinci(QMainWindow):
 
         self.stop_pintheon_action = QAction(self.pintheon_icon, "Stop Pintheon", self)
         self.stop_pintheon_action.triggered.connect(self._stop_pintheon)
+
+        self.open_pintheon_action = QAction(self.pintheon_icon, "Open Admin", self)
+        self.open_pintheon_action.triggered.connect(self._open_pintheon)
         
         # Set initial visibility based on PINTHEON_ACTIVE state
         self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
         self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
+        self.open_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
 
         self.install_pintheon_action = QAction(self.install_icon, "Install Pintheon", self)
         self.install_pintheon_action.triggered.connect(self._install_pintheon)
@@ -1448,6 +1436,7 @@ class Metavinci(QMainWindow):
         self.install_pintheon_action.setVisible(False)
         self.run_pintheon_action.setVisible(False)
         self.stop_pintheon_action.setVisible(False)
+        self.open_pintheon_action.setVisible(False)
         self.open_tunnel_action.setVisible(False)
 
         if not self.HVYM.is_file():
@@ -2729,6 +2718,7 @@ class Metavinci(QMainWindow):
                 self.install_pintheon_action.setVisible(False)      
                 self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
                 self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
+                self.open_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
                 self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE and len(self.TUNNEL_TOKEN) >= 7)
             else:
                 self.tray_pintheon_menu.setEnabled(False)
@@ -2770,10 +2760,7 @@ class Metavinci(QMainWindow):
                 self.hvym_open_pintheon()
             else:
                 self.open_msg_dialog('Failed to start Pintheon. Check logs for details.')
-    
-    # Worker-based start removed (synchronous path used)
-    
-    # Worker-based start completion removed
+
 
     def _update_ui_on_pintheon_started(self):
         self.pintheon_icon = QIcon(self.ON_IMG)
@@ -2782,6 +2769,7 @@ class Metavinci(QMainWindow):
         self.stop_pintheon_action.setIcon(self.pintheon_icon)
         self.run_pintheon_action.setVisible(False)
         self.stop_pintheon_action.setVisible(True)
+        self.open_pintheon_action.setVisible(True)
         self.open_tunnel_action.setVisible(len(self.TUNNEL_TOKEN) >= 7)
 
     def _stop_pintheon(self, confirm=True):
@@ -2797,10 +2785,11 @@ class Metavinci(QMainWindow):
             else:
                 self.open_msg_dialog('Failed to stop Pintheon. Check logs for details.')
     
-    # Worker-based stop removed (synchronous path used)
-    
-    # Worker-based stop completion removed
-
+    def _open_pintheon(self):
+        open = self.open_confirm_dialog('Open Pintheon Admin Interface?')
+        if open == True:
+            webbrowser.open('https://127.0.0.1:9999/admin') 
+        
     def _update_ui_on_pintheon_stopped(self):
         self.pintheon_icon = QIcon(self.OFF_IMG)
         self.tray_icon.setIcon(QIcon(self.LOGO_IMG))
@@ -2808,6 +2797,7 @@ class Metavinci(QMainWindow):
         self.stop_pintheon_action.setIcon(self.pintheon_icon)
         self.run_pintheon_action.setVisible(True)
         self.stop_pintheon_action.setVisible(False)
+        self.open_pintheon_action.setVisible(False)
         self.open_tunnel_action.setVisible(False)
 
     def _open_tunnel(self):
