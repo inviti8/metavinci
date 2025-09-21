@@ -1430,6 +1430,7 @@ class Metavinci(QMainWindow):
 
         self.tray_pintheon_menu.addAction(self.run_pintheon_action)
         self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
+        self.tray_pintheon_menu.addAction(self.open_pintheon_action)
         self.tray_pintheon_menu.addAction(self.open_tunnel_action)
 
         self.tray_tools_update_menu.addAction(self.install_pintheon_action)
