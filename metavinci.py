@@ -69,6 +69,7 @@ import shlex
 from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Any, Union, Callable
 import certifi
+import webbrowser
 
 # Try to import optional dependencies
 try:
