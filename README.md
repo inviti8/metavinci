@@ -20,9 +20,23 @@ Official installers for Linux (.deb), Windows (.msi), and macOS (.zip) are avail
    - `heavymeta-code-sign.cer` (code signing certificate)
 
 2. **Install the Certificate (one-time setup)**:
-   - Right-click on `install-win-metavinci-cert.ps1` and select "Run with PowerShell"
-   - When prompted, confirm running the script
-   - The script will automatically install the certificate to the Trusted Publishers store
+   - **Option 1**: Right-click on `heavymeta-code-sign.cer` and select "Install Certificate"
+     - Choose "Local Machine" (requires admin rights)
+     - Select "Place all certificates in the following store" and click "Browse"
+     - Choose "Trusted Publishers" and click OK
+     - Complete the wizard
+
+   - **Option 2**: Using PowerShell (Run as Administrator):
+     ```powershell
+     # Navigate to the download directory
+     cd "C:\path\to\downloads"
+     
+     # Install certificate using the script
+     powershell.exe -ExecutionPolicy Bypass -File .\install-win-metavinci-cert.ps1 -CertificatePath ".\heavymeta-code-sign.cer"
+     
+     # Or if you just want to download and install automatically:
+     # powershell.exe -ExecutionPolicy Bypass -File .\install-win-metavinci-cert.ps1
+     ```
 
 3. **Run the Installer**:
    - Double-click `metavinci-x.x.x.msi`
