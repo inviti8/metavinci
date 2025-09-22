@@ -2832,6 +2832,10 @@ class Metavinci(QMainWindow):
         else:
             self.open_tunnel_action.setVisible(True)
 
+    def _set_tunnel_tier(self):
+        self.hvym_set_tunnel_tier()
+        self._refresh_pintheon_ui_state()
+
     def _set_pintheon_network(self):
         self.hvym_set_pintheon_network()
         self._refresh_pintheon_ui_state()
