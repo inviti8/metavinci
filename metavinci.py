@@ -70,6 +70,7 @@ from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Any, Union, Callable
 import certifi
 import webbrowser
+import traceback
 
 # Try to import optional dependencies
 try:
