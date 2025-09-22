@@ -902,7 +902,8 @@ def download_and_install_hvym_cli(dest_dir: str) -> str:
                 
                 # Find the binary in the extracted files
                 logger.info("Looking for binary in extracted files...")
-                binary_name = 'hvym-linux' if platform.system().lower() == 'linux' else 'hvym-macos' if platform.system().lower() == 'darwin' else 'hvym.exe'
+                system = platform.system().lower()
+                binary_name = 'hvym-linux' if system == 'linux' else 'hvym-macos' if system == 'darwin' else 'hvym-windows.exe' if system == 'windows' else 'hvym.exe'
                 
                 for root, _, files in os.walk(tmpdir):
                     if binary_name in files:
