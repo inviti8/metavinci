@@ -2254,6 +2254,9 @@ class Metavinci(QMainWindow):
 
     def hvym_set_tunnel_tier(self):
         return self._subprocess_hvym([str(self.HVYM), 'pinggy-set-tier'])
+
+    def hvym_get_tunnel_tier(self):
+        return self._subprocess_hvym([str(self.HVYM), 'pinggy-tier'])
     
     def hvym_set_pintheon_network(self):
         return self._subprocess_hvym([str(self.HVYM), 'pintheon-set-network'])
@@ -2721,6 +2724,10 @@ class Metavinci(QMainWindow):
             print(self.PINTHEON_INSTALLED)
 
             if self.PINTHEON_INSTALLED == "True":
+                t = self.hvym_get_tunnel_tier()
+                tier = 'pro'
+                if 'free' in t:
+                    tier = 'free'
                 self.tray_pintheon_menu.setEnabled(True)
                 self.pintheon_settings_menu.setEnabled(True)
                 self.set_tunnel_token_action.setVisible(True)
