@@ -2725,13 +2725,14 @@ class Metavinci(QMainWindow):
 
             if self.PINTHEON_INSTALLED == "True":
                 t = self.hvym_get_tunnel_tier()
-                tier = 'pro'
+                tier = 'free'
                 if 'free' in t:
-                    tier = 'free'
+                    tier = 'pro'
                 self.tray_pintheon_menu.setEnabled(True)
                 self.pintheon_settings_menu.setEnabled(True)
                 self.set_tunnel_token_action.setVisible(True)
                 self.set_tunnel_tier_action.setVisible(True)
+                self.set_tunnel_tier_action.setText(f'Set Tunnel Tier: {tier}')
                 # self.set_pintheon_network_action.setVisible(True)
                 self.install_pintheon_action.setVisible(False)      
                 self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
