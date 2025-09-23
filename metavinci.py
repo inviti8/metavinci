@@ -924,7 +924,7 @@ def download_and_install_hvym_cli(dest_dir: str) -> str:
                         # Verify the binary works
                         try:
                             result = subprocess.run(
-                                [dest_path, '--version'],
+                                [dest_path, 'version'],
                                 capture_output=True,
                                 text=True,
                                 timeout=10
