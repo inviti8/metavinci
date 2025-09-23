@@ -927,7 +927,7 @@ def download_and_install_hvym_cli(dest_dir: str) -> str:
                                 [dest_path, 'version'],
                                 capture_output=True,
                                 text=True,
-                                timeout=10
+                                timeout=20
                             )
                             logger.info(f"Binary version check: {result.stdout.strip()}")
                             return dest_path
