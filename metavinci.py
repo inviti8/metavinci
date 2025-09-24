@@ -2810,7 +2810,7 @@ class Metavinci(QMainWindow):
     def _open_pintheon(self):
         open = self.open_confirm_dialog('Open Pintheon Admin Interface?')
         if open == True:
-            webbrowser.open('https://127.0.0.1:9999/admin') 
+            webbrowser.open('https://127.0.0.1:8888/admin') 
         
     def _update_ui_on_pintheon_stopped(self):
         self.pintheon_icon = QIcon(self.OFF_IMG)
