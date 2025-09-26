@@ -1326,11 +1326,15 @@ class Metavinci(QMainWindow):
 
         self.open_pintheon_action = QAction(self.pintheon_icon, "Open Admin", self)
         self.open_pintheon_action.triggered.connect(self._open_pintheon)
+
+        self.open_homepage_action = QAction(self.pintheon_icon, "Open Homepage", self)
+        self.open_homepage_action.triggered.connect(self._open_homepage)
         
         # Set initial visibility based on PINTHEON_ACTIVE state
         self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
         self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
         self.open_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
+        self.open_homepage_action.setVisible(self.PINTHEON_ACTIVE)
 
         self.install_pintheon_action = QAction(self.install_icon, "Install Pintheon", self)
         self.install_pintheon_action.triggered.connect(self._install_pintheon)
@@ -1439,6 +1443,7 @@ class Metavinci(QMainWindow):
         self.tray_pintheon_menu.addAction(self.run_pintheon_action)
         self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
         self.tray_pintheon_menu.addAction(self.open_pintheon_action)
+        self.tray_pintheon_menu.addAction(self.open_homepage_action)
         self.tray_pintheon_menu.addAction(self.open_tunnel_action)
 
         self.tray_tools_update_menu.addAction(self.install_pintheon_action)
@@ -1446,6 +1451,7 @@ class Metavinci(QMainWindow):
         self.run_pintheon_action.setVisible(False)
         self.stop_pintheon_action.setVisible(False)
         self.open_pintheon_action.setVisible(False)
+        self.open_homepage_action.setVisible(False)
         self.open_tunnel_action.setVisible(False)
 
         if not self.HVYM.is_file():
@@ -2740,6 +2746,7 @@ class Metavinci(QMainWindow):
                 self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
                 self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
                 self.open_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
+                self.open_homepage_action.setVisible(self.PINTHEON_ACTIVE)
                 self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE and len(self.TUNNEL_TOKEN) >= 7)
             else:
                 self.tray_pintheon_menu.setEnabled(False)
@@ -2792,6 +2799,7 @@ class Metavinci(QMainWindow):
         self.run_pintheon_action.setVisible(False)
         self.stop_pintheon_action.setVisible(True)
         self.open_pintheon_action.setVisible(True)
+        self.open_homepage_action.setVisible(True)
         self.open_tunnel_action.setVisible(len(self.TUNNEL_TOKEN) >= 7)
 
     def _stop_pintheon(self, confirm=True):
@@ -2810,7 +2818,12 @@ class Metavinci(QMainWindow):
     def _open_pintheon(self):
         open = self.open_confirm_dialog('Open Pintheon Admin Interface?')
         if open == True:
-            webbrowser.open('https://127.0.0.1:8888/admin') 
+            webbrowser.open('https://127.0.0.1:9999/admin')
+
+    def _open_local_homepage(self):
+        open = self.open_confirm_dialog('Open Local Homepage?')
+        if open == True:
+            webbrowser.open('https://127.0.0.1:9998/')
         
     def _update_ui_on_pintheon_stopped(self):
         self.pintheon_icon = QIcon(self.OFF_IMG)
@@ -2820,6 +2833,7 @@ class Metavinci(QMainWindow):
         self.run_pintheon_action.setVisible(True)
         self.stop_pintheon_action.setVisible(False)
         self.open_pintheon_action.setVisible(False)
+        self.open_homepage_action.setVisible(False)
         self.open_tunnel_action.setVisible(False)
 
     def _open_tunnel(self):
