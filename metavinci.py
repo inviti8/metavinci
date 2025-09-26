@@ -1442,9 +1442,12 @@ class Metavinci(QMainWindow):
 
         self.tray_pintheon_menu.addAction(self.run_pintheon_action)
         self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
-        self.tray_pintheon_menu.addAction(self.open_pintheon_action)
-        self.tray_pintheon_menu.addAction(self.open_homepage_action)
         self.tray_pintheon_menu.addAction(self.open_tunnel_action)
+
+        self.pintheon_interface_menu = self.tray_pintheon_menu.addMenu("Interface")
+        self.pintheon_interface_menu.addAction(self.open_pintheon_action)
+        self.pintheon_interface_menu.addAction(self.open_homepage_action)
+        self.pintheon_interface_menu.setEnabled(False)
 
         self.tray_tools_update_menu.addAction(self.install_pintheon_action)
         self.install_pintheon_action.setVisible(False)
@@ -2738,6 +2741,7 @@ class Metavinci(QMainWindow):
                     tier = 'pro'
                 self.tray_pintheon_menu.setEnabled(True)
                 self.pintheon_settings_menu.setEnabled(True)
+                self.pintheon_interface_menu.setEnabled(True)
                 self.set_tunnel_token_action.setVisible(True)
                 self.set_tunnel_tier_action.setVisible(True)
                 self.set_tunnel_tier_action.setText(f'Set Tunnel Tier: {tier}')
@@ -2751,6 +2755,7 @@ class Metavinci(QMainWindow):
             else:
                 self.tray_pintheon_menu.setEnabled(False)
                 self.pintheon_settings_menu.setEnabled(False)
+                self.pintheon_interface_menu.setEnabled(False)
                 self.set_tunnel_token_action.setVisible(False)
                 self.set_tunnel_tier_action.setVisible(False)
                 # self.set_pintheon_network_action.setVisible(False)
@@ -2820,7 +2825,7 @@ class Metavinci(QMainWindow):
         if open == True:
             webbrowser.open('https://127.0.0.1:9999/admin')
 
-    def _open_local_homepage(self):
+    def _open_homepage(self):
         open = self.open_confirm_dialog('Open Local Homepage?')
         if open == True:
             webbrowser.open('https://127.0.0.1:9998/')
