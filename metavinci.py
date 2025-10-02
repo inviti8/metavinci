@@ -1164,6 +1164,8 @@ class Metavinci(QMainWindow):
         self.REMOVE_IMG = os.path.join(self.FILE_PATH, 'images', 'remove.png')
         self.OFF_IMG = os.path.join(self.FILE_PATH, 'images', 'switch_off.png')
         self.ON_IMG = os.path.join(self.FILE_PATH, 'images', 'switch_on.png')
+        self.COG_IMG = os.path.join(self.FILE_PATH, 'images', 'cog.png')
+        self.WEB_IMG = os.path.join(self.FILE_PATH, 'images', 'web.png')
         self.STYLE_SHEET = os.path.join(self.FILE_PATH, 'data', 'style.qss')
         self.DB_SRC = os.path.join(self.FILE_PATH, 'data', 'db.json')
         self.DB_PATH = self.BIN_PATH /'db.json'
@@ -1208,6 +1210,8 @@ class Metavinci(QMainWindow):
         self.pintheon_icon = QIcon(self.OFF_IMG)
         self.tunnel_icon = QIcon(self.OFF_IMG)
         self.tunnel_token_icon = QIcon(self.SELECT_IMG)
+        self.cog_icon = QIcon(self.COG_IMG)
+        self.web_icon = QIcon(self.WEB_IMG)
         self.publik_key = None
         self.private_key = None
         self.refresh_interval = 8 * 60 * 60  # 8 hours in seconds
@@ -1306,15 +1310,15 @@ class Metavinci(QMainWindow):
         self.open_tunnel_action.triggered.connect(self._open_tunnel)
         self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE)
 
-        self.set_tunnel_token_action = QAction(self.tunnel_token_icon, "Set Pinggy Token", self)
+        self.set_tunnel_token_action = QAction(self.cog_icon, "Set Pinggy Token", self)
         self.set_tunnel_token_action.triggered.connect(self._set_tunnel_token)
         self.set_tunnel_token_action.setVisible(False)
 
-        self.set_tunnel_tier_action = QAction(self.tunnel_token_icon, "Set Pinggy Tier", self)
+        self.set_tunnel_tier_action = QAction(self.cog_icon, "Set Pinggy Tier", self)
         self.set_tunnel_tier_action.triggered.connect(self._set_tunnel_tier)
         self.set_tunnel_tier_action.setVisible(False)
 
-        self.set_pintheon_network_action = QAction(self.tunnel_token_icon, "Set Network", self)
+        self.set_pintheon_network_action = QAction(self.cog_icon, "Set Network", self)
         self.set_pintheon_network_action.triggered.connect(self._set_pintheon_network)
         self.set_pintheon_network_action.setVisible(False)
 
@@ -1324,10 +1328,10 @@ class Metavinci(QMainWindow):
         self.stop_pintheon_action = QAction(self.pintheon_icon, "Stop Pintheon", self)
         self.stop_pintheon_action.triggered.connect(self._stop_pintheon)
 
-        self.open_pintheon_action = QAction(self.pintheon_icon, "Open Admin", self)
+        self.open_pintheon_action = QAction(self.web_icon, "Open Admin", self)
         self.open_pintheon_action.triggered.connect(self._open_pintheon)
 
-        self.open_homepage_action = QAction(self.pintheon_icon, "Open Homepage", self)
+        self.open_homepage_action = QAction(self.web_icon, "Open Homepage", self)
         self.open_homepage_action.triggered.connect(self._open_homepage)
         
         # Set initial visibility based on PINTHEON_ACTIVE state
@@ -2247,18 +2251,8 @@ class Metavinci(QMainWindow):
         # Update the menu action icons
         self.open_tunnel_action.setIcon(self.tunnel_icon)
         # Hide start action, show stop action
-        self.open_tunnel_action.setVisible(False)
+        # self.open_tunnel_action.setVisible(False)
         return self._subprocess_hvym([str(self.HVYM), 'pintheon-tunnel-open'])
-
-    def hvym_close_tunnel(self):
-        # Update the pintheon icon variable
-        self.tunnel_icon = QIcon(self.ON_IMG)
-
-        # Update the menu action icons
-        self.open_tunnel_action.setIcon(self.tunnel_icon)
-        # Hide start action, show stop action
-        self.open_tunnel_action.setVisible(True)
-        return self._subprocess_hvym([str(self.HVYM), 'pintheon-tunnel-close'])
     
     def hvym_set_tunnel_token(self):
         return self._subprocess_hvym([str(self.HVYM), 'pinggy-set-token'])
@@ -2744,7 +2738,7 @@ class Metavinci(QMainWindow):
                 self.pintheon_interface_menu.setEnabled(True)
                 self.set_tunnel_token_action.setVisible(True)
                 self.set_tunnel_tier_action.setVisible(True)
-                self.set_tunnel_tier_action.setText(f'Set Tunnel Tier: {tier}')
+                self.set_tunnel_tier_action.setText(f'Set Tunnel Tier to: {tier}')
                 # self.set_pintheon_network_action.setVisible(True)
                 self.install_pintheon_action.setVisible(False)      
                 self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
@@ -2845,13 +2839,7 @@ class Metavinci(QMainWindow):
         expose = self.open_confirm_dialog('Expose Pintheon Gateway to the Internet?')
         if expose == True:
             self.hvym_open_tunnel()
-            self.open_tunnel_action.setVisible(False)
-
-    def _close_tunnel(self):
-        close = self.open_confirm_dialog('Close Pintheon Tunnel?')
-        if close == True:
-            self.hvym_close_tunnel()
-            self.open_tunnel_action.setVisible(True)
+            # self.open_tunnel_action.setVisible(False)
 
     def _set_tunnel_token(self):
         self.hvym_set_tunnel_token()
