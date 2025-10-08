@@ -171,16 +171,99 @@ jobs:
         curl -L -o lessmsi.zip https://github.com/activescott/lessmsi/releases/download/v1.10.0/lessmsi-v1.10.0.zip
         tar -xf lessmsi.zip
         
-    - name: Sign Windows MSI
+    - name: Find and set up Signtool
+      id: signtool_setup
+      run: |
+        # First try to find signtool using vswhere
+        $vswhere = "${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (Test-Path $vswhere) {
+            $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            if ($vsPath) {
+                $signToolPath = Join-Path $vsPath "MSBuild\Current\Bin\signtool.exe"
+                if (Test-Path $signToolPath) {
+                    Write-Host "##[info] Found signtool at: $signToolPath"
+                    echo "SIGNTOOL_PATH=$signToolPath" >> $env:GITHUB_ENV
+                    exit 0
+                }
+            }
+        }
+        
+        # Fallback to common Windows SDK locations
+        $sdkPath = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+        if (Test-Path $sdkPath) {
+            # Get all signtool.exe files
+            $signTools = Get-ChildItem -Path $sdkPath -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue
+            
+            if ($signTools) {
+                # Sort by path length (shorter path = higher in the directory tree)
+                # This is a simple way to get the latest version without parsing version numbers
+                $latestSignTool = $signTools | 
+                    Sort-Object { $_.FullName.Length } | 
+                    Select-Object -First 1 -ExpandProperty FullName
+                
+                if ($latestSignTool) {
+                    Write-Host "##[info] Found signtool at: $latestSignTool"
+                    echo "SIGNTOOL_PATH=$latestSignTool" >> $env:GITHUB_ENV
+                    exit 0
+                }
+            }
+        }
+        
+        # If we get here, signtool wasn't found
+        Write-Host "##[error] Could not find signtool.exe"
+        Write-Host "##[debug] VS Path: $vsPath"
+        Write-Host "##[debug] SDK Path: $sdkPath"
+        exit 1
+
+    - name: Sign Windows MSI and prepare certificate
       if: success()
       run: |
-        # Write the certificate to a secure temporary file
-        $certBytes = [System.Convert]::FromBase64String("${{ secrets.WINDOWS_SIGNING_CERT }}")
-        $certPath = "$env:RUNNER_TEMP\cert.pfx"
-        [System.IO.File]::WriteAllBytes($certPath, $certBytes)
+        # Create a temporary directory for certificate files
+        $tempDir = "$env:RUNNER_TEMP\certs"
+        New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
         
-        # Sign the MSI using the installed Windows SDK signtool
-        $signTool = "$env:ProgramFiles (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe"
+        # Write the PFX certificate to a secure temporary file
+        $certBytes = [System.Convert]::FromBase64String("${{ secrets.WINDOWS_SIGNING_CERT }}")
+        $pfxPath = "$tempDir\heavymeta-code-sign.pfx"
+        [System.IO.File]::WriteAllBytes($pfxPath, $certBytes)
+        
+        # Export the public certificate using certutil (more reliable cross-platform)
+        $publicCertPath = "$tempDir\heavymeta-code-sign.cer"
+        $password = "${{ secrets.WINDOWS_SIGNING_PASSWORD }}"
+        
+        # First, import the certificate to the temporary store
+        $certStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("My", "CurrentUser")
+        $certStore.Open("ReadWrite")
+        
+        try {
+            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
+                $pfxPath,
+                $password,
+                [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
+            )
+            $certStore.Add($cert)
+            
+            # Export the public certificate
+            $publicCertData = $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+            [System.IO.File]::WriteAllBytes($publicCertPath, $publicCertData)
+            
+            Write-Host "Successfully exported public certificate to: $publicCertPath"
+        }
+        finally {
+            # Clean up the certificate from the store
+            if ($cert) {
+                $certStore.Remove($cert)
+            }
+            $certStore.Close()
+        }
+        
+        # Get signtool path from environment variable
+        $signTool = "$env:SIGNTOOL_PATH"
+        if (-not (Test-Path $signTool)) {
+            Write-Host "##[error] SignTool not found at: $signTool"
+            exit 1
+        }
+        Write-Host "##[info] Using SignTool from: $signTool"
         
         # Look for MSI in both root dist and build/dist directories
         $msiFile = (Get-ChildItem -Path "dist\*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
@@ -198,15 +281,29 @@ jobs:
         
         Write-Host "##[info] Found MSI file at: $msiFile"
         
-        # Sign with SHA-256 and timestamp
+        # First, try to sign with the original PFX file
+        Write-Host "##[info] Attempting to sign with PFX file..."
         & "$signTool" sign `
-            /f "$certPath" `
-            /p "${{ secrets.WINDOWS_SIGNING_PASSWORD }}" `
+            /f "$pfxPath" `
+            /p "$password" `
             /fd sha256 `
             /td sha256 `
             /tr "http://timestamp.digicert.com" `
             /v `
             "$msiFile"
+        
+        # If that fails, try with the certificate from the store
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "##[warning] PFX signing failed, trying with certificate from store..."
+            $certThumbprint = $cert.Thumbprint
+            & "$signTool" sign `
+                /sha1 "$certThumbprint" `
+                /fd sha256 `
+                /td sha256 `
+                /tr "http://timestamp.digicert.com" `
+                /v `
+                "$msiFile"
+        }
         
         # Verify the signature (using /a to find all valid certs in the chain)
         if (Test-Path $msiFile) {
@@ -227,18 +324,40 @@ jobs:
             exit 1
         }
         
-        # Clean up the certificate file
-        if (Test-Path $certPath) {
-            Remove-Item -Path $certPath -Force
+        # Clean up the certificate files
+        if (Test-Path $pfxPath) {
+            Remove-Item -Path $pfxPath -Force -ErrorAction SilentlyContinue
         }
 
-    - name: Upload Windows MSI installer and certificate script
+    - name: Prepare Windows artifacts
+      run: |
+        # Create a directory for Windows artifacts
+        $artifactDir = "windows-artifacts"
+        New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
+        
+        # Copy MSI files
+        Copy-Item -Path "dist\*.msi" -Destination $artifactDir -Force
+        
+        # Copy certificate script
+        Copy-Item -Path "scripts\install-win-metavinci-cert.ps1" -Destination $artifactDir -Force
+        
+        # Copy certificate to the artifact directory
+        $certSource = "$env:RUNNER_TEMP\certs\heavymeta-code-sign.cer"
+        if (Test-Path $certSource) {
+            Copy-Item -Path $certSource -Destination $artifactDir -Force
+        } else {
+            Write-Host "##[warning] Certificate file not found at: $certSource"
+        }
+        
+        # Verify files were copied
+        Write-Host "##[info] Windows artifacts prepared:"
+        Get-ChildItem -Path $artifactDir -Recurse | Format-Table FullName
+      
+    - name: Upload Windows artifacts
       uses: actions/upload-artifact@v4
       with:
         name: metavinci-windows-msi-installer
-        path: |
-          dist/*.msi
-          scripts/install-win-metavinci-cert.ps1
+        path: windows-artifacts/*
         retention-days: 30
 
   build-macos-installer:
@@ -502,12 +621,16 @@ jobs:
     - name: Prepare release assets
       run: |
         mkdir -p release
-        # Linux .deb file
-        cp installers/metavinci-linux-installer/*.deb release/
         
-        # Windows files (MSI and cert script)
-        cp installers/metavinci-windows-msi-installer/dist/*.msi release/
-        cp installers/metavinci-windows-msi-installer/scripts/install-win-metavinci-cert.ps1 release/
+        # Linux .deb file
+        cp installers/metavinci-linux-installer/*.deb release/ 2>/dev/null || echo "No Linux .deb files found"
+        
+        # Windows files (all in the root of the artifact)
+        cp installers/metavinci-windows-msi-installer/*.msi release/ 2>/dev/null || echo "No Windows MSI files found"
+        cp installers/metavinci-windows-msi-installer/install-win-metavinci-cert.ps1 release/ 2>/dev/null || echo "Certificate script not found"
+        cp installers/metavinci-windows-msi-installer/heavymeta-code-sign.cer release/ 2>/dev/null || echo "Certificate file not found"
+        
+        # macOS DMG files
         
         # macOS DMG files
         cp installers/metavinci-macos-installer-amd64/*.dmg release/

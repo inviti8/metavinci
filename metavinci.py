@@ -54,6 +54,7 @@ import sys
 from platform_manager import PlatformManager
 from download_utils import download_and_execute_script, download_and_extract_zip
 from file_utils import set_secure_permissions, create_secure_directory, ensure_config_directory
+from hosts_utils import ensure_hosts_entry
 import platform
 import urllib.request
 import tempfile
@@ -63,6 +64,24 @@ import zipfile
 import shutil
 import requests
 import logging
+import subprocess
+import shlex
+from pathlib import Path
+from typing import Optional, Tuple, List, Dict, Any, Union, Callable
+import certifi
+import webbrowser
+import traceback
+
+# Try to import optional dependencies
+try:
+    import patoolib
+    HAS_PATOOL = True
+except ImportError:
+    HAS_PATOOL = False
+
+# Constants
+EXTRACT_RETRY_ATTEMPTS = 2
+EXTRACT_RETRY_DELAY = 1  # seconds
 
 # Import compiled Qt resources if present (built by pyrcc5)
 try:
@@ -198,6 +217,15 @@ class PintheonInstallWorker(LoadingWorker):
                     except Exception:
                         pass
 
+                # Update hosts file with local.pintheon.com entry
+                self.progress.emit("Updating hosts file...")
+                if not ensure_hosts_entry('local.pintheon.com'):
+                    logging.warning("Failed to update hosts file. You may need to add '127.0.0.1 local.pintheon.com' manually.")
+                    self.progress.emit("Warning: Could not update hosts file. Some features may not work.")
+                else:
+                    logging.info("Successfully updated hosts file with local.pintheon.com entry")
+                    self.progress.emit("Hosts file updated successfully")
+
                 # Verify Pintheon image exists
                 check_cmd = [str(self.hvym_path), 'pintheon-image-exists']
                 check_result = subprocess.run(check_cmd, capture_output=True, text=True, cwd=home_dir, env=env)
@@ -328,139 +356,119 @@ class LoadingWindow(QWidget):
 
 
 
-class AnimatedLoadingWindow(QWidget):
+class AnimatedLoadingWindow(QSplashScreen):
     """
     A non-blocking animated loading indicator window with GIF animation.
+    Uses QSplashScreen for better cross-platform compatibility and performance.
     """
     def __init__(self, parent, prompt, gif_path):
-        super().__init__(parent)
-        # Use window flags for a top-level window that stays on top
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Window)
+        # Initialize with a default pixmap (will be updated by the movie)
+        super().__init__(QPixmap(1, 1))
         
-        # Create layout
-        layout = QVBoxLayout()
-        self.setLayout(layout)
+        # Store prompt for later use
+        self._prompt = prompt
+        self._gif_path = gif_path
         
-        # Create and configure animated label
-        self.animated_label = QLabel()
-        self.animated_label.setAlignment(Qt.AlignCenter)
-        self.animated_label.setMinimumSize(64, 64)  # Ensure minimum size for visibility
-        layout.addWidget(self.animated_label)
+        # Set window flags for a top-level window that stays on top
+        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
         
-        # Create and configure text label
-        self.text_label = QLabel(prompt)
-        self.text_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.text_label)
+        # Set up the movie
+        self._setup_movie()
         
-        # Set up the GIF animation - create only ONE instance
-        self.gif_path = gif_path
-        self.movie = QMovie(gif_path)
-        self.movie.setCacheMode(QMovie.CacheAll)
-        self._sized_from_frame = False
-        # Size window once the first valid frame arrives (frameCount can be -1 until fully loaded)
-        self.movie.frameChanged.connect(self._on_movie_frame_changed)
-
-        # Set up the label with the movie
-        self.animated_label.setMovie(self.movie)
-        
-        # Try to pre-compute window size before animation starts
-        self.size_window_to_gif()
-        
-        # Center the window
-        self.center_window()
+        # Show the initial message
+        self.update_text(prompt)
         
         # Ensure window is visible and on top
         self.raise_()
         self.activateWindow()
-
-        # Start animation immediately for reliability on macOS/Linux
-        self.movie.setSpeed(120)
-        self.movie.start()
-        # Keep animation ticking (QMovie requires regular event processing)
-        self._keep_alive_timer = QTimer(self)
-        self._keep_alive_timer.timeout.connect(self.ensure_animation_running)
-        self._keep_alive_timer.start(500)
-        
-    def size_window_to_gif(self):
-        """Size the window based on the GIF dimensions plus padding for text."""
-        # Get the GIF size from the current pixmap if available
-        gif_size = self.movie.currentPixmap().size()
-
-        if gif_size.isValid() and gif_size.width() > 0 and gif_size.height() > 0:
-            # Add padding for text label and margins
-            window_width = gif_size.width() + 80  # 20px padding on each side
-            window_height = gif_size.height() + 200  # Extra space for text label
-            self.setFixedSize(window_width, window_height)
-        else:
-            # Fallback: use image reader to query dimensions without loading frames
-            try:
-                reader = QImageReader(self.gif_path)
-                size = reader.size()
-                if size.isValid() and size.width() > 0 and size.height() > 0:
-                    window_width = size.width() + 80
-                    window_height = size.height() + 200
-                    self.setFixedSize(window_width, window_height)
-                else:
-                    # Final fallback size if dimensions can't be determined yet
-                    self.setFixedSize(300, 200)
-            except Exception:
-                self.setFixedSize(300, 200)
-
-    def _on_movie_frame_changed(self, frame_index: int):
-        # The first valid frame guarantees we know the size; only adjust once
-        if not self._sized_from_frame:
-            pix = self.movie.currentPixmap()
-            if not pix.isNull() and pix.size().isValid():
-                self.size_window_to_gif()
-                self._sized_from_frame = True
-        
-    def center_window(self):
-        """Center the window on screen using the same method as the main window."""
-        qr = self.frameGeometry()
-        cp = QDesktopWidget().availableGeometry().center()
-        qr.moveCenter(cp)
-        self.move(qr.topLeft())
     
+    def _setup_movie(self):
+        """Set up the movie with error handling and proper sizing."""
+        try:
+            self.movie = QMovie(self._gif_path)
+            if not self.movie.isValid():
+                raise Exception(f"Invalid GIF file: {self._gif_path}")
+                
+            # Connect the frame changed signal
+            self.movie.frameChanged.connect(self._update_pixmap)
+            
+            # Start the animation
+            self.movie.start()
+            
+            # Set initial size based on the first frame
+            first_frame = self.movie.currentPixmap()
+            if not first_frame.isNull():
+                self.setFixedSize(first_frame.size())
+            
+            # Center on screen
+            self._center_on_screen()
+            
+        except Exception as e:
+            print(f"Error loading animation: {e}")
+            # Fallback to a simple message if GIF loading fails
+            self.showMessage(
+                self._prompt,
+                Qt.AlignBottom | Qt.AlignCenter,
+                Qt.white
+            )
+            self.setFixedSize(300, 200)
+    
+    def _update_pixmap(self, frame_number=None):
+        """Update the splash screen with the current frame."""
+        try:
+            if hasattr(self, 'movie') and self.movie.state() == QMovie.Running:
+                current_pixmap = self.movie.currentPixmap()
+                if not current_pixmap.isNull():
+                    # Set the pixmap and mask for transparency
+                    self.setPixmap(current_pixmap)
+                    self.setMask(current_pixmap.mask())
+        except Exception as e:
+            print(f"Error updating pixmap: {e}")
+    
+    def _center_on_screen(self):
+        """Center the window on the primary screen."""
+        screen = QApplication.primaryScreen().availableGeometry()
+        x = (screen.width() - self.width()) // 2
+        y = (screen.height() - self.height()) // 2
+        self.move(x, y)
+    
+    def update_text(self, text):
+        """Update the loading text."""
+        self.showMessage(text, Qt.AlignBottom | Qt.AlignCenter, Qt.white)
+    
+    # Backward compatibility methods
     def start_animation(self):
-        """Start the GIF animation."""
-        self.movie.setSpeed(120)
-        self.movie.start()
-
+        """Start the animation (for backward compatibility)."""
+        if hasattr(self, 'movie'):
+            self.movie.start()
+    
     def stop_animation(self):
-        """Stop the GIF animation."""
-        self.movie.stop()
+        """Stop the animation (for backward compatibility)."""
+        if hasattr(self, 'movie'):
+            self.movie.stop()
+        self.close()
     
     def set_animation_speed(self, speed_percent):
-        """
-        Set the animation speed as a percentage.
-        100 = normal speed
-        > 100 = faster (e.g., 200 = 2x speed)
-        < 100 = slower (e.g., 50 = half speed)
-        """
-        self.movie.setSpeed(speed_percent)
+        """Set animation speed (for backward compatibility)."""
+        if hasattr(self, 'movie'):
+            self.movie.setSpeed(speed_percent)
+        
+    # Deprecated methods (kept for backward compatibility)
+    def size_window_to_gif(self):
+        """Deprecated: Window sizing is now handled automatically."""
+        pass
+        
+    def _on_movie_frame_changed(self, frame_index: int):
+        """Deprecated: Frame handling is now done in _update_pixmap."""
+        pass
+        
+    def center_window(self):
+        """Deprecated: Use _center_on_screen instead."""
+        self._center_on_screen()
     
     def ensure_animation_running(self):
-        """
-        Call this method periodically to ensure the animation continues running.
-        This is needed because QMovie requires regular event processing.
-        """
-        QApplication.processEvents()
-
-
-# Remove HVYM_VERSION
-# HVYM_VERSION = 'v0.00'
-
-
-class HVYM_SeedVault(TinyDB):
-    """
-        A class for encrypting & storing seed phrases
-    """
-    # Override the class constructor
-    def __init__(self, encryption_key, path, storage=enc_json.EncryptedJSONStorage):
-        # Be sure to call the super class method
-        TinyDB.__init__(self, encryption_key, path, storage)
-        self.HOME = os.path.expanduser('~')
-        self.PATH = self.HVYM = Path.home() / '.metavinci'
+        """Deprecated: Not needed with QSplashScreen."""
+        pass
 
 
 def get_latest_hvym_release_asset_url():
@@ -491,59 +499,496 @@ def get_latest_hvym_release_asset_url():
         raise Exception(f"Asset {asset_name} not found in latest release")
     return url
 
-def download_and_install_hvym_cli(dest_dir):
-    """Download and install the latest hvym CLI for the current platform."""
+def _extract_with_tar(archive_path: str, extract_dir: str) -> bool:
+    """Extract .tar.gz file using Python's tarfile module."""
+    logging.info(f"Attempting Python tarfile extraction of {archive_path} to {extract_dir}")
+    try:
+        with tarfile.open(archive_path, "r:gz") as tar:
+            logging.info(f"Archive members: {len(tar.getmembers())} files")
+            # Log first few files for debugging
+            for i, member in enumerate(tar.getmembers()[:5]):
+                logging.info(f"  - {member.name} ({member.size} bytes)")
+            if len(tar.getmembers()) > 5:
+                logging.info(f"  ... and {len(tar.getmembers()) - 5} more files")
+                
+            tar.extractall(path=extract_dir)
+            
+        # Verify extraction
+        extracted = list(Path(extract_dir).rglob('*'))
+        logging.info(f"Extracted {len(extracted)} files to {extract_dir}")
+        if extracted:
+            for f in extracted[:5]:  # Log first 5 extracted files
+                logging.info(f"  - {f} ({f.stat().st_size} bytes)")
+            if len(extracted) > 5:
+                logging.info(f"  ... and {len(extracted) - 5} more files")
+        
+        return True
+    except (tarfile.TarError, EOFError, OSError) as e:
+        logging.error(f"tarfile extraction failed: {str(e)}", exc_info=True)
+        return False
+
+def _extract_with_zip(archive_path: str, extract_dir: str) -> bool:
+    """Extract .zip file using Python's zipfile module."""
+    logging.info(f"Attempting Python zipfile extraction of {archive_path} to {extract_dir}")
+    try:
+        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+            file_list = zip_ref.namelist()
+            logging.info(f"Archive contains {len(file_list)} files")
+            for i, name in enumerate(file_list[:5]):  # Log first 5 files
+                info = zip_ref.getinfo(name)
+                logging.info(f"  - {name} ({info.file_size} bytes, compressed: {info.compress_size} bytes)")
+            if len(file_list) > 5:
+                logging.info(f"  ... and {len(file_list) - 5} more files")
+                
+            zip_ref.extractall(extract_dir)
+            
+        # Verify extraction
+        extracted = list(Path(extract_dir).rglob('*'))
+        logging.info(f"Extracted {len(extracted)} files to {extract_dir}")
+        if extracted:
+            for f in extracted[:5]:  # Log first 5 extracted files
+                try:
+                    logging.info(f"  - {f} ({f.stat().st_size} bytes)")
+                except Exception as e:
+                    logging.error(f"  - {f} (error getting size: {e})")
+            if len(extracted) > 5:
+                logging.info(f"  ... and {len(extracted) - 5} more files")
+                
+        return True
+    except (zipfile.BadZipFile, OSError) as e:
+        logging.error(f"zipfile extraction failed: {str(e)}", exc_info=True)
+        return False
+
+def _extract_with_system_tar(archive_path: str, extract_dir: str) -> bool:
+    """Extract .tar.gz using system tar command."""
+    logging.info(f"Attempting system tar extraction of {archive_path} to {extract_dir}")
+    try:
+        # First check if tar is available
+        tar_check = subprocess.run(['which', 'tar'], capture_output=True, text=True)
+        if tar_check.returncode != 0:
+            logging.warning("System tar command not found")
+            return False
+            
+        # Get archive listing first
+        list_cmd = ['tar', 'tzf', archive_path]
+        list_result = subprocess.run(list_cmd, capture_output=True, text=True)
+        
+        if list_result.returncode == 0:
+            files = list_result.stdout.splitlines()
+            logging.info(f"Archive contains {len(files)} files")
+            for f in files[:5]:  # Log first 5 files
+                logging.info(f"  - {f}")
+            if len(files) > 5:
+                logging.info(f"  ... and {len(files) - 5} more files")
+        
+        # Perform the actual extraction
+        cmd = ['tar', 'xzvf', archive_path, '-C', extract_dir]
+        logging.info(f"Running command: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            logging.info(f"System tar extraction successful. Output:\n{result.stdout}")
+            return True
+            
+        logging.error(f"System tar command failed with code {result.returncode}")
+        logging.error(f"STDERR: {result.stderr}")
+        logging.error(f"STDOUT: {result.stdout}")
+        return False
+        
+    except Exception as e:
+        logging.error(f"System tar command execution failed: {str(e)}", exc_info=True)
+        return False
+
+def _extract_with_system_unzip(archive_path: str, extract_dir: str) -> bool:
+    """Extract .zip using system unzip command."""
+    try:
+        cmd = ['unzip', '-o', archive_path, '-d', extract_dir]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            return True
+        logging.warning(f"System unzip command failed: {result.stderr}")
+        return False
+    except Exception as e:
+        logging.warning(f"System unzip command execution failed: {e}")
+        return False
+
+def _extract_with_patool(archive_path: str, extract_dir: str) -> bool:
+    """Extract archive using patoolib if available."""
+    if not HAS_PATOOL:
+        return False
+    try:
+        patoolib.extract_archive(archive_path, outdir=extract_dir)
+        return True
+    except Exception as e:
+        logging.warning(f"patoolib extraction failed: {e}")
+        return False
+
+def extract_archive(archive_path: str, extract_dir: str) -> bool:
+    """
+    Extract an archive using multiple methods with fallbacks.
+    
+    Args:
+        archive_path: Path to the archive file
+        extract_dir: Directory to extract files to
+        
+    Returns:
+        bool: True if extraction succeeded, False otherwise
+    """
+    # Log start of extraction
+    logging.info(f"=== Starting archive extraction ===")
+    logging.info(f"Archive: {archive_path}")
+    logging.info(f"Extract to: {extract_dir}")
+    logging.info(f"File exists: {os.path.exists(archive_path)}")
+    
+    if not os.path.exists(archive_path):
+        logging.error(f"Archive not found: {archive_path}")
+        return False
+    
+    try:
+        file_size = os.path.getsize(archive_path)
+        logging.info(f"File size: {file_size} bytes")
+        if file_size == 0:
+            logging.error(f"Archive is empty: {archive_path}")
+            return False
+    except Exception as e:
+        logging.error(f"Failed to get file size: {e}")
+        return False
+    
+    # Create extract directory if it doesn't exist
+    try:
+        os.makedirs(extract_dir, exist_ok=True)
+        logging.info(f"Created extract directory: {extract_dir}")
+    except Exception as e:
+        logging.error(f"Failed to create extract directory {extract_dir}: {e}")
+        return False
+    
+    # Check if we can write to the extract directory
+    test_file = os.path.join(extract_dir, '.write_test')
+    try:
+        with open(test_file, 'w') as f:
+            f.write('test')
+        os.remove(test_file)
+    except Exception as e:
+        logging.error(f"Cannot write to extract directory {extract_dir}: {e}")
+        return False
+    
+    # Try different extraction methods based on file extension
+    if archive_path.endswith('.tar.gz') or archive_path.endswith('.tgz'):
+        logging.info("Detected .tar.gz archive")
+        methods = [
+            ('Python tarfile', _extract_with_tar),
+            ('System tar', _extract_with_system_tar),
+            ('patoolib', _extract_with_patool) if HAS_PATOOL else None
+        ]
+    elif archive_path.endswith('.zip'):
+        logging.info("Detected .zip archive")
+        methods = [
+            ('Python zipfile', _extract_with_zip),
+            ('System unzip', _extract_with_system_unzip),
+            ('patoolib', _extract_with_patool) if HAS_PATOOL else None
+        ]
+    else:
+        logging.error(f"Unsupported archive format: {archive_path}")
+        return False
+    
+    # Filter out None values (unavailable methods)
+    methods = [m for m in methods if m is not None]
+    logging.info(f"Available extraction methods: {[m[0] for m in methods]}")
+    
+    # Try each method with retries
+    for attempt in range(EXTRACT_RETRY_ATTEMPTS):
+        if attempt > 0:
+            logging.warning(f"Retry {attempt + 1}/{EXTRACT_RETRY_ATTEMPTS} for {archive_path}")
+            time.sleep(EXTRACT_RETRY_DELAY)
+        
+        for name, method in methods:
+            logging.info(f"\n=== Trying extraction with {name} (attempt {attempt + 1}/{EXTRACT_RETRY_ATTEMPTS}) ===")
+            try:
+                success = method(archive_path, extract_dir)
+                if success:
+                    # Verify extraction
+                    extracted_files = list(Path(extract_dir).rglob('*'))
+                    logging.info(f"Extraction successful. Found {len(extracted_files)} files in {extract_dir}")
+                    if extracted_files:
+                        for f in extracted_files[:5]:
+                            try:
+                                logging.info(f"  - {f} ({f.stat().st_size} bytes)")
+                            except:
+                                logging.info(f"  - {f} (error getting size)")
+                        if len(extracted_files) > 5:
+                            logging.info(f"  ... and {len(extracted_files) - 5} more files")
+                    return True
+                logging.warning(f"Extraction with {name} returned False")
+            except Exception as e:
+                logging.error(f"Extraction with {name} failed with exception: {str(e)}", exc_info=True)
+    
+    # If we get here, all methods failed
+    logging.error(f"=== All extraction methods failed for {archive_path} ===")
+    
+    # Log directory contents for debugging
+    try:
+        logging.info("\n=== Directory Contents ===")
+        for root, dirs, files in os.walk(extract_dir):
+            level = root.replace(extract_dir, '').count(os.sep)
+            indent = '  ' * level
+            logging.info(f"{indent}{os.path.basename(root)}/")
+            subindent = '  ' * (level + 1)
+            for f in files[:10]:  # Limit to first 10 files per directory
+                try:
+                    size = os.path.getsize(os.path.join(root, f))
+                    logging.info(f"{subindent}{f} ({size} bytes)")
+                except:
+                    logging.info(f"{subindent}{f} (error getting size)")
+            if len(files) > 10:
+                logging.info(f"{subindent}... and {len(files) - 10} more files")
+    except Exception as e:
+        logging.error(f"Failed to list directory contents: {e}")
+    
+    return False
+
+def download_and_install_hvym_cli(dest_dir: str) -> str:
+    """
+    Download and install the latest hvym CLI for the current platform.
+    
+    Args:
+        dest_dir: Directory where the hvym binary should be installed
+        
+    Returns:
+        str: Path to the installed hvym binary
+        
+    Raises:
+        Exception: If download, extraction, or installation fails
+    """
+    logger = logging.getLogger()
+    logger.info("=" * 80)
+    logger.info("Starting hvym CLI installation")
+    logger.info(f"Destination directory: {dest_dir}")
+    
+    # Ensure the destination directory and its parent exist with correct permissions
+    try:
+        # Create parent directories if they don't exist
+        parent_dir = os.path.dirname(dest_dir)
+        logger.info(f"Ensuring parent directory exists: {parent_dir}")
+        os.makedirs(parent_dir, mode=0o755, exist_ok=True)
+        
+        # Create the destination directory with proper permissions
+        logger.info(f"Ensuring destination directory exists: {dest_dir}")
+        os.makedirs(dest_dir, mode=0o755, exist_ok=True)
+        
+        # Test write permissions
+        test_file = os.path.join(dest_dir, '.write_test')
+        logger.info(f"Testing write permissions with file: {test_file}")
+        try:
+            with open(test_file, 'w') as f:
+                f.write('test')
+            os.remove(test_file)
+            logger.info("Write permissions verified")
+        except Exception as e:
+            error_msg = f"Cannot write to destination directory {dest_dir}: {e}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
+            
+    except Exception as e:
+        error_msg = f"Cannot create or write to destination directory {dest_dir}: {e}"
+        logger.error(error_msg)
+        
+        # Try to create with sudo if permission denied on Linux
+        if "Permission denied" in str(e) and platform.system().lower() == "linux":
+            logger.warning("Permission denied, trying with sudo...")
+            try:
+                # Create parent directory with sudo if needed
+                if not os.path.exists(parent_dir):
+                    logger.info(f"Creating parent directory with sudo: {parent_dir}")
+                    subprocess.run(
+                        ['sudo', 'mkdir', '-p', parent_dir],
+                        check=True
+                    )
+                
+                # Set ownership and permissions
+                logger.info(f"Setting ownership and permissions for {parent_dir}")
+                uid = os.getuid()
+                gid = os.getgid()
+                subprocess.run(
+                    ['sudo', 'chown', f"{uid}:{gid}", parent_dir],
+                    check=True
+                )
+                subprocess.run(
+                    ['sudo', 'chmod', '755', parent_dir],
+                    check=True
+                )
+                
+                # Create destination directory
+                os.makedirs(dest_dir, mode=0o755, exist_ok=True)
+                logger.info("Successfully created directory with elevated permissions")
+                
+            except Exception as sudo_e:
+                error_msg = f"Failed to create directory even with sudo: {sudo_e}"
+                logger.error(error_msg)
+                raise Exception(error_msg)
+        else:
+            raise Exception(error_msg)
+
     # Use macOS-specific installation helper if on macOS
     if platform.system().lower() == "darwin":
         try:
+            logger.info("macOS detected, attempting to use macOS installation helper")
             from macos_install_helper import MacOSInstallHelper
             helper = MacOSInstallHelper()
             hvym_path = helper.install_hvym_cli()
             if hvym_path:
+                logger.info(f"Successfully installed hvym using macOS helper: {hvym_path}")
                 return hvym_path
             else:
+                logger.warning("macOS installation helper returned no path, falling back to standard method")
                 raise Exception("macOS installation helper failed")
-        except ImportError:
-            print("macOS installation helper not available, falling back to standard method")
+        except ImportError as e:
+            logger.warning("macOS installation helper not available, falling back to standard method")
+            logger.debug(f"Import error: {e}")
         except Exception as e:
-            print(f"macOS installation helper error: {e}, falling back to standard method")
+            logger.warning(f"macOS installation helper error: {e}, falling back to standard method")
+            logger.debug(f"Error details: {traceback.format_exc()}")
     
     # Standard installation method for other platforms
-    url = get_latest_hvym_release_asset_url()
-    print(f"Downloading {url} ...")
-    with tempfile.TemporaryDirectory() as tmpdir:
-        asset = os.path.basename(url)
-        archive_path = os.path.join(tmpdir, asset)
-        # Use requests + certifi for robust SSL verification
-        import certifi
-        import requests
-        with requests.get(url, stream=True, timeout=30, verify=certifi.where(), headers={"User-Agent": "Metavinci/1.0"}) as r:
-            r.raise_for_status()
-            with open(archive_path, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-        # Extract
-        if asset.endswith('.tar.gz'):
-            with tarfile.open(archive_path, "r:gz") as tar:
-                tar.extractall(path=tmpdir)
-        elif asset.endswith('.zip'):
-            with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-                zip_ref.extractall(tmpdir)
-        else:
-            raise Exception("Unknown archive format")
-        # Find the hvym binary
-        for root, dirs, files in os.walk(tmpdir):
-            for file in files:
-                if file.startswith("hvym"):
-                    src = os.path.join(root, file)
-                    dst = os.path.join(dest_dir, file)
-                    shutil.move(src, dst)
-                    if platform.system().lower() != "windows":
-                        os.chmod(dst, 0o755)
-                    print(f"hvym installed at {dst}")
-                    return dst
-        raise Exception("hvym binary not found in archive")
+    logger.info("Using standard installation method")
+    
+    try:
+        # Get the download URL
+        logger.info("Getting latest release URL")
+        url = get_latest_hvym_release_asset_url()
+        logger.info(f"Latest release URL: {url}")
+        
+        # Create a temporary directory for downloads
+        with tempfile.TemporaryDirectory() as tmpdir:
+            logger.info(f"Using temporary directory: {tmpdir}")
+            
+            # Download the file
+            asset = os.path.basename(url)
+            archive_path = os.path.join(tmpdir, asset)
+            logger.info(f"Downloading {url} to {archive_path}")
+            
+            try:
+                # Use requests + certifi for robust SSL verification
+                with requests.get(
+                    url, 
+                    stream=True, 
+                    timeout=30, 
+                    verify=certifi.where(), 
+                    headers={"User-Agent": "Metavinci/1.0"}
+                ) as r:
+                    r.raise_for_status()
+                    total_size = int(r.headers.get('content-length', 0))
+                    logger.info(f"Download size: {total_size} bytes")
+                    
+                    with open(archive_path, 'wb') as f:
+                        downloaded = 0
+                        for chunk in r.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                if total_size > 0:
+                                    percent = (downloaded / total_size) * 100
+                                    if percent % 10 == 0:  # Log every 10% to avoid flooding logs
+                                        logger.debug(f"Download progress: {percent:.1f}% ({downloaded}/{total_size} bytes)")
+                    
+                    logger.info(f"Download completed: {os.path.getsize(archive_path)} bytes")
+                
+                # Verify download
+                if not os.path.exists(archive_path) or os.path.getsize(archive_path) == 0:
+                    raise Exception("Downloaded file is empty or missing")
+                
+                # Extract the archive
+                logger.info(f"Extracting archive: {archive_path}")
+                if not extract_archive(archive_path, tmpdir):
+                    raise Exception("Failed to extract archive")
+                
+                # Find the binary in the extracted files
+                logger.info("Looking for binary in extracted files...")
+                system = platform.system().lower()
+                binary_name = 'hvym-linux' if system == 'linux' else 'hvym-macos' if system == 'darwin' else 'hvym-windows.exe' if system == 'windows' else 'hvym.exe'
+                
+                for root, _, files in os.walk(tmpdir):
+                    if binary_name in files:
+                        binary_path = os.path.join(root, binary_name)
+                        logger.info(f"Found binary at: {binary_path}")
+                        
+                        # Set executable permissions
+                        os.chmod(binary_path, 0o755)
+                        
+                        # Create destination directory if it doesn't exist
+                        os.makedirs(dest_dir, exist_ok=True, mode=0o755)
+                        
+                        # Move binary to destination
+                        dest_path = os.path.join(dest_dir, binary_name)
+                        shutil.move(binary_path, dest_path)
+                        
+                        # Verify the binary works
+                        try:
+                            result = subprocess.run(
+                                [dest_path, 'version'],
+                                capture_output=True,
+                                text=True,
+                                timeout=20
+                            )
+                            logger.info(f"Binary version check: {result.stdout.strip()}")
+                            return dest_path
+                        except Exception as e:
+                            logger.error(f"Binary test failed: {e}")
+                            raise Exception(f"Downloaded binary is not working: {e}")
+                
+                # If we get here, no binary was found
+                # Prepare error message with system information
+                system_info = (
+                    f"System: {platform.system()} {platform.release()} {platform.machine()}\n"
+                    f"Python: {platform.python_version()}\n"
+                    f"Archive: {os.path.basename(archive_path)} ({os.path.getsize(archive_path) if os.path.exists(archive_path) else 0} bytes)"
+                )
+                
+                raise Exception(
+                    f"Could not find {binary_name} in the downloaded archive.\n\n"
+                    f"{system_info}\n\n"
+                    "Please check if the downloaded archive is valid and contains the expected files."
+                )
+                
+            except Exception as e:
+                # Log the detailed error
+                logger.error(f"Download or extraction failed: {e}")
+                logger.debug(f"Error details: {traceback.format_exc()}")
+                
+                # Prepare system information for the error message
+                system_info = (
+                    f"System: {platform.system()} {platform.release()} {platform.machine()}\n"
+                    f"Python: {platform.python_version()}"
+                )
+                
+                if os.path.exists(archive_path):
+                    system_info += f"\nArchive: {os.path.basename(archive_path)} ({os.path.getsize(archive_path)} bytes)"
+                
+                raise Exception(
+                    f"Installation failed: {str(e)}\n\n"
+                    f"{system_info}\n\n"
+                    "Please check your internet connection and try again. "
+                    "If the problem persists, please contact support with the above information."
+                )
+                
+    except Exception as e:
+        # This is a fallback for any other unhandled exceptions
+        logger.error(f"Unexpected installation error: {e}")
+        logger.debug(f"Error details: {traceback.format_exc()}")
+        
+        system_info = (
+            f"System: {platform.system()} {platform.release()} {platform.machine()}\n"
+            f"Python: {platform.python_version()}"
+        )
+        
+        raise Exception(
+            f"Unexpected error during installation: {str(e)}\n\n"
+            f"{system_info}\n\n"
+            "This could be due to:\n"
+            "1. Corrupted download (try again)\n"
+            "2. Missing extraction tools (install 'unzip' or 'tar')\n"
+            "3. Permission issues (check write access to temp directory)\n\n"
+            "Please try again or contact support if the problem persists."
+        )
 
 
 def get_latest_hvym_press_release_asset_url():
@@ -658,29 +1103,40 @@ class Metavinci(QMainWindow):
                     QCoreApplication.addLibraryPath(_p)
         except Exception:
             pass
-        # Build a stable subprocess environment, especially for macOS (Finder launches have a minimal PATH)
-        self.proc_env = self._build_subprocess_env()
-        # Initialize file logging early
-        self._init_logging()
-        
+        # Set up basic paths first
         self.HOME = os.path.expanduser('~')
         self.PATH = self.platform_manager.get_config_path()
+        
+        # Build a stable subprocess environment, especially for macOS (Finder launches have a minimal PATH)
+        self.proc_env = self._build_subprocess_env()
+        
+        # Initialize file logging after paths are set
+        self._init_logging()
         self.BIN_PATH = self.platform_manager.get_bin_path()
         self.KEYSTORE = self.PATH / 'keystore.enc'
         self.ENC_KEY = self.PATH / 'encryption_key.key'
         self.DFX = self.platform_manager.get_dfx_path()
         self.HVYM = self.platform_manager.get_hvym_path()
+        
+        # Log the initial HVYM path
+        if hasattr(self, '_log_hvym_path'):
+            self._log_hvym_path()
+            
         self.DIDC = self.platform_manager.get_didc_path()
         self.PRESS = self.platform_manager.get_press_path()
         self.BLENDER_PATH = self.platform_manager.get_blender_path()
+        
         # Backward compatibility: if on macOS and arch-specific hvym not present, fall back to legacy filename
         try:
             if platform.system().lower() == 'darwin' and not self.HVYM.is_file():
                 legacy_hvym = self.BIN_PATH / 'hvym-macos'
                 if legacy_hvym.is_file():
                     self.HVYM = legacy_hvym
-        except Exception:
-            pass
+                    # Log again if we changed the HVYM path
+                    if hasattr(self, '_log_hvym_path'):
+                        self._log_hvym_path()
+        except Exception as e:
+            self.logger.warning(f"Error during macOS compatibility check: {e}")
         self.BLENDER_VERSIONS = []
         self.BLENDER_VERSION = None
         self.ADDON_INSTALL_PATH = self.BLENDER_PATH / str(self.BLENDER_VERSION) / 'scripts' / 'addons'
@@ -695,8 +1151,8 @@ class Metavinci(QMainWindow):
         if QThread.currentThread() == QApplication.instance().thread():
             splash = self.splash_window()
         self.LOGO_IMG_ACTIVE = os.path.join(self.FILE_PATH, 'images', 'hvym_logo_64_active.png')
-        # Prefer Qt resource path for loading gif (bundled via resources.qrc), fallback to filesystem for local runs
-        self.LOADING_GIF = ':/images/loading.gif' if resources_rc is not None else os.path.join(self.FILE_PATH, 'images', 'loading.gif')
+        # Always use filesystem path for loading gif to ensure consistency in both dev and built environments
+        self.LOADING_GIF = os.path.join(self.FILE_PATH, 'images', 'loading.gif')
         self.UPDATE_IMG = os.path.join(self.FILE_PATH, 'images', 'update.png')
         self.INSTALL_IMG = os.path.join(self.FILE_PATH, 'images', 'install.png')
         self.ICP_LOGO_IMG = os.path.join(self.FILE_PATH, 'images', 'icp_logo.png')
@@ -708,6 +1164,8 @@ class Metavinci(QMainWindow):
         self.REMOVE_IMG = os.path.join(self.FILE_PATH, 'images', 'remove.png')
         self.OFF_IMG = os.path.join(self.FILE_PATH, 'images', 'switch_off.png')
         self.ON_IMG = os.path.join(self.FILE_PATH, 'images', 'switch_on.png')
+        self.COG_IMG = os.path.join(self.FILE_PATH, 'images', 'cog.png')
+        self.WEB_IMG = os.path.join(self.FILE_PATH, 'images', 'web.png')
         self.STYLE_SHEET = os.path.join(self.FILE_PATH, 'data', 'style.qss')
         self.DB_SRC = os.path.join(self.FILE_PATH, 'data', 'db.json')
         self.DB_PATH = self.BIN_PATH /'db.json'
@@ -735,6 +1193,7 @@ class Metavinci(QMainWindow):
         else:
             self.TUNNEL_TOKEN = self.hvym_tunnel_token_exists()
 
+        self.PINTHEON_NETWORK = 'testnet'
         self.PINTHEON_ACTIVE = False
         self.win_icon = QIcon(self.HVYM_IMG)
         self.icon = QIcon(self.LOGO_IMG)
@@ -751,6 +1210,8 @@ class Metavinci(QMainWindow):
         self.pintheon_icon = QIcon(self.OFF_IMG)
         self.tunnel_icon = QIcon(self.OFF_IMG)
         self.tunnel_token_icon = QIcon(self.SELECT_IMG)
+        self.cog_icon = QIcon(self.COG_IMG)
+        self.web_icon = QIcon(self.WEB_IMG)
         self.publik_key = None
         self.private_key = None
         self.refresh_interval = 8 * 60 * 60  # 8 hours in seconds
@@ -849,37 +1310,53 @@ class Metavinci(QMainWindow):
         self.open_tunnel_action.triggered.connect(self._open_tunnel)
         self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE)
 
-        self.set_tunnel_token_action = QAction(self.tunnel_token_icon, "Set Pinggy Token", self)
+        self.set_tunnel_token_action = QAction(self.cog_icon, "Set Pinggy Token", self)
         self.set_tunnel_token_action.triggered.connect(self._set_tunnel_token)
-        self.set_tunnel_token_action.setVisible(True)
+        self.set_tunnel_token_action.setVisible(False)
+
+        self.set_tunnel_tier_action = QAction(self.cog_icon, "Set Pinggy Tier", self)
+        self.set_tunnel_tier_action.triggered.connect(self._set_tunnel_tier)
+        self.set_tunnel_tier_action.setVisible(False)
+
+        self.set_pintheon_network_action = QAction(self.cog_icon, "Set Network", self)
+        self.set_pintheon_network_action.triggered.connect(self._set_pintheon_network)
+        self.set_pintheon_network_action.setVisible(False)
 
         self.run_pintheon_action = QAction(self.pintheon_icon, "Start Pintheon", self)
         self.run_pintheon_action.triggered.connect(self._start_pintheon)
 
         self.stop_pintheon_action = QAction(self.pintheon_icon, "Stop Pintheon", self)
         self.stop_pintheon_action.triggered.connect(self._stop_pintheon)
+
+        self.open_pintheon_action = QAction(self.web_icon, "Open Admin", self)
+        self.open_pintheon_action.triggered.connect(self._open_pintheon)
+
+        self.open_homepage_action = QAction(self.web_icon, "Open Homepage", self)
+        self.open_homepage_action.triggered.connect(self._open_homepage)
         
         # Set initial visibility based on PINTHEON_ACTIVE state
         self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
         self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
+        self.open_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
+        self.open_homepage_action.setVisible(self.PINTHEON_ACTIVE)
 
         self.install_pintheon_action = QAction(self.install_icon, "Install Pintheon", self)
         self.install_pintheon_action.triggered.connect(self._install_pintheon)
 
-        run_press_action = QAction(self.press_icon, "Run press", self)
-        run_press_action.triggered.connect(self.run_press)
+        self.run_press_action = QAction(self.press_icon, "Run press", self)
+        self.run_press_action.triggered.connect(self.run_press)
 
-        install_press_action = QAction(self.install_icon, "Install press", self)
-        install_press_action.triggered.connect(self._install_press)
+        self.install_press_action = QAction(self.install_icon, "Install press", self)
+        self.install_press_action.triggered.connect(self._install_press)
 
-        update_press_action = QAction(self.update_icon, "Update press", self)
-        update_press_action.triggered.connect(self._update_press)
+        self.update_press_action = QAction(self.update_icon, "Update press", self)
+        self.update_press_action.triggered.connect(self._update_press)
 
-        install_addon_action = QAction(self.install_icon, "Install Blender Addon", self)
-        install_addon_action.triggered.connect(self._install_blender_addon)
+        self.install_addon_action = QAction(self.install_icon, "Install Blender Addon", self)
+        self.install_addon_action.triggered.connect(self._install_blender_addon)
 
-        update_addon_action = QAction(self.update_icon, "Update Blender Addon", self)
-        update_addon_action.triggered.connect(self._update_blender_addon)
+        self.update_addon_action = QAction(self.update_icon, "Update Blender Addon", self)
+        self.update_addon_action.triggered.connect(self._update_blender_addon)
 
         # install_didc_action = QAction(self.install_icon, "Install didc", self)
         # install_didc_action.triggered.connect(self.hvym_install_didc)
@@ -941,25 +1418,61 @@ class Metavinci(QMainWindow):
 
         self.tray_tools_menu = tray_menu.addMenu("Tools")
 
-        if self.PRESS.is_file():
-            self.tray_tools_menu.addAction(run_press_action)
+        # self.tray_tools_menu.addAction(test_animated_action)
+
 
         self.tray_tools_update_menu = self.tray_tools_menu.addMenu("Installations")
+        self.tray_tools_update_menu.addAction(self.install_hvym_action)
+        self.tray_tools_update_menu.addAction(self.update_hvym_action)
+        self.tray_tools_update_menu.addAction(self.install_press_action)
+        self.tray_tools_update_menu.addAction(self.update_press_action)
+        self.update_press_action.setVisible(False)
+        self.install_press_action.setVisible(False)
+
+        network_name = 'testnet'
+        
+        if 'mainnet' in self.PINTHEON_NETWORK:
+            network_name = 'mainnet'
+
+        self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon "+network_name)
+        self.tray_pintheon_menu.setIcon(self.pintheon_icon)
+        self.tray_pintheon_menu.setEnabled(False)
+
+        self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
+        self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
+        self.pintheon_settings_menu.addAction(self.set_tunnel_tier_action)
+        # self.pintheon_settings_menu.addAction(self.set_pintheon_network_action)
+        self.pintheon_settings_menu.setEnabled(False)
+
+        self.tray_pintheon_menu.addAction(self.run_pintheon_action)
+        self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
+        self.tray_pintheon_menu.addAction(self.open_tunnel_action)
+
+        self.pintheon_interface_menu = self.tray_pintheon_menu.addMenu("Interface")
+        self.pintheon_interface_menu.addAction(self.open_pintheon_action)
+        self.pintheon_interface_menu.addAction(self.open_homepage_action)
+        self.pintheon_interface_menu.setEnabled(False)
+
+        self.tray_tools_update_menu.addAction(self.install_pintheon_action)
+        self.install_pintheon_action.setVisible(False)
+        self.run_pintheon_action.setVisible(False)
+        self.stop_pintheon_action.setVisible(False)
+        self.open_pintheon_action.setVisible(False)
+        self.open_homepage_action.setVisible(False)
+        self.open_tunnel_action.setVisible(False)
 
         if not self.HVYM.is_file():
-            self.tray_tools_update_menu.addAction(self.install_hvym_action)
+            self.install_hvym_action.setVisible(True)
+            self.update_hvym_action.setVisible(False)
         else:
-            self.tray_tools_update_menu.addAction(self.update_hvym_action)
-            self._update_pintheon_ui_state()
+            self.install_hvym_action.setVisible(False)
+            self.update_hvym_action.setVisible(True)
+            self._refresh_pintheon_ui_state()
 
-        if not self.PRESS.is_file():
-            # Only show press installation if hvym_press is supported on current architecture
-            if self.platform_manager.is_hvym_press_supported():
-                self.tray_tools_update_menu.addAction(install_press_action)
-        else:
-            # Only show press update if hvym_press is supported on current architecture
-            if self.platform_manager.is_hvym_press_supported():
-                self.tray_tools_update_menu.addAction(update_press_action)
+        self.tray_press_menu = self.tray_tools_menu.addMenu("Press")
+        self.tray_press_menu.addAction(self.run_press_action)
+
+        self._refresh_press_ui_state()
 
         # if not self.ADDON_PATH.exists():
         #     tray_tools_update_menu.addAction(install_addon_action)
@@ -1018,32 +1531,122 @@ class Metavinci(QMainWindow):
         
 
     def _init_logging(self):
-        """Initialize application logging to a file under the config directory."""
+        # Configure basic logging to console first
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter(
+            '%(asctime)s [%(levelname)s] [%(filename)s:%(lineno)d] %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        console_handler.setFormatter(formatter)
+        
+        # Set up root logger with console handler
+        logger = logging.getLogger()
+        logger.setLevel(logging.DEBUG)
+        
+        # Clear any existing handlers to avoid duplicate logs
+        logger.handlers = []
+        logger.addHandler(console_handler)
+        
+        # Now try to set up file logging
         try:
-            logs_dir = self.platform_manager.get_config_path() / 'logs'
-            logs_dir.mkdir(parents=True, exist_ok=True)
-            log_path = logs_dir / 'metavinci.log'
-
-            self.logger = logging.getLogger('metavinci')
-            self.logger.setLevel(logging.INFO)
-            # Avoid duplicate handlers
-            if not self.logger.handlers:
-                fh = logging.FileHandler(str(log_path))
-                fh.setLevel(logging.INFO)
-                formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
-                fh.setFormatter(formatter)
-                self.logger.addHandler(fh)
-
-            # Capture uncaught exceptions
-            def _excepthook(exc_type, exc_value, exc_tb):
+            # Ensure logs directory exists with proper permissions
+            logs_dir = self.PATH / 'logs'
+            try:
+                logs_dir.mkdir(parents=True, exist_ok=True, mode=0o755)
+                # Verify directory was created and is writable
+                test_file = logs_dir / '.write_test'
+                with open(test_file, 'w') as f:
+                    f.write('test')
+                os.remove(test_file)
+            except Exception as e:
+                logger.warning(f"Could not create or write to logs directory {logs_dir}: {e}")
+                if platform.system().lower() == 'linux':
+                    try:
+                        logger.info("Attempting to create logs directory with elevated permissions...")
+                        import subprocess
+                        subprocess.run(['sudo', 'mkdir', '-p', str(logs_dir)], check=True)
+                        subprocess.run(['sudo', 'chmod', '755', str(logs_dir)], check=True)
+                        subprocess.run(['sudo', 'chown', f"{os.getuid()}:{os.getgid()}", str(logs_dir)], check=True)
+                        logger.info("Successfully created logs directory with elevated permissions")
+                    except Exception as sudo_e:
+                        logger.error(f"Failed to create logs directory even with sudo: {sudo_e}")
+                        # Continue without file logging
+                        self.logger = logger
+                        return
+            
+            # Set up file handler with rotation (10MB per file, keep 5 backups)
+            log_file = logs_dir / 'metavinci.log'
+            try:
+                file_handler = logging.handlers.RotatingFileHandler(
+                    str(log_file),  # Convert to string for Python 3.6 compatibility
+                    maxBytes=10*1024*1024,  # 10MB
+                    backupCount=5,
+                    encoding='utf-8'
+                )
+                file_handler.setLevel(logging.DEBUG)
+                file_handler.setFormatter(formatter)
+                logger.addHandler(file_handler)
+                logger.info(f"File logging initialized at {log_file.absolute()}")
+            except Exception as e:
+                logger.error(f"Failed to initialize file logging: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error initializing logging: {e}")
+        
+        # Log startup information
+        logger.info("=" * 80)
+        logger.info("Metavinci starting...")
+        logger.info(f"Python version: {platform.python_version()}")
+        logger.info(f"Platform: {platform.platform()}")
+        logger.info(f"Working directory: {os.getcwd()}")
+        logger.info(f"Installation directory: {self.PATH}")
+        logger.info(f"Log file: {log_file.absolute() if 'log_file' in locals() else 'Not available'}")
+        
+        # Log important paths and permissions
+        try:
+            logger.info(f"User ID: {os.getuid() if hasattr(os, 'getuid') else 'N/A'}")
+            logger.info(f"Group ID: {os.getgid() if hasattr(os, 'getgid') else 'N/A'}")
+            if hasattr(os, 'groups'):
+                logger.info(f"User groups: {os.getgroups()}")
+            
+            # Log directory permissions
+            for path in [self.PATH, logs_dir if 'logs_dir' in locals() else None]:
+                if path and path.exists():
+                    try:
+                        stat_info = os.stat(str(path))
+                        logger.info(f"Directory permissions for {path}: {oct(stat_info.st_mode)[-3:]}")
+                        logger.info(f"Directory owner: {stat_info.st_uid}:{stat_info.st_gid}")
+                    except Exception as e:
+                        logger.warning(f"Could not get permissions for {path}: {e}")
+        except Exception as e:
+            logger.warning(f"Could not log system information: {e}")
+        
+        # Store logger reference
+        self.logger = logger
+        
+        # Add a method to log HVYM path after it's initialized
+        def log_hvym_path():
+            if hasattr(self, 'HVYM') and self.HVYM is not None:
                 try:
-                    self.logger.exception('Uncaught exception', exc_info=(exc_type, exc_value, exc_tb))
-                except Exception:
-                    pass
-            sys.excepthook = _excepthook
-            self.logger.info('Logger initialized')
-        except Exception:
-            pass
+                    self.logger.info(f"HVYM path: {self.HVYM}")
+                    if hasattr(self.HVYM, 'exists') and callable(self.HVYM.exists):
+                        exists = self.HVYM.exists()
+                        self.logger.info(f"HVYM exists: {exists}")
+                        if not exists:
+                            self.logger.warning("HVYM binary not found at expected location")
+                except Exception as e:
+                    self.logger.warning(f"Error checking HVYM path: {e}")
+        
+        # Store the method for later use
+        self._log_hvym_path = log_hvym_path
+        
+        # Log environment variables that might affect the application
+        for var in ['PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH']:
+            if var in os.environ:
+                logger.debug(f"ENV {var}: {os.environ[var]}")
+        
+        # HVYM path will be logged when it's initialized
+        logger.debug("Logging system initialized")
 
     def _build_subprocess_env(self):
         """Create a robust environment for subprocesses to work when launched from Applications on macOS."""
@@ -1248,6 +1851,7 @@ class Metavinci(QMainWindow):
         msg = QMessageBox(self)
         msg.setWindowTitle("!")
         msg.setText(prompt)
+        msg.raise_()
         msg.exec_()
     
     def open_option_dialog(self, prompt, options):
@@ -1632,6 +2236,10 @@ class Metavinci(QMainWindow):
         # Only run the CLI; UI updates must occur on main thread after completion
         return self._subprocess_hvym([str(self.HVYM), 'pintheon-start'])
     
+    def hvym_open_pintheon(self):
+        # Only run the CLI; UI updates must occur on main thread after completion
+        return self._subprocess_hvym([str(self.HVYM), 'pintheon-open'])
+    
     def hvym_stop_pintheon(self):
         # Only run the CLI; UI updates must occur on main thread after completion
         return self._subprocess_hvym([str(self.HVYM), 'pintheon-stop'])
@@ -1643,21 +2251,23 @@ class Metavinci(QMainWindow):
         # Update the menu action icons
         self.open_tunnel_action.setIcon(self.tunnel_icon)
         # Hide start action, show stop action
-        self.open_tunnel_action.setVisible(False)
+        # self.open_tunnel_action.setVisible(False)
         return self._subprocess_hvym([str(self.HVYM), 'pintheon-tunnel-open'])
-
-    def hvym_close_tunnel(self):
-        # Update the pintheon icon variable
-        self.tunnel_icon = QIcon(self.ON_IMG)
-
-        # Update the menu action icons
-        self.open_tunnel_action.setIcon(self.tunnel_icon)
-        # Hide start action, show stop action
-        self.open_tunnel_action.setVisible(True)
-        return self._subprocess_hvym([str(self.HVYM), 'pintheon-tunnel-close'])
     
     def hvym_set_tunnel_token(self):
         return self._subprocess_hvym([str(self.HVYM), 'pinggy-set-token'])
+
+    def hvym_set_tunnel_tier(self):
+        return self._subprocess_hvym([str(self.HVYM), 'pinggy-set-tier'])
+
+    def hvym_get_tunnel_tier(self):
+        return self._subprocess_hvym([str(self.HVYM), 'pinggy-tier'])
+    
+    def hvym_set_pintheon_network(self):
+        return self._subprocess_hvym([str(self.HVYM), 'pintheon-set-network'])
+    
+    def hvym_get_pintheon_network(self):
+        return self._subprocess_hvym([str(self.HVYM), 'pintheon-network'])
 
     def hvym_is_tunnel_open(self):
         return self._subprocess_hvym([str(self.HVYM), 'is-pintheon-tunnel-open'])
@@ -1839,7 +2449,6 @@ class Metavinci(QMainWindow):
                 print('hvym_press is installed')
                 # Update UI to reflect press availability
                 self._update_ui_on_press_installed()
-                self._ensure_press_menu()
             else:
                 print('hvym_press is not installed')
                 # Ensure install action is visible if supported on current architecture
@@ -1851,8 +2460,6 @@ class Metavinci(QMainWindow):
                 # Hide run action if it exists
                 if hasattr(self, 'run_press_action'):
                     self.run_press_action.setVisible(False)
-                # Ensure press menu is properly set up
-                self._ensure_press_menu()
         except Exception as e:
             print(f"Error checking press installation: {e}")
 
@@ -1861,11 +2468,6 @@ class Metavinci(QMainWindow):
         try:
             # Refresh press UI state
             self._refresh_press_ui_state()
-            self._ensure_press_menu()
-            
-            # Refresh pintheon UI state if hvym is available
-            if self.HVYM.is_file():
-                self._refresh_pintheon_ui_state()
                 
         except Exception as e:
             print(f"Error refreshing startup UI state: {e}")
@@ -1877,7 +2479,7 @@ class Metavinci(QMainWindow):
             worker = HvymInstallWorker(self.HVYM)
 
             # Create animated loading window
-            loading_window = AnimatedLoadingWindow(self, 'INSTALLING HVYM', 'images/loading.gif')
+            loading_window = AnimatedLoadingWindow(self, 'INSTALLING HVYM', self.LOADING_GIF)
             loading_window.show()
             loading_window.raise_()
             loading_window.activateWindow()
@@ -1915,7 +2517,7 @@ class Metavinci(QMainWindow):
             worker = HvymInstallWorker(self.HVYM)  # Reuse the same worker class
             
             # Create animated loading window
-            loading_window = AnimatedLoadingWindow(self, 'UPDATING HVYM', 'images/loading.gif')
+            loading_window = AnimatedLoadingWindow(self, 'UPDATING HVYM', self.LOADING_GIF)
             loading_window.show()
             loading_window.raise_()
             loading_window.activateWindow()
@@ -2046,7 +2648,7 @@ class Metavinci(QMainWindow):
             worker = PintheonInstallWorker(self.HVYM)
             
             # Create animated loading window
-            loading_window = AnimatedLoadingWindow(self, 'INSTALLING PINTHEON', 'images/loading.gif')
+            loading_window = AnimatedLoadingWindow(self, 'INSTALLING PINTHEON', self.LOADING_GIF)
             loading_window.show()
             loading_window.raise_()
             loading_window.activateWindow()
@@ -2067,15 +2669,13 @@ class Metavinci(QMainWindow):
     
     def _on_pintheon_install_success(self, loading_window, worker, success_msg):
         """Handle successful Pintheon installation."""
+
         loading_window.close()
         self.hide()
         worker.deleteLater()
-        
-        # Update UI - create/refresh Pintheon menu
-        self._ensure_pintheon_menu()
-        
-        # Update database
-        self.DB.update({'pintheon_installed': True}, self.QUERY.type == 'app_data')
+
+        self.PINTHEON_INSTALLED = "True"
+        self.DOCKER_INSTALLED = "True"
         
         # Refresh UI to show start/stop actions
         self._refresh_pintheon_ui_state()
@@ -2110,112 +2710,72 @@ class Metavinci(QMainWindow):
         except Exception:
             return False
         
-    def _update_pintheon_ui_state(self):
-        if self.DOCKER_INSTALLED == "True":
-            if self.PINTHEON_INSTALLED == "True":
-                self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
-                self.tray_pintheon_menu.setIcon(self.pintheon_icon)
-
-                self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
-                self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
-                    
-                self.tray_pintheon_menu.addAction(self.run_pintheon_action)
-                self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
-                self.tray_pintheon_menu.addAction(self.open_tunnel_action)
-                self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
-                self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
-                self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE and len(self.TUNNEL_TOKEN) >= 7)
-            else:
-                self.tray_tools_update_menu.addAction(self.install_pintheon_action)
-        else:
-            menu = self.tray_tools_menu.addMenu("!!DOCKER NOT INSTALLED!!")
-
     def _refresh_pintheon_ui_state(self):
-        self.DOCKER_INSTALLED = self.hvym_docker_installed()
-        self.DOCKER_INSTALLED = self._clean_cli_bool(self.DOCKER_INSTALLED)
-
+        self.PINTHEON_NETWORK = self.hvym_get_pintheon_network()
+        network_name = 'testnet'
+        
+        if 'mainnet' in self.PINTHEON_NETWORK:
+            network_name = 'mainnet'
+        
+        self.tray_pintheon_menu.setTitle("Pintheon "+network_name)
         if self.DOCKER_INSTALLED == "True":
+            
             self.PINTHEON_INSTALLED = self.hvym_pintheon_exists()
-            self.PINTHEON_INSTALLED = self._clean_cli_bool(self.PINTHEON_INSTALLED)
 
-            if self.PINTHEON_INSTALLED  == "True":
-                # Remove install action from Installations menu if present
-                if self.install_pintheon_action in self.tray_tools_update_menu.actions():
-                    self.tray_tools_update_menu.removeAction(self.install_pintheon_action)
-                # Ensure Pintheon submenu exists and is populated
-                if not hasattr(self, 'tray_pintheon_menu') or self.tray_pintheon_menu is None:
-                    self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon")
-                else:
-                    self.tray_pintheon_menu.clear()
-                self.tray_pintheon_menu.setIcon(self.pintheon_icon)
-                self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
-                self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
-                self.tray_pintheon_menu.addAction(self.run_pintheon_action)
-                self.tray_pintheon_menu.addAction(self.stop_pintheon_action)
-                self.tray_pintheon_menu.addAction(self.open_tunnel_action)
-                # Visibility according to active state
+            if self.PINTHEON_INSTALLED is not None:
+                self.PINTHEON_INSTALLED = self._clean_cli_bool(self.PINTHEON_INSTALLED)
+
+            print('self.PINTHEON_INSTALLED')
+            print(self.PINTHEON_INSTALLED)
+
+            if self.PINTHEON_INSTALLED == "True":
+                t = self.hvym_get_tunnel_tier()
+                tier = 'free'
+                if 'free' in t:
+                    tier = 'pro'
+                self.tray_pintheon_menu.setEnabled(True)
+                self.pintheon_settings_menu.setEnabled(True)
+                self.pintheon_interface_menu.setEnabled(True)
+                self.set_tunnel_token_action.setVisible(True)
+                self.set_tunnel_tier_action.setVisible(True)
+                self.set_tunnel_tier_action.setText(f'Set Tunnel Tier to: {tier}')
+                # self.set_pintheon_network_action.setVisible(True)
+                self.install_pintheon_action.setVisible(False)      
                 self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
                 self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
+                self.open_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
+                self.open_homepage_action.setVisible(self.PINTHEON_ACTIVE)
                 self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE and len(self.TUNNEL_TOKEN) >= 7)
             else:
-                # Remove Pintheon submenu if present
-                if hasattr(self, 'tray_pintheon_menu') and self.tray_pintheon_menu is not None:
-                    try:
-                        self.tray_tools_menu.removeAction(self.tray_pintheon_menu.menuAction())
-                    except Exception:
-                        pass
-                    self.tray_pintheon_menu = None
-                # Ensure install action is visible in Installations menu
-                if self.install_pintheon_action not in self.tray_tools_update_menu.actions():
-                    self.tray_tools_update_menu.addAction(self.install_pintheon_action)
-                self.install_pintheon_action.setVisible(True)
-                # Hide runtime actions
-                self.run_pintheon_action.setVisible(False)
-                self.stop_pintheon_action.setVisible(False)
+                self.tray_pintheon_menu.setEnabled(False)
+                self.pintheon_settings_menu.setEnabled(False)
+                self.pintheon_interface_menu.setEnabled(False)
+                self.set_tunnel_token_action.setVisible(False)
+                self.set_tunnel_tier_action.setVisible(False)
+                # self.set_pintheon_network_action.setVisible(False)
                 self.open_tunnel_action.setVisible(False)
+                self.tray_tools_update_menu.setVisible(True)
+                self.install_pintheon_action.setVisible(True)
         else:
-            menu = self.tray_tools_menu.addMenu("!!DOCKER NOT INSTALLED!!")
+            self.tray_tools_menu.addMenu("!!DOCKER NOT INSTALLED!!")
+
 
     def _refresh_press_ui_state(self):
         """Refresh press-related UI elements based on installation status."""
-        try:
-            # Check if press is actually installed
-            press_installed = self.PRESS.is_file()
-            
-            if press_installed:
-                # Press is installed - ensure run action is visible
-                if hasattr(self, 'run_press_action'):
-                    self.run_press_action.setVisible(True)
-                
-                # Update any other press-dependent UI elements
-                # For example, if there are press-specific menu items, show them here
-                
-            else:
-                # Press is not installed - hide run action
-                if hasattr(self, 'run_press_action'):
-                    self.run_press_action.setVisible(False)
-                
-                # Hide any other press-dependent UI elements
-                
-        except Exception as e:
-            print(f"Error refreshing press UI state: {e}")
-
-    def _ensure_press_menu(self):
-        """Ensure the press menu is properly set up and visible."""
-        try:
-            if self.PRESS.is_file():
-                # Press is installed - ensure run action is visible in Tools menu
-                if hasattr(self, 'run_press_action'):
-                    # Check if run_press_action is already in the tools menu
-                    if self.run_press_action not in self.tray_tools_menu.actions():
-                        self.tray_tools_menu.addAction(self.run_press_action)
-                    self.run_press_action.setVisible(True)
-            else:
-                # Press is not installed - hide run action
-                if hasattr(self, 'run_press_action'):
-                    self.run_press_action.setVisible(False)
-        except Exception as e:
-            print(f"Error ensuring press menu: {e}")
+        if self.PRESS.is_file():
+            # Only show press installation if hvym_press is supported on current architecture
+            if self.platform_manager.is_hvym_press_supported():
+                self.tray_press_menu.setEnabled(True)
+                self.run_press_action.setVisible(True)
+                self.update_press_action.setVisible(True)
+                self.install_press_action.setVisible(False)
+        else:
+            # Only show press update if hvym_press is supported on current architecture
+            if self.platform_manager.is_hvym_press_supported():
+                self.tray_press_menu.setEnabled(False)
+                self.run_press_action.setVisible(False)
+                self.update_press_action.setVisible(False)
+                self.install_press_action.setVisible(True)
 
     def _start_pintheon(self):
         start = self.open_confirm_dialog('Start Pintheon Gateway?')
@@ -2225,12 +2785,10 @@ class Metavinci(QMainWindow):
             if result is not None:
                 self.PINTHEON_ACTIVE = True
                 self._update_ui_on_pintheon_started()
+                self.hvym_open_pintheon()
             else:
                 self.open_msg_dialog('Failed to start Pintheon. Check logs for details.')
-    
-    # Worker-based start removed (synchronous path used)
-    
-    # Worker-based start completion removed
+
 
     def _update_ui_on_pintheon_started(self):
         self.pintheon_icon = QIcon(self.ON_IMG)
@@ -2239,10 +2797,14 @@ class Metavinci(QMainWindow):
         self.stop_pintheon_action.setIcon(self.pintheon_icon)
         self.run_pintheon_action.setVisible(False)
         self.stop_pintheon_action.setVisible(True)
+        self.open_pintheon_action.setVisible(True)
+        self.open_homepage_action.setVisible(True)
         self.open_tunnel_action.setVisible(len(self.TUNNEL_TOKEN) >= 7)
 
-    def _stop_pintheon(self):
-        stop = self.open_confirm_dialog('Stop Pintheon Gateway?')
+    def _stop_pintheon(self, confirm=True):
+        stop = True
+        if confirm:
+            stop = self.open_confirm_dialog('Stop Pintheon Gateway?')
         if stop:
             # Run synchronously on main thread
             result = self.hvym_stop_pintheon()
@@ -2252,10 +2814,16 @@ class Metavinci(QMainWindow):
             else:
                 self.open_msg_dialog('Failed to stop Pintheon. Check logs for details.')
     
-    # Worker-based stop removed (synchronous path used)
-    
-    # Worker-based stop completion removed
+    def _open_pintheon(self):
+        open = self.open_confirm_dialog('Open Pintheon Admin Interface?')
+        if open == True:
+            webbrowser.open('https://127.0.0.1:9999/admin')
 
+    def _open_homepage(self):
+        open = self.open_confirm_dialog('Open Local Homepage?')
+        if open == True:
+            webbrowser.open('https://127.0.0.1:9998/')
+        
     def _update_ui_on_pintheon_stopped(self):
         self.pintheon_icon = QIcon(self.OFF_IMG)
         self.tray_icon.setIcon(QIcon(self.LOGO_IMG))
@@ -2263,19 +2831,15 @@ class Metavinci(QMainWindow):
         self.stop_pintheon_action.setIcon(self.pintheon_icon)
         self.run_pintheon_action.setVisible(True)
         self.stop_pintheon_action.setVisible(False)
+        self.open_pintheon_action.setVisible(False)
+        self.open_homepage_action.setVisible(False)
         self.open_tunnel_action.setVisible(False)
 
     def _open_tunnel(self):
         expose = self.open_confirm_dialog('Expose Pintheon Gateway to the Internet?')
         if expose == True:
             self.hvym_open_tunnel()
-            self.open_tunnel_action.setVisible(False)
-
-    def _close_tunnel(self):
-        close = self.open_confirm_dialog('Close Pintheon Tunnel?')
-        if close == True:
-            self.hvym_close_tunnel()
-            self.open_tunnel_action.setVisible(True)
+            # self.open_tunnel_action.setVisible(False)
 
     def _set_tunnel_token(self):
         self.hvym_set_tunnel_token()
@@ -2284,6 +2848,14 @@ class Metavinci(QMainWindow):
             self.open_tunnel_action.setVisible(False)
         else:
             self.open_tunnel_action.setVisible(True)
+
+    def _set_tunnel_tier(self):
+        self.hvym_set_tunnel_tier()
+        self._refresh_pintheon_ui_state()
+
+    def _set_pintheon_network(self):
+        self.hvym_set_pintheon_network()
+        self._refresh_pintheon_ui_state()
 
     def _install_press(self):
         # Check if hvym_press is supported on current architecture
@@ -2297,7 +2869,7 @@ class Metavinci(QMainWindow):
             worker = HvymPressInstallWorker(self.PRESS)
             
             # Create animated loading window for consistency with hvym installation
-            loading_window = AnimatedLoadingWindow(self, 'INSTALLING HVYM PRESS', 'images/loading.gif')
+            loading_window = AnimatedLoadingWindow(self, 'INSTALLING HVYM PRESS', self.LOADING_GIF)
             loading_window.show()
             loading_window.raise_()
             loading_window.activateWindow()
@@ -2327,8 +2899,6 @@ class Metavinci(QMainWindow):
         # Show success message
         self.open_msg_dialog(success_msg)
         
-
-
     def _on_press_update_success(self, loading_window, worker, success_msg):
         """Handle successful Press update."""
         loading_window.close()
@@ -2356,7 +2926,7 @@ class Metavinci(QMainWindow):
             worker = HvymPressInstallWorker(self.PRESS)
             
             # Create animated loading window for consistency with hvym installation
-            loading_window = AnimatedLoadingWindow(self, 'UPDATING HVYM PRESS', 'images/loading.gif')
+            loading_window = AnimatedLoadingWindow(self, 'UPDATING HVYM PRESS', self.LOADING_GIF)
             loading_window.show()
             loading_window.raise_()
             loading_window.activateWindow()

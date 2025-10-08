@@ -214,9 +214,11 @@ class MacOSInstallHelper:
         try:
             # Extract the archive
             if download_path.suffix == '.tar.gz' or download_path.name.endswith('.tar.gz'):
+                print(f"Extracting {download_path} to {self.bin_dir}")
                 with tarfile.open(download_path, 'r:gz') as tar:
                     tar.extractall(self.bin_dir)
             elif download_path.suffix == '.zip':
+                print(f"Extracting {download_path} to {self.bin_dir}")
                 with zipfile.ZipFile(download_path, 'r') as zip_file:
                     zip_file.extractall(self.bin_dir)
             else:
@@ -232,21 +234,22 @@ class MacOSInstallHelper:
             
             if not extracted_binary.exists():
                 # Look for the binary in subdirectories
+                print(f"Searching for {binary_name} in subdirectories...")
                 for item in self.bin_dir.iterdir():
                     if item.is_dir():
                         potential_binary = item / binary_name
+                        print(f"  Checking {potential_binary}")
                         if potential_binary.exists():
                             extracted_binary = potential_binary
+                            print(f"Found binary at: {extracted_binary}")
                             break
             
             if not extracted_binary.exists():
-                # Fallback to legacy filename if present
-                legacy_binary = self.bin_dir / 'hvym-macos'
-                if legacy_binary.exists():
-                    extracted_binary = legacy_binary
-                else:
-                    print(f"Could not find {binary_name} or legacy hvym-macos in extracted files")
-                    return False
+                print(f"Error: Could not find {binary_name} in extracted files")
+                print("Contents of extraction directory:")
+                for f in self.bin_dir.glob('**/*'):
+                    print(f"  - {f.relative_to(self.bin_dir)}")
+                return False
             
             # Move to final location if needed
             if extracted_binary != self.hvym_path:

@@ -38,7 +38,7 @@ def build_linux_installer(version):
     src_bin = dist_dir / bin_name
     src_icon = cwd / 'metavinci_desktop.png'
     # Menu icon (smaller) for /usr/share/pixmaps
-    src_menu_icon = cwd / 'images' / 'hvym_logo_64.png'
+    src_menu_icon = cwd / 'images' / 'metavinci_128.png'
     src_ctrl = cwd / 'linux' / 'control'
     src_desktop = cwd / 'linux' / 'metavinci.desktop'
     pkg_dir = cwd / f'metavinci_desktop_{version}'
