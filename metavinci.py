@@ -1205,18 +1205,21 @@ class Metavinci(QMainWindow):
         self.DB.update({'INITIALIZED': True, 'principal': self.user_pid}, self.QUERY.type == 'app_data')
         self.INITIALIZED = (len(self.DB.search(self.QUERY.INITIALIZED == True)) > 0)
 
-        self.DOCKER_INSTALLED = self.hvym_docker_installed()
-        if self.DOCKER_INSTALLED is not None:
-            self.DOCKER_INSTALLED = self._clean_cli_bool(self.DOCKER_INSTALLED)
+        # Only check Docker and Pintheon status if hvym is installed
+        if self.HVYM.is_file():
+            self.DOCKER_INSTALLED = self.hvym_docker_installed()
+            if self.DOCKER_INSTALLED is not None:
+                self.DOCKER_INSTALLED = self._clean_cli_bool(self.DOCKER_INSTALLED)
 
-        self.PINTHEON_INSTALLED = self.hvym_pintheon_exists()
-        if self.PINTHEON_INSTALLED is not None:
-            self.PINTHEON_INSTALLED = self._clean_cli_bool(self.PINTHEON_INSTALLED)
+            self.PINTHEON_INSTALLED = self.hvym_pintheon_exists()
+            if self.PINTHEON_INSTALLED is not None:
+                self.PINTHEON_INSTALLED = self._clean_cli_bool(self.PINTHEON_INSTALLED)
 
-        if not self.HVYM.is_file():
-            self.TUNNEL_TOKEN = ''
-        else:
             self.TUNNEL_TOKEN = self.hvym_tunnel_token_exists()
+        else:
+            self.DOCKER_INSTALLED = None
+            self.PINTHEON_INSTALLED = None
+            self.TUNNEL_TOKEN = ''
 
         self.PINTHEON_NETWORK = 'testnet'
         self.PINTHEON_ACTIVE = False
@@ -1461,7 +1464,7 @@ class Metavinci(QMainWindow):
 
         self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon "+network_name)
         self.tray_pintheon_menu.setIcon(self.pintheon_icon)
-        self.tray_pintheon_menu.setEnabled(False)
+        # Visibility will be set based on hvym installation status below
 
         self.pintheon_settings_menu = self.tray_pintheon_menu.addMenu("Settings")
         self.pintheon_settings_menu.addAction(self.set_tunnel_token_action)
@@ -1486,18 +1489,22 @@ class Metavinci(QMainWindow):
         self.open_homepage_action.setVisible(False)
         self.open_tunnel_action.setVisible(False)
 
-        if not self.HVYM.is_file():
-            self.install_hvym_action.setVisible(True)
-            self.update_hvym_action.setVisible(False)
-        else:
-            self.install_hvym_action.setVisible(False)
-            self.update_hvym_action.setVisible(True)
-            self._refresh_pintheon_ui_state()
-
         self.tray_press_menu = self.tray_tools_menu.addMenu("Press")
         self.tray_press_menu.addAction(self.run_press_action)
 
-        self._refresh_press_ui_state()
+        if not self.HVYM.is_file():
+            self.install_hvym_action.setVisible(True)
+            self.update_hvym_action.setVisible(False)
+            self.tray_pintheon_menu.setVisible(False)
+            self.tray_press_menu.setVisible(False)
+            
+        else:
+            self.install_hvym_action.setVisible(False)
+            self.update_hvym_action.setVisible(True)
+            self.tray_pintheon_menu.setVisible(True)  # Show Pintheon menu when hvym is installed
+            self._refresh_pintheon_ui_state()
+
+        #self._refresh_press_ui_state()
 
         # if not self.ADDON_PATH.exists():
         #     tray_tools_update_menu.addAction(install_addon_action)
