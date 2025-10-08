@@ -901,39 +901,64 @@ def download_and_install_hvym_cli(dest_dir: str) -> str:
                 if not extract_archive(archive_path, tmpdir):
                     raise Exception("Failed to extract archive")
                 
-                # Find the binary in the extracted files
+                # Find the binary in the extracted files (flexible matching for architecture-specific names)
                 logger.info("Looking for binary in extracted files...")
                 system = platform.system().lower()
-                binary_name = 'hvym-linux' if system == 'linux' else 'hvym-macos' if system == 'darwin' else 'hvym-windows.exe' if system == 'windows' else 'hvym.exe'
                 
+                found_binary = None
                 for root, _, files in os.walk(tmpdir):
-                    if binary_name in files:
-                        binary_path = os.path.join(root, binary_name)
-                        logger.info(f"Found binary at: {binary_path}")
-                        
-                        # Set executable permissions
-                        os.chmod(binary_path, 0o755)
-                        
-                        # Create destination directory if it doesn't exist
-                        os.makedirs(dest_dir, exist_ok=True, mode=0o755)
-                        
-                        # Move binary to destination
-                        dest_path = os.path.join(dest_dir, binary_name)
-                        shutil.move(binary_path, dest_path)
-                        
-                        # Verify the binary works
-                        try:
-                            result = subprocess.run(
-                                [dest_path, 'version'],
-                                capture_output=True,
-                                text=True,
-                                timeout=20
-                            )
-                            logger.info(f"Binary version check: {result.stdout.strip()}")
-                            return dest_path
-                        except Exception as e:
-                            logger.error(f"Binary test failed: {e}")
-                            raise Exception(f"Downloaded binary is not working: {e}")
+                    for file in files:
+                        # Skip archive files themselves
+                        if file.endswith('.tar.gz') or file.endswith('.zip'):
+                            continue
+                        # Match any file starting with 'hvym' (handles hvym, hvym-macos, hvym-macos-arm64, etc.)
+                        if file.startswith('hvym') and not file.endswith('.exe.config'):
+                            file_path = os.path.join(root, file)
+                            # Verify it's a file and not a directory
+                            if os.path.isfile(file_path):
+                                found_binary = file_path
+                                logger.info(f"Found binary: {file} at {file_path}")
+                                break
+                    if found_binary:
+                        break
+                
+                if not found_binary:
+                    raise Exception(f"Could not find hvym binary in the downloaded archive")
+                
+                # Set executable permissions
+                os.chmod(found_binary, 0o755)
+                
+                # Create destination directory if it doesn't exist
+                os.makedirs(dest_dir, exist_ok=True, mode=0o755)
+                
+                # Move binary to destination (keep the original filename)
+                binary_filename = os.path.basename(found_binary)
+                dest_path = os.path.join(dest_dir, binary_filename)
+                shutil.move(found_binary, dest_path)
+                logger.info(f"Moved binary to: {dest_path}")
+                
+                # Remove macOS quarantine attribute if present
+                if system == 'darwin':
+                    try:
+                        subprocess.run(['xattr', '-d', 'com.apple.quarantine', dest_path],
+                                     capture_output=True, check=False)
+                        logger.info("Removed macOS quarantine attribute")
+                    except Exception as e:
+                        logger.debug(f"Could not remove quarantine attribute: {e}")
+                
+                # Verify the binary works
+                try:
+                    result = subprocess.run(
+                        [dest_path, 'version'],
+                        capture_output=True,
+                        text=True,
+                        timeout=20
+                    )
+                    logger.info(f"Binary version check: {result.stdout.strip()}")
+                    return dest_path
+                except Exception as e:
+                    logger.error(f"Binary test failed: {e}")
+                    raise Exception(f"Downloaded binary is not working: {e}")
                 
                 # If we get here, no binary was found
                 # Prepare error message with system information
