@@ -1456,7 +1456,7 @@ class Metavinci(QMainWindow):
 
         network_name = 'testnet'
         
-        if 'mainnet' in self.PINTHEON_NETWORK:
+        if self.PINTHEON_NETWORK and 'mainnet' in self.PINTHEON_NETWORK:
             network_name = 'mainnet'
 
         self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon "+network_name)
@@ -2739,7 +2739,7 @@ class Metavinci(QMainWindow):
         self.PINTHEON_NETWORK = self.hvym_get_pintheon_network()
         network_name = 'testnet'
         
-        if 'mainnet' in self.PINTHEON_NETWORK:
+        if self.PINTHEON_NETWORK and 'mainnet' in self.PINTHEON_NETWORK:
             network_name = 'mainnet'
         
         self.tray_pintheon_menu.setTitle("Pintheon "+network_name)
