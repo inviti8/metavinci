@@ -1285,8 +1285,6 @@ class Metavinci(QMainWindow):
             hide - hide window
             exit - exit from application
         '''
-        post_init_action = QAction(self.icon, "Initialize", self)
-        post_init_action.triggered.connect(self.init_post)
 
         stellar_new_account_action = QAction(self.add_icon, "New Account", self)
         stellar_new_account_action.triggered.connect(self.new_stellar_account)
@@ -1358,39 +1356,11 @@ class Metavinci(QMainWindow):
         self.update_addon_action = QAction(self.update_icon, "Update Blender Addon", self)
         self.update_addon_action.triggered.connect(self._update_blender_addon)
 
-        # install_didc_action = QAction(self.install_icon, "Install didc", self)
-        # install_didc_action.triggered.connect(self.hvym_install_didc)
-
         update_tools_action = QAction(self.update_icon, "Update All Tools", self)
         update_tools_action.triggered.connect(self.update_tools)
 
         quit_action = QAction("Exit", self)
         quit_action.triggered.connect(qApp.quit)
-
-        gen_keys_action = QAction("Generate Key Pair", self)
-        gen_keys_action.triggered.connect(self.generate_store_keypair)
-
-        import_keys_action = QAction("Import Key Pair", self)
-        import_keys_action.triggered.connect(self.import_keys)
-        
-        # Add a new actions for tasks
-        gen_keypair_action = QAction("Generate Keypair", self)
-        gen_keypair_action.triggered.connect(self.generate_store_keypair)
-
-        import_keypair_action = QAction("Import Keypair", self)
-        import_keypair_action.triggered.connect(self.import_keys)
-
-        gen_token_action = QAction("Generate Token", self)
-        gen_token_action.triggered.connect(self.generate_store_token)
-
-        start_daemon_action = QAction("Start Daemon", self)
-        start_daemon_action.triggered.connect(self.authorization_loop)
-
-        candid_js_action = QAction("Generate Candid Js Interface", self)
-        candid_js_action.triggered.connect(self.hvym_gen_candid_js)
-
-        candid_ts_action = QAction("Generate Candid Ts Interface", self)
-        candid_ts_action.triggered.connect(self.hvym_gen_candid_ts)
 
         test_action = QAction("TEST", self)
         test_action.triggered.connect(self.test_process)
@@ -1481,7 +1451,7 @@ class Metavinci(QMainWindow):
             self.tray_pintheon_menu.setVisible(True)
 
     def _setup_press_menu(self):
-        if self.PRESS.is_file():
+        if not hasattr(self, 'tray_press_menu') or self.tray_press_menu is None:
             self.tray_press_menu = self.tray_tools_menu.addMenu("Press")
             self.tray_press_menu.setIcon(self.press_icon)
             self.tray_press_menu.addAction(self.run_press_action)
@@ -2128,15 +2098,6 @@ class Metavinci(QMainWindow):
 
     def hvym_check(self):
         return self._subprocess_hvym([str(self.HVYM), 'check'])
-    
-    def hvym_install_didc(self):
-        return self._subprocess_hvym([str(self.HVYM), 'didc-install'])
-    
-    def hvym_gen_candid_js(self):
-        return self._subprocess_hvym([str(self.HVYM), 'didc-bind-js-popup'])
-    
-    def hvym_gen_candid_ts(self):
-        return self._subprocess_hvym([str(self.HVYM), 'didc-bind-ts-popup'])
     
     def hvym_setup_pintheon(self):
         return self._subprocess_hvym([str(self.HVYM), 'pintheon-setup'])
