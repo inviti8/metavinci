@@ -1428,7 +1428,7 @@ class Metavinci(QMainWindow):
         if self.PINTHEON_NETWORK and 'mainnet' in self.PINTHEON_NETWORK:
             network_name = 'mainnet'
 
-        if self.PINTHEON_INSTALLED:
+        if self.PINTHEON_INSTALLED and (not hasattr(self, 'tray_pintheon_menu') or self.tray_pintheon_menu is None):
             self.tray_pintheon_menu = self.tray_tools_menu.addMenu("Pintheon "+network_name)
             self.tray_pintheon_menu.setIcon(self.pintheon_icon)
 
