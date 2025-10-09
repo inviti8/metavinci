@@ -1479,6 +1479,13 @@ class Metavinci(QMainWindow):
             self.install_hvym_action.setVisible(False)
             self.update_hvym_action.setVisible(True)
             self.tray_pintheon_menu.setVisible(True)
+
+    def _setup_press_menu(self):
+        if self.PRESS.is_file():
+            self.tray_press_menu = self.tray_tools_menu.addMenu("Press")
+            self.tray_press_menu.setIcon(self.press_icon)
+            self.tray_press_menu.addAction(self.run_press_action)
+            self.tray_press_menu.setVisible(True)
         
 
     def _init_logging(self):
@@ -2006,26 +2013,70 @@ class Metavinci(QMainWindow):
                 print("Token authorization failed. Retrying in 10 seconds...")
             time.sleep(self.refresh_interval if authorized else 10)
 
-    def _subprocess(self, command, cwd=None):
+    def _subprocess(self, command, cwd=None, non_blocking=False, **kwargs):
+        """
+        Run a subprocess command.
+        
+        Args:
+            command: Command to run (string for shell, list for exec)
+            cwd: Working directory for the command
+            non_blocking: If True, run the process in the background
+            **kwargs: Additional arguments for subprocess.Popen
+            
+        Returns:
+            If non_blocking=True, returns the Popen object
+            If non_blocking=False, returns the command output or None on failure
+        """
         try:
             # Support both string (shell) and list (exec) command forms
-            if isinstance(command, (list, tuple)):
-                if hasattr(self, 'logger'):
-                    self.logger.info(f"RUN (exec): {command} | cwd={cwd}")
-                result = subprocess.run(list(command), capture_output=True, text=True, cwd=cwd, env=self.proc_env)
-                if hasattr(self, 'logger'):
-                    self.logger.info(f"RET={result.returncode}\nSTDOUT=\n{result.stdout}\nSTDERR=\n{result.stderr}")
-                if result.returncode == 0:
-                    return result.stdout
-                return None
+            is_list = isinstance(command, (list, tuple))
+            
+            if hasattr(self, 'logger'):
+                cmd_str = ' '.join(command) if is_list else command
+                self.logger.info(f"RUN (exec): {cmd_str} | cwd={cwd} | non_blocking={non_blocking}")
+            
+            if non_blocking:
+                # For non-blocking, use Popen and return the process object
+                if is_list:
+                    process = subprocess.Popen(
+                        command,
+                        cwd=cwd,
+                        env=self.proc_env,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        **kwargs
+                    )
+                else:
+                    process = subprocess.Popen(
+                        command,
+                        shell=True,
+                        cwd=cwd,
+                        env=self.proc_env,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        **kwargs
+                    )
+                # Store the process if needed for later management
+                if not hasattr(self, '_background_processes'):
+                    self._background_processes = []
+                self._background_processes.append(process)
+                return process
             else:
-                if hasattr(self, 'logger'):
-                    self.logger.info(f"RUN (shell): {command} | cwd={cwd}")
-                output = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT, cwd=cwd, env=self.proc_env)
-                text = output.decode('utf-8')
-                if hasattr(self, 'logger'):
-                    self.logger.info(f"RET=0\nSTDOUT=\n{text}")
-                return text
+                # Original blocking behavior
+                if is_list:
+                    result = subprocess.run(list(command), capture_output=True, text=True, cwd=cwd, env=self.proc_env, **kwargs)
+                    if hasattr(self, 'logger'):
+                        self.logger.info(f"RET={result.returncode}\nSTDOUT=\n{result.stdout}\nSTDERR=\n{result.stderr}")
+                    if result.returncode == 0:
+                        return result.stdout
+                    return None
+                else:
+                    output = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT, cwd=cwd, env=self.proc_env, **kwargs)
+                    text = output.decode('utf-8')
+                    if hasattr(self, 'logger'):
+                        self.logger.info(f"RET=0\nSTDOUT=\n{text}")
+                    return text
+                    
         except subprocess.CalledProcessError as e:
             try:
                 if hasattr(self, 'logger'):
@@ -2042,11 +2093,11 @@ class Metavinci(QMainWindow):
                 pass
             return None
         
-    def _subprocess_hvym(self, command):
+    def _subprocess_hvym(self, command, non_blocking=False):
         # Run hvym from its install directory to preserve any relative resource lookups
         hvym_path = Path(self.HVYM)
         cli_dir = str(hvym_path.parent)
-        return self._subprocess(command, cwd=cli_dir)
+        return self._subprocess(command, cwd=cli_dir, non_blocking=non_blocking)
     
     def _run(self, command):
         try:
@@ -2057,8 +2108,8 @@ class Metavinci(QMainWindow):
         except Exception as e:
             return None
         
-    def run_press(self):
-        self._subprocess([str(self.PRESS)])
+    def run_press(self, non_blocking=True):
+        return self._subprocess([str(self.PRESS)], non_blocking=non_blocking)
 
     def splash(self):
         return self._subprocess_hvym([str(self.HVYM), 'splash'])
@@ -2114,9 +2165,8 @@ class Metavinci(QMainWindow):
 
         # Update the menu action icons
         self.open_tunnel_action.setIcon(self.tunnel_icon)
-        # Hide start action, show stop action
-        # self.open_tunnel_action.setVisible(False)
-        return self._subprocess_hvym([str(self.HVYM), 'pintheon-tunnel-open'])
+
+        return self._subprocess_hvym([str(self.HVYM), 'pintheon-tunnel-open'], non_blocking=True)
     
     def hvym_set_tunnel_token(self):
         return self._subprocess_hvym([str(self.HVYM), 'pinggy-set-token'])
@@ -2614,6 +2664,7 @@ class Metavinci(QMainWindow):
     def _refresh_press_ui_state(self):
         """Refresh press-related UI elements based on installation status."""
         if self.PRESS.is_file():
+            self._setup_press_menu()
             # Only show press installation if hvym_press is supported on current architecture
             if self.platform_manager.is_hvym_press_supported():
                 self.tray_press_menu.setEnabled(True)
