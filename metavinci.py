@@ -1300,33 +1300,6 @@ class Metavinci(QMainWindow):
         stellar_testnet_account_action = QAction(self.add_icon, "Testnet Account", self)
         stellar_testnet_account_action.triggered.connect(self.new_stellar_testnet_account)
 
-        icp_principal_action = QAction(self.ic_icon, "Get Principal", self)
-        icp_principal_action.triggered.connect(self.get_ic_principal)
-
-        icp_new_account_action = QAction(self.add_icon, "New Account", self)
-        icp_new_account_action.triggered.connect(self.new_ic_account)
-
-        icp_new_test_account_action = QAction(self.test_icon, "New Test Account", self)
-        icp_new_test_account_action.triggered.connect(self.new_ic_test_account)
-
-        icp_change_account_action = QAction(self.select_icon, "Change Account", self)
-        icp_change_account_action.triggered.connect(self.change_ic_account)
-
-        icp_remove_account_action = QAction(self.remove_icon, "Remove Account", self)
-        icp_remove_account_action.triggered.connect(self.remove_ic_account)
-
-        icp_balance_action = QAction("ICP Balance", self)
-        icp_balance_action.triggered.connect(self.get_icp_balance)
-
-        oro_balance_action = QAction("ORO Balance", self)
-        oro_balance_action.triggered.connect(self.get_oro_balance)
-
-        ckETH_balance_action = QAction("ckETH Balance", self)
-        ckETH_balance_action.triggered.connect(self.get_ckETH_balance)
-
-        ckBTC_balance_action = QAction("ckBTC Balance", self)
-        ckBTC_balance_action.triggered.connect(self.get_ckBTC_balance)
-
         self.install_hvym_action = QAction(self.install_icon, "Install hvym", self)
         self.install_hvym_action.triggered.connect(self._install_hvym)
 
@@ -1956,78 +1929,6 @@ class Metavinci(QMainWindow):
             print(e)
             self.open_msg_dialog("Error importing app keypair.")
 
-    def get_icp_balance(self):
-        icp_canister_id = "ryjl3-tyaaa-aaaaa-aaaba-cai"
-
-        command = f'dfx canister call {icp_canister_id} icrc1_balance_of "(record {{ owner = principal \\"{self.user_pid}\\" }})" --ic'
-        try:
-            balance = self._subprocess(command)
-            
-            # Extract the numeric part from the returned string using a regular expression
-            match = re.search(r'\(([\d_]+) : nat\)', balance)
-            if match:
-                numeric_balance = int(match.group(1).replace('_', ''))  # 
-                self.open_msg_dialog(f"ICP Balance: {numeric_balance}")
-            else:
-                self.open_msg_dialog("Invalid balance format returned.")
-        except Exception as e:
-            print(e)
-            self.open_msg_dialog("Error fetching ICP balance.")
-
-    def get_oro_balance(self):
-        oro_canister_id = "ryjl3-tyaaa-aaaaa-aaaba-cai" # currently set to ICP canister id
-
-        command = f'dfx canister call {oro_canister_id} icrc1_balance_of "(record {{ owner = principal \\"{self.user_pid}\\" }})" --ic'
-        try:
-            balance = self._subprocess(command)
-            
-            # Extract the numeric part from the returned string using a regular expression
-            match = re.search(r'\(([\d_]+) : nat\)', balance)
-            if match:
-                numeric_balance = int(match.group(1).replace('_', '' ) )  # 
-                self.open_msg_dialog(f"ORO Balance: {numeric_balance}")
-            else:
-                self.open_msg_dialog("Invalid balance format returned.")
-        except Exception as e:
-            print(e)
-            self.open_msg_dialog("Error fetching ORO balance.")
-
-    def get_ckETH_balance(self):
-        ckETH_canister_id = "ss2fx-dyaaa-aaaar-qacoq-cai"
-
-        command = f'dfx canister call {ckETH_canister_id} icrc1_balance_of "(record {{ owner = principal \\"{self.user_pid}\\" }})" --ic'
-        try:
-            balance = self._subprocess(command)
-            
-            # Extract the numeric part from the returned string using a regular expression
-            match = re.search(r'\(([\d_]+) : nat\)', balance)
-            if match:
-                numeric_balance = int(match.group(1).replace('_', '' ) )  # 
-                self.open_msg_dialog(f"ckETH Balance: {numeric_balance}")
-            else:
-                self.open_msg_dialog("Invalid balance format returned.")
-        except Exception as e:
-            print(e)
-            self.open_msg_dialog("Error fetching ckETH balance.")
-
-    def get_ckBTC_balance(self):
-        ckBTC_canister_id = "mxzaz-hqaaa-aaaar-qaada-cai"
-
-        command = f'dfx canister call {ckBTC_canister_id} icrc1_balance_of "(record {{ owner = principal \\"{self.user_pid}\\" }})" --ic'
-        try:
-            balance = self._subprocess(command)
-            
-            # Extract the numeric part from the returned string using a regular expression
-            match = re.search(r'\(([\d_]+) : nat\)', balance)
-            if match:
-                numeric_balance = int(match.group(1).replace('_', '' ) )  # 
-                self.open_msg_dialog(f"ckBTC Balance: {numeric_balance}")
-            else:
-                self.open_msg_dialog("Invalid balance format returned.")
-        except Exception as e:
-            print(e)
-            self.open_msg_dialog("Error fetching ckBTC balance.")
-
     def generate_store_token(self):
         try:
             builder = BiscuitBuilder()
@@ -2173,21 +2074,6 @@ class Metavinci(QMainWindow):
     
     def new_stellar_testnet_account(self):
         return self._subprocess_hvym([str(self.HVYM), 'stellar-new-testnet-account'])
-
-    def new_ic_account(self):
-        return self._subprocess_hvym([str(self.HVYM), 'icp-new-account'])
-
-    def new_ic_test_account(self):
-        return self._subprocess_hvym([str(self.HVYM), 'icp-new-test-account'])
-
-    def change_ic_account(self):
-        return self._subprocess_hvym([str(self.HVYM), 'icp-set-account'])
-
-    def remove_ic_account(self):
-        return self._subprocess_hvym([str(self.HVYM), 'icp-remove-account'])
-    
-    def get_ic_principal(self):
-        return self._subprocess_hvym([str(self.HVYM), 'icp-active-principal'])
 
     def hvym_check(self):
         return self._subprocess_hvym([str(self.HVYM), 'check'])
