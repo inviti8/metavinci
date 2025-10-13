@@ -2600,24 +2600,26 @@ class Metavinci(QMainWindow):
                 if self.PINTHEON_NETWORK and 'mainnet' in self.PINTHEON_NETWORK:
                     network_name = 'mainnet'
                 
-                self.tray_pintheon_menu.setTitle("Pintheon "+network_name)
+                # Only try to update the menu if it exists
+                if hasattr(self, 'tray_pintheon_menu') and self.tray_pintheon_menu is not None:
+                    self.tray_pintheon_menu.setTitle("Pintheon "+network_name)
 
-                t = self.INSTALL_STATS['pinggy_tier']
-                tier = 'free'
-                if 'free' in t:
-                    tier = 'pro'
+                    t = self.INSTALL_STATS['pinggy_tier']
+                    tier = 'free'
+                    if 'free' in t:
+                        tier = 'pro'
 
-                self.tray_pintheon_menu.setEnabled(True)
-                self.pintheon_settings_menu.setEnabled(True)
-                self.pintheon_interface_menu.setEnabled(True)
-                self.set_tunnel_token_action.setVisible(True)
-                self.set_tunnel_tier_action.setVisible(True)
-                self.set_tunnel_tier_action.setText(f'Set Tunnel Tier to: {tier}')
-                self.install_pintheon_action.setVisible(False)      
-                self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
-                self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
-                self.open_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
-                self.open_homepage_action.setVisible(self.PINTHEON_ACTIVE)
+                    self.tray_pintheon_menu.setEnabled(True)
+                    self.pintheon_settings_menu.setEnabled(True)
+                    self.pintheon_interface_menu.setEnabled(True)
+                    self.set_tunnel_token_action.setVisible(True)
+                    self.set_tunnel_tier_action.setVisible(True)
+                    self.set_tunnel_tier_action.setText(f'Set Tunnel Tier to: {tier}')
+                    self.install_pintheon_action.setVisible(False)      
+                    self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
+                    self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
+                    self.open_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
+                    self.open_homepage_action.setVisible(self.PINTHEON_ACTIVE)
                 self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE and len(self.TUNNEL_TOKEN) >= 7)
             else:
                 self.install_pintheon_action.setVisible(True)
