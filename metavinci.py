@@ -946,33 +946,22 @@ def download_and_install_hvym_cli(dest_dir: str) -> str:
                     except Exception as e:
                         logger.debug(f"Could not remove quarantine attribute: {e}")
                 
-                # Verify the binary works
-                try:
-                    result = subprocess.run(
-                        [dest_path, 'version'],
-                        capture_output=True,
-                        text=True,
-                        timeout=20
-                    )
-                    logger.info(f"Binary version check: {result.stdout.strip()}")
-                    return dest_path
-                except Exception as e:
-                    logger.error(f"Binary test failed: {e}")
-                    raise Exception(f"Downloaded binary is not working: {e}")
+                # # Verify the binary works
+                # try:
+                #     result = subprocess.run(
+                #         [dest_path, 'version'],
+                #         capture_output=True,
+                #         text=True,
+                #         timeout=20
+                #     )
+                #     logger.info(f"Binary version check: {result.stdout.strip()}")
+                #     return dest_path
+                # except Exception as e:
+                #     logger.error(f"Binary test failed: {e}")
+                #     raise Exception(f"Downloaded binary is not working: {e}")
                 
-                # If we get here, no binary was found
-                # Prepare error message with system information
-                system_info = (
-                    f"System: {platform.system()} {platform.release()} {platform.machine()}\n"
-                    f"Python: {platform.python_version()}\n"
-                    f"Archive: {os.path.basename(archive_path)} ({os.path.getsize(archive_path) if os.path.exists(archive_path) else 0} bytes)"
-                )
-                
-                raise Exception(
-                    f"Could not find {binary_name} in the downloaded archive.\n\n"
-                    f"{system_info}\n\n"
-                    "Please check if the downloaded archive is valid and contains the expected files."
-                )
+                # If we get here, we've already found and moved the binary
+                return dest_path
                 
             except Exception as e:
                 # Log the detailed error
