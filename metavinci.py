@@ -1210,15 +1210,15 @@ class Metavinci(QMainWindow):
         self.TUNNEL_TOKEN = ''
 
         # Only check Docker and Pintheon status if hvym is installed
-        if self.HVYM.is_file():
-            self.INSTALL_STATS = self.hvym_install_stats()
-            self.DOCKER_INSTALLED = self.INSTALL_STATS['docker_installed']
-            self.PINTHEON_INSTALLED = self.INSTALL_STATS['pintheon_image_exists']
-            self.TUNNEL_TOKEN = self.INSTALL_STATS['pinggy_token']
-        else:
-            self.DOCKER_INSTALLED = False
-            self.PINTHEON_INSTALLED = False
-            self.TUNNEL_TOKEN = ''
+        # if self.HVYM.is_file():
+        #     self.INSTALL_STATS = self.hvym_install_stats()
+        #     self.DOCKER_INSTALLED = self.INSTALL_STATS['docker_installed']
+        #     self.PINTHEON_INSTALLED = self.INSTALL_STATS['pintheon_image_exists']
+        #     self.TUNNEL_TOKEN = self.INSTALL_STATS['pinggy_token']
+        # else:
+        #     self.DOCKER_INSTALLED = False
+        #     self.PINTHEON_INSTALLED = False
+        #     self.TUNNEL_TOKEN = ''
 
         self.PINTHEON_NETWORK = 'testnet'
         self.PINTHEON_ACTIVE = False
