@@ -33,7 +33,7 @@ Usage Example:
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QLineEdit, QWidgetAction, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QComboBox, QDialogButtonBox, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp, QVBoxLayout, QPushButton, QDialog, QDesktopWidget, QFileDialog, QMessageBox, QSplashScreen
 from PyQt5.QtCore import Qt, QSize, QTimer, QByteArray, QThread, pyqtSignal, QCoreApplication
 from PyQt5.QtGui import QMovie
-from PyQt5.QtGui import QIcon, QPixmap, QImageReader
+from PyQt5.QtGui import QIcon, QPixmap, QImageReader, QPalette
 from pathlib import Path
 import subprocess
 import os
@@ -433,8 +433,40 @@ class AnimatedLoadingWindow(QSplashScreen):
         self.move(x, y)
     
     def update_text(self, text):
-        """Update the loading text."""
+        """Update the loading text and ensure it fits properly on screen."""
+        # Set text color and background
+        palette = QPalette()
+        palette.setColor(QPalette.WindowText, Qt.white)
+        palette.setColor(QPalette.Window, Qt.black)
+        self.setPalette(palette)
+        
+        # Update the message with the new palette
         self.showMessage(text, Qt.AlignBottom | Qt.AlignCenter, Qt.white)
+        
+        # Ensure the window is wide enough for the text
+        if hasattr(self, 'movie') and self.movie.state() == QMovie.Running:
+            # Get the current pixmap size
+            current_pixmap = self.movie.currentPixmap()
+            if not current_pixmap.isNull():
+                # Calculate required width for the text
+                font_metrics = self.fontMetrics()
+                text_width = font_metrics.horizontalAdvance(text) + 20  # Add padding
+                
+                # Get the current size
+                current_size = current_pixmap.size()
+                
+                # Set new width to be the maximum of text width and image width
+                new_width = max(text_width, current_size.width())
+                
+                # Add extra height for the text if needed
+                text_height = font_metrics.height() * (text.count('\n') + 1) + 20
+                new_height = current_size.height() + text_height
+                
+                # Resize the window
+                self.setFixedSize(new_width, new_height)
+                
+                # Re-center the window
+                self._center_on_screen()
     
     # Backward compatibility methods
     def start_animation(self):
