@@ -1197,17 +1197,20 @@ class Metavinci(QMainWindow):
         self.DOCKER_INSTALLED = False
         self.PINTHEON_INSTALLED = False
         self.TUNNEL_TOKEN = ''
+        self.DOCKER_INSTALLED = False
+        self.PINTHEON_INSTALLED = False
+        self.TUNNEL_TOKEN = ''
 
         # Only check Docker and Pintheon status if hvym is installed
-        if self.HVYM.is_file():
-            self.INSTALL_STATS = self.hvym_install_stats()
-            self.DOCKER_INSTALLED = self.INSTALL_STATS['docker_installed']
-            self.PINTHEON_INSTALLED = self.INSTALL_STATS['pintheon_image_exists']
-            self.TUNNEL_TOKEN = self.INSTALL_STATS['pinggy_token']
-        else:
-            self.DOCKER_INSTALLED = False
-            self.PINTHEON_INSTALLED = False
-            self.TUNNEL_TOKEN = ''
+        # if self.HVYM.is_file():
+        #     self.INSTALL_STATS = self.hvym_install_stats()
+        #     self.DOCKER_INSTALLED = self.INSTALL_STATS['docker_installed']
+        #     self.PINTHEON_INSTALLED = self.INSTALL_STATS['pintheon_image_exists']
+        #     self.TUNNEL_TOKEN = self.INSTALL_STATS['pinggy_token']
+        # else:
+        #     self.DOCKER_INSTALLED = False
+        #     self.PINTHEON_INSTALLED = False
+        #     self.TUNNEL_TOKEN = ''
 
         self.PINTHEON_NETWORK = 'testnet'
         self.PINTHEON_ACTIVE = False
@@ -1410,6 +1413,17 @@ class Metavinci(QMainWindow):
         if splash is not None:
             splash.close()
         self.hide()
+
+    def _update_install_stats(self):
+        if self.HVYM.is_file():
+            self.INSTALL_STATS = self.hvym_install_stats()
+            self.DOCKER_INSTALLED = self.INSTALL_STATS['docker_installed']
+            self.PINTHEON_INSTALLED = self.INSTALL_STATS['pintheon_image_exists']
+            self.TUNNEL_TOKEN = self.INSTALL_STATS['pinggy_token']
+        else:
+            self.DOCKER_INSTALLED = False
+            self.PINTHEON_INSTALLED = False
+            self.TUNNEL_TOKEN = ''
 
     def _setup_pintheon_menu(self):  
         network_name = 'testnet'
@@ -2574,7 +2588,7 @@ class Metavinci(QMainWindow):
         
     def _refresh_pintheon_ui_state(self):
         self._setup_pintheon_menu()
-        self.INSTALL_STATS = self.hvym_install_stats()
+        self._update_install_stats()
         self.PINTHEON_NETWORK = self.INSTALL_STATS['pintheon_network']
         
         if self.DOCKER_INSTALLED == True:
