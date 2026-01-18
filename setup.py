@@ -42,20 +42,8 @@ shortcut_table = [
     ),
 ]
 
-# Extended property table with richer metadata for better Windows integration
-property_table = [
-    ("ARPCOMMENTS", "Metavinci Desktop Application by HEAVYMETA"),
-    ("ARPCONTACT", "metavinci@heavymeta.art"),
-    ("ARPHELPLINK", "https://github.com/inviti8/metavinci"),
-    ("ARPURLINFOABOUT", "https://heavymeta.io"),
-    ("ARPURLUPDATEINFO", "https://github.com/inviti8/metavinci/releases"),
-    ("MANUFACTURER", "HEAVYMETA"),
-    ("ARPPRODUCTICON", "metavinci_desktop.ico"),
-]
-
 msi_data = {
     "Shortcut": shortcut_table,
-    "Property": property_table,
 }
 
 setup(
@@ -63,7 +51,8 @@ setup(
     version=version,
     description="Metavinci Desktop Application",
     author=publisher,
-    author_email="support@heavymeta.io",
+    author_email="metavinci@heavymeta.art",
+    url="https://heavymeta.io",
     executables=executables,
     options={
         "build_exe": {
