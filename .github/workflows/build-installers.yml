@@ -6,6 +6,12 @@ on:
       - 'v0.[0-9][0-9]*'   # v0.00, v0.01, v0.02, etc.
       - '*installers*'     # Any tag containing 'installers'
   workflow_dispatch:
+    inputs:
+      skip-notarize:
+        description: 'Skip macOS notarization (app will still be installable via right-click → Open)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -546,6 +552,7 @@ jobs:
           hdiutil detach "$MOUNT_POINT"
 
       - name: Notarize DMG with Apple ID (notarytool)
+        if: ${{ inputs.skip-notarize != true }}
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -590,6 +597,7 @@ jobs:
           fi
 
       - name: Staple notarization ticket to DMG
+        if: ${{ inputs.skip-notarize != true }}
         run: |
           set -eo pipefail
           ARCH="${{ matrix.arch }}"
