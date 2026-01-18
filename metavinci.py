@@ -1,7 +1,7 @@
 """
 Metavinci - Network Daemon for Heavymeta
 
-This application now supports threaded loading windows for better performance.
+This application supports threaded loading windows for better performance.
 The loading windows run in background threads to keep the UI responsive during
 long-running operations.
 
@@ -10,27 +10,20 @@ Threading Features:
 - threaded_loading_window(): Creates loading window with background work
 - threaded_animated_loading_window(): Creates animated loading window with background work
 - Custom workers for specific operations:
-  * HvymInstallWorker: For hvym CLI installation
-  * PintheonInstallWorker: For Pintheon installation
-  * PressInstallWorker: For Press installation
+  * PintheonSetupWorker: For Pintheon Docker setup
+  * PressInstallWorker: For hvym_press installation
 
 Usage Example:
     # For simple operations
     loading_window, worker = self.threaded_loading_window('Loading...', my_work_function, arg1, arg2)
-    
-    # For animated operations  
+
+    # For animated operations
     animated_window, worker = self.threaded_animated_loading_window('Loading...', my_work_function, gif_path, arg1, arg2)
-    
-    # For custom operations
-    worker = HvymInstallWorker(self.HVYM)
-    loading_window = LoadingWindow(self, 'Installing...')
-    worker.success.connect(lambda msg: self._on_success(loading_window, worker, msg))
-    worker.start()
-    
+
     # The windows and workers are automatically cleaned up when work completes
 """
 
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QLineEdit, QWidgetAction, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QComboBox, QDialogButtonBox, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp, QVBoxLayout, QPushButton, QDialog, QDesktopWidget, QFileDialog, QMessageBox, QSplashScreen
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QLineEdit, QWidgetAction, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QComboBox, QDialogButtonBox, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp, QVBoxLayout, QPushButton, QDialog, QDesktopWidget, QFileDialog, QMessageBox, QSplashScreen, QPlainTextEdit, QScrollBar, QInputDialog
 from PyQt5.QtCore import Qt, QSize, QTimer, QByteArray, QThread, pyqtSignal, QCoreApplication
 from PyQt5.QtGui import QMovie
 from PyQt5.QtGui import QIcon, QPixmap, QImageReader, QPalette
@@ -79,6 +72,17 @@ try:
 except ImportError:
     HAS_PATOOL = False
 
+try:
+    from stellar_sdk import Keypair as StellarKeypair
+    from hvym_stellar import Stellar25519KeyPair
+    HAS_STELLAR_SDK = True
+except ImportError:
+    HAS_STELLAR_SDK = False
+    StellarKeypair = None
+    Stellar25519KeyPair = None
+
+import hashlib
+
 # Constants
 EXTRACT_RETRY_ATTEMPTS = 2
 EXTRACT_RETRY_DELAY = 1  # seconds
@@ -121,128 +125,322 @@ class LoadingWorker(QThread):
             self.error.emit(str(e))
 
 
-class HvymInstallWorker(LoadingWorker):
-    """Custom worker for hvym installation."""
-    
-    def __init__(self, hvym_path):
-        super().__init__(self._install_hvym_worker)
-        self.hvym_path = hvym_path
-    
-    def _install_hvym_worker(self):
-        """Worker function for installing hvym in background thread."""
+class PintheonSetupWorker(QThread):
+    """
+    Worker that directly handles Pintheon setup without CLI dependency.
+    Installs Pinggy, pulls Docker image, and creates container with streaming output.
+    """
+    output_line = pyqtSignal(str)
+    finished = pyqtSignal()
+    error = pyqtSignal(str)
+    success = pyqtSignal(str)
+
+    # Pintheon configuration
+    PINTHEON_VERSION = 'latest'
+    PINTHEON_PORT = 9998
+    PINTHEON_NETWORK = 'testnet'
+    PINGGY_VERSION = 'v0.2.2'
+
+    def __init__(self):
+        super().__init__()
+        self._stop_requested = False
+
+    def _get_pintheon_dapp_name(self):
+        """Get architecture-specific Pintheon Docker image name."""
+        machine = platform.machine().lower()
+
+        # Normalize architecture
+        if machine in ('x86_64', 'amd64', 'intel64', 'i386', 'i686'):
+            arch = 'linux-amd64'
+        elif machine in ('aarch64', 'arm64', 'armv8', 'armv7l', 'arm'):
+            arch = 'linux-arm64'
+        else:
+            arch = f'linux-{machine}'
+
+        return f'pintheon-{self.PINTHEON_NETWORK}-{arch}'
+
+    def _get_pinggy_paths(self):
+        """Get platform-specific Pinggy paths."""
+        home = Path.home()
+        system = platform.system().lower()
+        if system == 'windows':
+            pinggy_dir = home / 'AppData' / 'Local' / 'pinggy'
+            pinggy_path = pinggy_dir / 'pinggy.exe'
+        elif system == 'darwin':
+            pinggy_dir = home / '.local' / 'share' / 'pinggy'
+            pinggy_path = pinggy_dir / 'pinggy'
+        else:  # Linux
+            pinggy_dir = home / '.local' / 'share' / 'pinggy'
+            pinggy_path = pinggy_dir / 'pinggy'
+        return pinggy_dir, pinggy_path
+
+    def _get_pinggy_download_url(self):
+        """Get platform-specific Pinggy download URL."""
+        system = platform.system().lower()
+        machine = platform.machine().lower()
+
+        # Determine architecture
+        if machine in ('x86_64', 'amd64'):
+            arch = 'amd64'
+        elif machine in ('arm64', 'aarch64'):
+            arch = 'arm64'
+        elif machine in ('i386', 'i686', 'x86'):
+            arch = '386'
+        else:
+            arch = 'amd64'  # Default fallback
+
+        base_url = f"https://s3.ap-south-1.amazonaws.com/public.pinggy.binaries/cli/{self.PINGGY_VERSION}"
+
+        if system == 'windows':
+            return f"{base_url}/windows/{arch}/pinggy.exe"
+        elif system == 'darwin':
+            return f"{base_url}/darwin/{arch}/pinggy"
+        else:  # Linux
+            return f"{base_url}/linux/{arch}/pinggy"
+
+    def _get_docker_volume_path(self, local_path):
+        """Get cross-platform Docker volume path."""
+        system = platform.system().lower()
+        path_str = str(local_path)
+
+        if system == 'windows':
+            # Convert Windows path to Docker-compatible format
+            # C:\Users\... -> /c/Users/...
+            if len(path_str) >= 2 and path_str[1] == ':':
+                drive = path_str[0].lower()
+                rest = path_str[2:].replace('\\', '/')
+                return f"/{drive}{rest}"
+        return path_str
+
+    def _check_docker_installed(self):
+        """Check if Docker is installed and running."""
         try:
-            bin_dir = os.path.dirname(str(self.hvym_path))
-            if not os.path.exists(bin_dir):
-                os.makedirs(bin_dir, exist_ok=True)
-            hvym_path = download_and_install_hvym_cli(bin_dir)
-            print(f"hvym installed at {hvym_path}")
-            
-            # Emit success signal with message
-            self.success.emit(f"hvym installed at {hvym_path}")
-            
-        except Exception as e:
-            print(e)
-            # Emit error signal
-            self.error.emit(f"Error installing hvym: {e}")
+            result = subprocess.run(
+                ['docker', '--version'],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            return 'Docker version' in result.stdout
+        except Exception:
+            return False
 
-
-class PintheonInstallWorker(LoadingWorker):
-    """Custom worker for Pintheon installation."""
-    
-    def __init__(self, hvym_path):
-        super().__init__(self._install_pintheon_worker)
-        self.hvym_path = hvym_path
-    
-    def _install_pintheon_worker(self):
-        """Worker function for installing Pintheon in background thread."""
+    def _docker_container_exists(self, name):
+        """Check if a Docker container with the given name exists."""
         try:
-            # Prepare environment with certifi-backed CA bundle for hvym's requests
-            import certifi
-            env = os.environ.copy()
-            env["REQUESTS_CA_BUNDLE"] = certifi.where()
+            result = subprocess.run(
+                ['docker', 'ps', '-a', '--filter', f'name=^{name}$', '--format', '{{{{.Names}}}}'],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            return result.stdout.strip() == name
+        except Exception:
+            return False
 
-            # Align PATH and Docker environment with main app behavior (important for macOS Finder launches)
-            if platform.system().lower() == 'darwin':
-                default_paths = [
-                    '/usr/local/bin',
-                    '/opt/homebrew/bin',
-                    '/usr/bin', '/bin', '/usr/sbin', '/sbin',
-                    '/Applications/Docker.app/Contents/Resources/bin'
-                ]
-                current_path_parts = env.get('PATH', '').split(':') if env.get('PATH') else []
-                for p in default_paths:
-                    if p not in current_path_parts:
-                        current_path_parts.append(p)
-                env['PATH'] = ':'.join(current_path_parts)
+    def _docker_image_exists(self, image_name):
+        """Check if a Docker image exists locally."""
+        try:
+            result = subprocess.run(
+                ['docker', 'images', '-q', image_name],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            return bool(result.stdout.strip())
+        except Exception:
+            return False
 
-                # Locale
-                env.setdefault('LC_ALL', 'en_US.UTF-8')
-                env.setdefault('LANG', 'en_US.UTF-8')
+    def _run_docker_command_streaming(self, command, description):
+        """Run a Docker command and stream its output."""
+        self.output_line.emit(f"\n{description}...")
+        self.output_line.emit(f"$ {' '.join(command)}")
 
-                # Prefer user's Docker Desktop socket if present
+        try:
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                bufsize=0,
+                cwd=str(Path.home()),
+                creationflags=subprocess.CREATE_NO_WINDOW if platform.system().lower() == 'windows' else 0
+            )
+
+            while not self._stop_requested:
+                line = process.stdout.readline()
+                if not line:
+                    break
                 try:
-                    docker_sock_home = Path.home() / '.docker' / 'run' / 'docker.sock'
-                    default_sock = Path('/var/run/docker.sock')
-                    if 'DOCKER_HOST' not in env and docker_sock_home.exists() and not default_sock.exists():
-                        env['DOCKER_HOST'] = f'unix://{docker_sock_home}'
+                    decoded = line.decode('utf-8', errors='replace').rstrip()
                 except Exception:
-                    pass
+                    decoded = str(line).rstrip()
+                if decoded:
+                    self.output_line.emit(decoded)
 
-            # Ensure PyInstaller runtime can create its temp directories (fixes PYI-16001/16006)
-            try:
-                # Use a temp directory without spaces to avoid PyInstaller issues on macOS
-                tmp_base = Path.home() / '.metavinci_tmp'
-                tmp_base.mkdir(parents=True, exist_ok=True)
-                env['TMPDIR'] = str(tmp_base)
-                env['TEMP'] = str(tmp_base)
-                env['TMP'] = str(tmp_base)
-            except Exception:
-                pass
+            process.wait()
+            return process.returncode == 0
 
-            # Always run from user's HOME to keep Docker bind paths stable on macOS
-            home_dir = str(Path.home())
+        except Exception as e:
+            self.output_line.emit(f"Error: {e}")
+            return False
 
-            # Run the hvym pintheon setup command (list-form, no shell) to handle spaces in path
-            setup_cmd = [str(self.hvym_path), 'pintheon-setup']
-            result = subprocess.run(setup_cmd, capture_output=True, text=True, cwd=home_dir, env=env)
+    def run(self):
+        """Execute the Pintheon setup process."""
+        try:
+            self.output_line.emit("=" * 50)
+            self.output_line.emit("Starting Pintheon Setup")
+            self.output_line.emit("=" * 50)
 
-            if result.returncode == 0:
-                # On macOS, remove quarantine from Pinggy binary if present
-                if platform.system().lower() == 'darwin':
+            # Step 1: Check Docker
+            self.output_line.emit("\n[1/4] Checking Docker installation...")
+            if not self._check_docker_installed():
+                self.error.emit("Docker is not installed. Please install Docker first.")
+                self.finished.emit()
+                return
+            self.output_line.emit("Docker is installed ✓")
+
+            # Step 2: Install Pinggy
+            self.output_line.emit("\n[2/4] Installing Pinggy...")
+            if not self._install_pinggy():
+                self.error.emit("Failed to install Pinggy")
+                self.finished.emit()
+                return
+
+            # Step 3: Pull Docker image
+            self.output_line.emit("\n[3/4] Pulling Pintheon Docker image...")
+            image_name = f"metavinci/{self._get_pintheon_dapp_name()}:{self.PINTHEON_VERSION}"
+            pull_command = ['docker', 'pull', image_name]
+
+            if not self._run_docker_command_streaming(pull_command, f"Pulling {image_name}"):
+                self.error.emit(f"Failed to pull Docker image: {image_name}")
+                self.finished.emit()
+                return
+            self.output_line.emit("Docker image pulled successfully ✓")
+
+            # Step 4: Create container
+            self.output_line.emit("\n[4/4] Creating Pintheon container...")
+            if self._docker_container_exists('pintheon'):
+                self.output_line.emit("Container 'pintheon' already exists, skipping creation")
+            else:
+                if not self._create_pintheon_container():
+                    self.error.emit("Failed to create Pintheon container")
+                    self.finished.emit()
+                    return
+                self.output_line.emit("Container created successfully ✓")
+
+            # Step 5: Update hosts file
+            self.output_line.emit("\n[5/5] Updating hosts file...")
+            if ensure_hosts_entry('local.pintheon.com'):
+                self.output_line.emit("Hosts file updated ✓")
+            else:
+                self.output_line.emit("Warning: Could not update hosts file automatically")
+                self.output_line.emit("You may need to add '127.0.0.1 local.pintheon.com' manually")
+
+            # Remove macOS quarantine from Pinggy if needed
+            if platform.system().lower() == 'darwin':
+                _, pinggy_path = self._get_pinggy_paths()
+                if pinggy_path.exists():
                     try:
-                        pinggy_path = Path.home() / '.local' / 'share' / 'pinggy' / 'pinggy'
-                        if pinggy_path.exists():
-                            subprocess.run(['xattr', '-d', 'com.apple.quarantine', str(pinggy_path)],
-                                           capture_output=True, check=False)
+                        subprocess.run(
+                            ['xattr', '-d', 'com.apple.quarantine', str(pinggy_path)],
+                            capture_output=True,
+                            check=False
+                        )
                     except Exception:
                         pass
 
-                # Update hosts file with local.pintheon.com entry
-                self.progress.emit("Updating hosts file...")
-                if not ensure_hosts_entry('local.pintheon.com'):
-                    logging.warning("Failed to update hosts file. You may need to add '127.0.0.1 local.pintheon.com' manually.")
-                    self.progress.emit("Warning: Could not update hosts file. Some features may not work.")
-                else:
-                    logging.info("Successfully updated hosts file with local.pintheon.com entry")
-                    self.progress.emit("Hosts file updated successfully")
+            self.output_line.emit("\n" + "=" * 50)
+            self.output_line.emit("Pintheon setup completed successfully!")
+            self.output_line.emit("=" * 50)
 
-                # Verify Pintheon image exists
-                check_cmd = [str(self.hvym_path), 'pintheon-image-exists']
-                check_result = subprocess.run(check_cmd, capture_output=True, text=True, cwd=home_dir, env=env)
+            self.success.emit("Pintheon installed successfully")
+            self.finished.emit()
 
-                if check_result.returncode == 0 and check_result.stdout.strip() == 'True':
-                    self.success.emit("Pintheon installed successfully")
-                else:
-                    detail = check_result.stderr.strip() or check_result.stdout.strip()
-                    self.error.emit(f"Pintheon installation completed but verification failed: {detail}")
-            else:
-                detail = result.stderr.strip() or result.stdout.strip()
-                self.error.emit(f"Pintheon installation failed: {detail}")
-            
         except Exception as e:
-            print(e)
-            # Emit error signal
-            self.error.emit(f"Error installing Pintheon: {e}")
+            logging.error(f"PintheonSetupWorker error: {e}", exc_info=True)
+            self.error.emit(str(e))
+            self.finished.emit()
+
+    def _install_pinggy(self):
+        """Download and install Pinggy."""
+        try:
+            pinggy_dir, pinggy_path = self._get_pinggy_paths()
+
+            # Check if already installed
+            if pinggy_path.exists():
+                self.output_line.emit(f"Pinggy already installed at {pinggy_path}")
+                return True
+
+            # Get download URL
+            download_url = self._get_pinggy_download_url()
+            self.output_line.emit(f"Downloading Pinggy from: {download_url}")
+
+            # Download
+            response = requests.get(download_url, timeout=60)
+            if not response.ok:
+                self.output_line.emit(f"Failed to download Pinggy: HTTP {response.status_code}")
+                return False
+
+            # Create directory and write file
+            pinggy_dir.mkdir(parents=True, exist_ok=True)
+            with open(pinggy_path, 'wb') as f:
+                f.write(response.content)
+
+            # Make executable on Unix systems
+            if platform.system().lower() != 'windows':
+                os.chmod(pinggy_path, 0o755)
+
+            self.output_line.emit(f"Pinggy installed successfully at {pinggy_path} ✓")
+            return True
+
+        except Exception as e:
+            self.output_line.emit(f"Error installing Pinggy: {e}")
+            return False
+
+    def _create_pintheon_container(self):
+        """Create the Pintheon Docker container."""
+        try:
+            # Create data directory
+            data_dir = Path.home() / 'pintheon_data'
+            data_dir.mkdir(parents=True, exist_ok=True)
+
+            volume_path = self._get_docker_volume_path(data_dir)
+            image_name = f"metavinci/{self._get_pintheon_dapp_name()}:{self.PINTHEON_VERSION}"
+
+            command = [
+                'docker', 'create',
+                '--name', 'pintheon',
+                '--dns=8.8.8.8',
+                '--network', 'bridge',
+                '-p', f'{self.PINTHEON_PORT}:{self.PINTHEON_PORT}/tcp',
+                '-p', '9999:9999/tcp',
+                '-v', f'{volume_path}:/home/pintheon/data',
+                image_name
+            ]
+
+            self.output_line.emit(f"$ {' '.join(command)}")
+
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                cwd=str(Path.home()),
+                timeout=60
+            )
+
+            if result.returncode != 0:
+                self.output_line.emit(f"Error: {result.stderr or result.stdout}")
+                return False
+
+            return True
+
+        except Exception as e:
+            self.output_line.emit(f"Error creating container: {e}")
+            return False
+
+    def stop(self):
+        """Request the worker to stop."""
+        self._stop_requested = True
 
 
 class PressInstallWorker(LoadingWorker):
@@ -310,6 +508,130 @@ class HvymPressInstallWorker(LoadingWorker):
             print(e)
             # Emit error signal
             self.error.emit(f"Error installing hvym_press: {e}")
+
+
+class StreamingOutputWorker(QThread):
+    """Worker that streams subprocess output line by line for real-time display."""
+    output_line = pyqtSignal(str)
+    finished = pyqtSignal()
+    error = pyqtSignal(str)
+    success = pyqtSignal(str)
+
+    def __init__(self, command, cwd=None, env=None):
+        super().__init__()
+        self.command = command
+        self.cwd = cwd
+        self.env = env
+        self._process = None
+        self._stop_requested = False
+
+    def run(self):
+        try:
+            logging.info(f"StreamingOutputWorker: Starting command: {self.command}")
+            self.output_line.emit(f"Starting: {' '.join(self.command)}")
+
+            # Prepare environment
+            run_env = self.env if self.env else os.environ.copy()
+
+            # Add certifi CA bundle
+            import certifi
+            run_env["REQUESTS_CA_BUNDLE"] = certifi.where()
+
+            # Force unbuffered Python output in child process
+            run_env["PYTHONUNBUFFERED"] = "1"
+
+            # Platform-specific environment setup
+            if platform.system().lower() == 'darwin':
+                default_paths = [
+                    '/usr/local/bin',
+                    '/opt/homebrew/bin',
+                    '/usr/bin', '/bin', '/usr/sbin', '/sbin',
+                    '/Applications/Docker.app/Contents/Resources/bin'
+                ]
+                current_path_parts = run_env.get('PATH', '').split(':') if run_env.get('PATH') else []
+                for p in default_paths:
+                    if p not in current_path_parts:
+                        current_path_parts.append(p)
+                run_env['PATH'] = ':'.join(current_path_parts)
+                run_env.setdefault('LC_ALL', 'en_US.UTF-8')
+                run_env.setdefault('LANG', 'en_US.UTF-8')
+
+                # Docker socket handling
+                try:
+                    docker_sock_home = Path.home() / '.docker' / 'run' / 'docker.sock'
+                    default_sock = Path('/var/run/docker.sock')
+                    if 'DOCKER_HOST' not in run_env and docker_sock_home.exists() and not default_sock.exists():
+                        run_env['DOCKER_HOST'] = f'unix://{docker_sock_home}'
+                except Exception:
+                    pass
+
+            # Use home directory as cwd if not specified
+            working_dir = self.cwd if self.cwd else str(Path.home())
+            logging.info(f"StreamingOutputWorker: Working directory: {working_dir}")
+
+            # Platform-specific Popen kwargs
+            popen_kwargs = {
+                'stdout': subprocess.PIPE,
+                'stderr': subprocess.STDOUT,
+                'cwd': working_dir,
+                'env': run_env,
+            }
+
+            # On Windows, prevent console window and use different buffering
+            if platform.system().lower() == 'windows':
+                popen_kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+                # Use binary mode on Windows for more reliable streaming
+                popen_kwargs['bufsize'] = 0
+            else:
+                popen_kwargs['text'] = True
+                popen_kwargs['bufsize'] = 1
+
+            # Start the process
+            logging.info("StreamingOutputWorker: Starting subprocess...")
+            self._process = subprocess.Popen(self.command, **popen_kwargs)
+            logging.info(f"StreamingOutputWorker: Process started with PID: {self._process.pid}")
+
+            # Stream output line by line using readline() for better cross-platform support
+            if platform.system().lower() == 'windows':
+                # Binary mode on Windows - decode manually
+                while not self._stop_requested:
+                    line = self._process.stdout.readline()
+                    if not line:
+                        break
+                    try:
+                        decoded_line = line.decode('utf-8', errors='replace').rstrip()
+                    except Exception:
+                        decoded_line = str(line).rstrip()
+                    if decoded_line:
+                        self.output_line.emit(decoded_line)
+            else:
+                # Text mode on Unix
+                while not self._stop_requested:
+                    line = self._process.stdout.readline()
+                    if not line:
+                        break
+                    self.output_line.emit(line.rstrip())
+
+            self._process.wait()
+            logging.info(f"StreamingOutputWorker: Process exited with code: {self._process.returncode}")
+
+            if self._process.returncode == 0:
+                self.success.emit("Operation completed successfully")
+            else:
+                self.error.emit(f"Process exited with code {self._process.returncode}")
+
+            self.finished.emit()
+
+        except Exception as e:
+            logging.error(f"StreamingOutputWorker: Exception: {e}", exc_info=True)
+            self.error.emit(str(e))
+            self.finished.emit()
+
+    def stop(self):
+        """Stop the running process."""
+        self._stop_requested = True
+        if self._process and self._process.poll() is None:
+            self._process.terminate()
 
 
 class WindowThread(QThread):
@@ -503,33 +825,287 @@ class AnimatedLoadingWindow(QSplashScreen):
         pass
 
 
-def get_latest_hvym_release_asset_url():
-    api_url = "https://api.github.com/repos/inviti8/heavymeta-cli-dev/releases/latest"
-    response = requests.get(api_url, timeout=10)
-    response.raise_for_status()
-    data = response.json()
-    assets = {asset['name']: asset['browser_download_url'] for asset in data['assets']}
-    system = platform.system().lower()
-    if system == "linux":
-        asset_name = "hvym-linux.tar.gz"
-    elif system == "darwin":
-        # Architecture-aware macOS asset selection
-        machine = (platform.machine() or '').lower()
-        arch_suffix = 'arm64' if 'arm' in machine or 'aarch64' in machine else 'amd64'
-        preferred = f"hvym-macos-{arch_suffix}.tar.gz"
-        # Try preferred first; fall back to legacy name if needed
-        if preferred in assets:
-            asset_name = preferred
+class OutputWindow(QDialog):
+    """Window that displays real-time CLI output in a non-editable text field."""
+
+    def __init__(self, parent, title="Output"):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setFixedSize(700, 450)
+        self.setWindowFlags(Qt.Window | Qt.WindowTitleHint | Qt.CustomizeWindowHint | Qt.WindowCloseButtonHint)
+
+        layout = QVBoxLayout(self)
+
+        # Read-only text area for output
+        self.output_text = QPlainTextEdit(self)
+        self.output_text.setReadOnly(True)
+        self.output_text.setStyleSheet("""
+            QPlainTextEdit {
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                font-family: Consolas, 'Courier New', monospace;
+                font-size: 11px;
+                border: 1px solid #3c3c3c;
+                padding: 8px;
+            }
+        """)
+        layout.addWidget(self.output_text)
+
+        # Close button (disabled until operation completes)
+        self.close_button = QPushButton("Close", self)
+        self.close_button.setEnabled(False)
+        self.close_button.clicked.connect(self.close)
+        layout.addWidget(self.close_button)
+
+        # Center the window
+        self._center_on_screen()
+
+    def _center_on_screen(self):
+        """Center the window on the primary screen."""
+        screen = QApplication.primaryScreen().availableGeometry()
+        x = (screen.width() - self.width()) // 2
+        y = (screen.height() - self.height()) // 2
+        self.move(x, y)
+
+    def append_output(self, text):
+        """Append text and auto-scroll to bottom."""
+        self.output_text.appendPlainText(text)
+        scrollbar = self.output_text.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
+    def enable_close(self):
+        """Enable the close button when operation is complete."""
+        self.close_button.setEnabled(True)
+
+    def set_status(self, message, is_error=False):
+        """Set a status message with optional error styling."""
+        if is_error:
+            self.append_output(f"\n--- ERROR: {message} ---")
         else:
-            asset_name = "hvym-macos.tar.gz"
-    elif system == "windows":
-        asset_name = "hvym-windows.zip"
-    else:
-        raise Exception("Unsupported platform")
-    url = assets.get(asset_name)
-    if not url:
-        raise Exception(f"Asset {asset_name} not found in latest release")
-    return url
+            self.append_output(f"\n--- {message} ---")
+
+
+# -------------------------------------------------------------------------
+# Stellar Dialog Classes
+# -------------------------------------------------------------------------
+
+class StellarUserPasswordDialog(QDialog):
+    """Dialog for entering account name and password with Stellar branding."""
+
+    def __init__(self, parent, title, message, icon_path=None, default_user=""):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(350)
+
+        layout = QVBoxLayout(self)
+
+        # Icon
+        if icon_path and os.path.exists(icon_path):
+            icon_label = QLabel()
+            icon_label.setPixmap(QPixmap(icon_path).scaledToHeight(32, Qt.SmoothTransformation))
+            layout.addWidget(icon_label)
+
+        # Message
+        msg_label = QLabel(message)
+        msg_label.setWordWrap(True)
+        layout.addWidget(msg_label)
+
+        # Account name field
+        layout.addWidget(QLabel("Account Name:"))
+        self.account_edit = QLineEdit(self)
+        self.account_edit.setText(default_user)
+        layout.addWidget(self.account_edit)
+
+        # Password field
+        layout.addWidget(QLabel("Passphrase:"))
+        self.password_edit = QLineEdit(self)
+        self.password_edit.setEchoMode(QLineEdit.Password)
+        layout.addWidget(self.password_edit)
+
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+        self._center_on_screen()
+
+    def _center_on_screen(self):
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
+
+    def get_values(self):
+        return {'user': self.account_edit.text(), 'password': self.password_edit.text()}
+
+
+class StellarPasswordDialog(QDialog):
+    """Dialog for entering password only with Stellar branding."""
+
+    def __init__(self, parent, title, message, icon_path=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(350)
+
+        layout = QVBoxLayout(self)
+
+        # Icon
+        if icon_path and os.path.exists(icon_path):
+            icon_label = QLabel()
+            icon_label.setPixmap(QPixmap(icon_path).scaledToHeight(32, Qt.SmoothTransformation))
+            layout.addWidget(icon_label)
+
+        # Message
+        msg_label = QLabel(message)
+        msg_label.setWordWrap(True)
+        layout.addWidget(msg_label)
+
+        # Password field
+        layout.addWidget(QLabel("Passphrase:"))
+        self.password_edit = QLineEdit(self)
+        self.password_edit.setEchoMode(QLineEdit.Password)
+        layout.addWidget(self.password_edit)
+
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+        self._center_on_screen()
+
+    def _center_on_screen(self):
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
+
+    def get_password(self):
+        return self.password_edit.text()
+
+
+class StellarAccountSelectDialog(QDialog):
+    """Dialog for selecting a Stellar account from a dropdown."""
+
+    def __init__(self, parent, title, message, accounts, icon_path=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(350)
+
+        layout = QVBoxLayout(self)
+
+        # Icon
+        if icon_path and os.path.exists(icon_path):
+            icon_label = QLabel()
+            icon_label.setPixmap(QPixmap(icon_path).scaledToHeight(32, Qt.SmoothTransformation))
+            layout.addWidget(icon_label)
+
+        # Message
+        msg_label = QLabel(message)
+        msg_label.setWordWrap(True)
+        layout.addWidget(msg_label)
+
+        # Account dropdown
+        self.combo = QComboBox(self)
+        for account in accounts:
+            self.combo.addItem(account)
+        layout.addWidget(self.combo)
+
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+        self._center_on_screen()
+
+    def _center_on_screen(self):
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
+
+    def get_selected(self):
+        return self.combo.currentText()
+
+
+class StellarCopyTextDialog(QDialog):
+    """Dialog for displaying text with a copy button (for seed phrases)."""
+
+    def __init__(self, parent, title, message, text_to_copy, icon_path=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(450)
+        self.text_to_copy = text_to_copy
+
+        layout = QVBoxLayout(self)
+
+        # Icon
+        if icon_path and os.path.exists(icon_path):
+            icon_label = QLabel()
+            icon_label.setPixmap(QPixmap(icon_path).scaledToHeight(32, Qt.SmoothTransformation))
+            layout.addWidget(icon_label)
+
+        # Message
+        msg_label = QLabel(message)
+        msg_label.setWordWrap(True)
+        layout.addWidget(msg_label)
+
+        # Text display (read-only)
+        self.text_edit = QPlainTextEdit(self)
+        self.text_edit.setPlainText(text_to_copy)
+        self.text_edit.setReadOnly(True)
+        self.text_edit.setMaximumHeight(100)
+        layout.addWidget(self.text_edit)
+
+        # Copy button
+        copy_btn = QPushButton("Copy to Clipboard", self)
+        copy_btn.clicked.connect(self._copy_to_clipboard)
+        layout.addWidget(copy_btn)
+
+        # OK button
+        ok_btn = QPushButton("OK", self)
+        ok_btn.clicked.connect(self.accept)
+        layout.addWidget(ok_btn)
+
+        self._center_on_screen()
+
+    def _center_on_screen(self):
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
+
+    def _copy_to_clipboard(self):
+        clipboard = QApplication.clipboard()
+        clipboard.setText(self.text_to_copy)
+
+
+class StellarMessageDialog(QDialog):
+    """Simple message dialog with Stellar branding."""
+
+    def __init__(self, parent, title, message, icon_path=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(300)
+
+        layout = QVBoxLayout(self)
+
+        # Icon
+        if icon_path and os.path.exists(icon_path):
+            icon_label = QLabel()
+            icon_label.setPixmap(QPixmap(icon_path).scaledToHeight(32, Qt.SmoothTransformation))
+            layout.addWidget(icon_label)
+
+        # Message
+        msg_label = QLabel(message)
+        msg_label.setWordWrap(True)
+        layout.addWidget(msg_label)
+
+        # OK button
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok)
+        button_box.accepted.connect(self.accept)
+        layout.addWidget(button_box)
+
+        self._center_on_screen()
+
+    def _center_on_screen(self):
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
+
 
 def _extract_with_tar(archive_path: str, extract_dir: str) -> bool:
     """Extract .tar.gz file using Python's tarfile module."""
@@ -778,264 +1354,6 @@ def extract_archive(archive_path: str, extract_dir: str) -> bool:
     
     return False
 
-def download_and_install_hvym_cli(dest_dir: str) -> str:
-    """
-    Download and install the latest hvym CLI for the current platform.
-    
-    Args:
-        dest_dir: Directory where the hvym binary should be installed
-        
-    Returns:
-        str: Path to the installed hvym binary
-        
-    Raises:
-        Exception: If download, extraction, or installation fails
-    """
-    logger = logging.getLogger()
-    logger.info("=" * 80)
-    logger.info("Starting hvym CLI installation")
-    logger.info(f"Destination directory: {dest_dir}")
-    
-    # Ensure the destination directory and its parent exist with correct permissions
-    try:
-        # Create parent directories if they don't exist
-        parent_dir = os.path.dirname(dest_dir)
-        logger.info(f"Ensuring parent directory exists: {parent_dir}")
-        os.makedirs(parent_dir, mode=0o755, exist_ok=True)
-        
-        # Create the destination directory with proper permissions
-        logger.info(f"Ensuring destination directory exists: {dest_dir}")
-        os.makedirs(dest_dir, mode=0o755, exist_ok=True)
-        
-        # Test write permissions
-        test_file = os.path.join(dest_dir, '.write_test')
-        logger.info(f"Testing write permissions with file: {test_file}")
-        try:
-            with open(test_file, 'w') as f:
-                f.write('test')
-            os.remove(test_file)
-            logger.info("Write permissions verified")
-        except Exception as e:
-            error_msg = f"Cannot write to destination directory {dest_dir}: {e}"
-            logger.error(error_msg)
-            raise Exception(error_msg)
-            
-    except Exception as e:
-        error_msg = f"Cannot create or write to destination directory {dest_dir}: {e}"
-        logger.error(error_msg)
-        
-        # Try to create with sudo if permission denied on Linux
-        if "Permission denied" in str(e) and platform.system().lower() == "linux":
-            logger.warning("Permission denied, trying with sudo...")
-            try:
-                # Create parent directory with sudo if needed
-                if not os.path.exists(parent_dir):
-                    logger.info(f"Creating parent directory with sudo: {parent_dir}")
-                    subprocess.run(
-                        ['sudo', 'mkdir', '-p', parent_dir],
-                        check=True
-                    )
-                
-                # Set ownership and permissions
-                logger.info(f"Setting ownership and permissions for {parent_dir}")
-                uid = os.getuid()
-                gid = os.getgid()
-                subprocess.run(
-                    ['sudo', 'chown', f"{uid}:{gid}", parent_dir],
-                    check=True
-                )
-                subprocess.run(
-                    ['sudo', 'chmod', '755', parent_dir],
-                    check=True
-                )
-                
-                # Create destination directory
-                os.makedirs(dest_dir, mode=0o755, exist_ok=True)
-                logger.info("Successfully created directory with elevated permissions")
-                
-            except Exception as sudo_e:
-                error_msg = f"Failed to create directory even with sudo: {sudo_e}"
-                logger.error(error_msg)
-                raise Exception(error_msg)
-        else:
-            raise Exception(error_msg)
-
-    # Use macOS-specific installation helper if on macOS
-    if platform.system().lower() == "darwin":
-        try:
-            logger.info("macOS detected, attempting to use macOS installation helper")
-            from macos_install_helper import MacOSInstallHelper
-            helper = MacOSInstallHelper()
-            hvym_path = helper.install_hvym_cli()
-            if hvym_path:
-                logger.info(f"Successfully installed hvym using macOS helper: {hvym_path}")
-                return hvym_path
-            else:
-                logger.warning("macOS installation helper returned no path, falling back to standard method")
-                raise Exception("macOS installation helper failed")
-        except ImportError as e:
-            logger.warning("macOS installation helper not available, falling back to standard method")
-            logger.debug(f"Import error: {e}")
-        except Exception as e:
-            logger.warning(f"macOS installation helper error: {e}, falling back to standard method")
-            logger.debug(f"Error details: {traceback.format_exc()}")
-    
-    # Standard installation method for other platforms
-    logger.info("Using standard installation method")
-    
-    try:
-        # Get the download URL
-        logger.info("Getting latest release URL")
-        url = get_latest_hvym_release_asset_url()
-        logger.info(f"Latest release URL: {url}")
-        
-        # Create a temporary directory for downloads
-        with tempfile.TemporaryDirectory() as tmpdir:
-            logger.info(f"Using temporary directory: {tmpdir}")
-            
-            # Download the file
-            asset = os.path.basename(url)
-            archive_path = os.path.join(tmpdir, asset)
-            logger.info(f"Downloading {url} to {archive_path}")
-            
-            try:
-                # Use requests + certifi for robust SSL verification
-                with requests.get(
-                    url, 
-                    stream=True, 
-                    timeout=30, 
-                    verify=certifi.where(), 
-                    headers={"User-Agent": "Metavinci/1.0"}
-                ) as r:
-                    r.raise_for_status()
-                    total_size = int(r.headers.get('content-length', 0))
-                    logger.info(f"Download size: {total_size} bytes")
-                    
-                    with open(archive_path, 'wb') as f:
-                        downloaded = 0
-                        for chunk in r.iter_content(chunk_size=8192):
-                            if chunk:
-                                f.write(chunk)
-                                downloaded += len(chunk)
-                                if total_size > 0:
-                                    percent = (downloaded / total_size) * 100
-                                    if percent % 10 == 0:  # Log every 10% to avoid flooding logs
-                                        logger.debug(f"Download progress: {percent:.1f}% ({downloaded}/{total_size} bytes)")
-                    
-                    logger.info(f"Download completed: {os.path.getsize(archive_path)} bytes")
-                
-                # Verify download
-                if not os.path.exists(archive_path) or os.path.getsize(archive_path) == 0:
-                    raise Exception("Downloaded file is empty or missing")
-                
-                # Extract the archive
-                logger.info(f"Extracting archive: {archive_path}")
-                if not extract_archive(archive_path, tmpdir):
-                    raise Exception("Failed to extract archive")
-                
-                # Find the binary in the extracted files (flexible matching for architecture-specific names)
-                logger.info("Looking for binary in extracted files...")
-                system = platform.system().lower()
-                
-                found_binary = None
-                for root, _, files in os.walk(tmpdir):
-                    for file in files:
-                        # Skip archive files themselves
-                        if file.endswith('.tar.gz') or file.endswith('.zip'):
-                            continue
-                        # Match any file starting with 'hvym' (handles hvym, hvym-macos, hvym-macos-arm64, etc.)
-                        if file.startswith('hvym') and not file.endswith('.exe.config'):
-                            file_path = os.path.join(root, file)
-                            # Verify it's a file and not a directory
-                            if os.path.isfile(file_path):
-                                found_binary = file_path
-                                logger.info(f"Found binary: {file} at {file_path}")
-                                break
-                    if found_binary:
-                        break
-                
-                if not found_binary:
-                    raise Exception(f"Could not find hvym binary in the downloaded archive")
-                
-                # Set executable permissions
-                os.chmod(found_binary, 0o755)
-                
-                # Create destination directory if it doesn't exist
-                os.makedirs(dest_dir, exist_ok=True, mode=0o755)
-                
-                # Move binary to destination (keep the original filename)
-                binary_filename = os.path.basename(found_binary)
-                dest_path = os.path.join(dest_dir, binary_filename)
-                shutil.move(found_binary, dest_path)
-                logger.info(f"Moved binary to: {dest_path}")
-                
-                # Remove macOS quarantine attribute if present
-                if system == 'darwin':
-                    try:
-                        subprocess.run(['xattr', '-d', 'com.apple.quarantine', dest_path],
-                                     capture_output=True, check=False)
-                        logger.info("Removed macOS quarantine attribute")
-                    except Exception as e:
-                        logger.debug(f"Could not remove quarantine attribute: {e}")
-                
-                # # Verify the binary works
-                # try:
-                #     result = subprocess.run(
-                #         [dest_path, 'version'],
-                #         capture_output=True,
-                #         text=True,
-                #         timeout=20
-                #     )
-                #     logger.info(f"Binary version check: {result.stdout.strip()}")
-                #     return dest_path
-                # except Exception as e:
-                #     logger.error(f"Binary test failed: {e}")
-                #     raise Exception(f"Downloaded binary is not working: {e}")
-                
-                # If we get here, we've already found and moved the binary
-                return dest_path
-                
-            except Exception as e:
-                # Log the detailed error
-                logger.error(f"Download or extraction failed: {e}")
-                logger.debug(f"Error details: {traceback.format_exc()}")
-                
-                # Prepare system information for the error message
-                system_info = (
-                    f"System: {platform.system()} {platform.release()} {platform.machine()}\n"
-                    f"Python: {platform.python_version()}"
-                )
-                
-                if os.path.exists(archive_path):
-                    system_info += f"\nArchive: {os.path.basename(archive_path)} ({os.path.getsize(archive_path)} bytes)"
-                
-                raise Exception(
-                    f"Installation failed: {str(e)}\n\n"
-                    f"{system_info}\n\n"
-                    "Please check your internet connection and try again. "
-                    "If the problem persists, please contact support with the above information."
-                )
-                
-    except Exception as e:
-        # This is a fallback for any other unhandled exceptions
-        logger.error(f"Unexpected installation error: {e}")
-        logger.debug(f"Error details: {traceback.format_exc()}")
-        
-        system_info = (
-            f"System: {platform.system()} {platform.release()} {platform.machine()}\n"
-            f"Python: {platform.python_version()}"
-        )
-        
-        raise Exception(
-            f"Unexpected error during installation: {str(e)}\n\n"
-            f"{system_info}\n\n"
-            "This could be due to:\n"
-            "1. Corrupted download (try again)\n"
-            "2. Missing extraction tools (install 'unzip' or 'tar')\n"
-            "3. Permission issues (check write access to temp directory)\n\n"
-            "Please try again or contact support if the problem persists."
-        )
-
 
 def get_latest_hvym_press_release_asset_url():
     """Get the latest hvym_press release asset URL for the current platform."""
@@ -1162,27 +1480,9 @@ class Metavinci(QMainWindow):
         self.KEYSTORE = self.PATH / 'keystore.enc'
         self.ENC_KEY = self.PATH / 'encryption_key.key'
         self.DFX = self.platform_manager.get_dfx_path()
-        self.HVYM = self.platform_manager.get_hvym_path()
-        
-        # Log the initial HVYM path
-        if hasattr(self, '_log_hvym_path'):
-            self._log_hvym_path()
-            
         self.DIDC = self.platform_manager.get_didc_path()
         self.PRESS = self.platform_manager.get_press_path()
         self.BLENDER_PATH = self.platform_manager.get_blender_path()
-        
-        # Backward compatibility: if on macOS and arch-specific hvym not present, fall back to legacy filename
-        try:
-            if platform.system().lower() == 'darwin' and not self.HVYM.is_file():
-                legacy_hvym = self.BIN_PATH / 'hvym-macos'
-                if legacy_hvym.is_file():
-                    self.HVYM = legacy_hvym
-                    # Log again if we changed the HVYM path
-                    if hasattr(self, '_log_hvym_path'):
-                        self._log_hvym_path()
-        except Exception as e:
-            self.logger.warning(f"Error during macOS compatibility check: {e}")
         self.BLENDER_VERSIONS = []
         self.BLENDER_VERSION = None
         self.ADDON_INSTALL_PATH = self.BLENDER_PATH / str(self.BLENDER_VERSION) / 'scripts' / 'addons'
@@ -1233,9 +1533,12 @@ class Metavinci(QMainWindow):
         self.PINTHEON_INSTALLED = False
         self.TUNNEL_TOKEN = ''
 
-        self._update_install_stats()
-
+        # Initialize these before _update_install_stats()
         self.PINTHEON_NETWORK = 'testnet'
+        self.PINTHEON_PORT = 9998
+        self.PINGGY_TIER = 'free'
+
+        self._update_install_stats()
         self.PINTHEON_ACTIVE = False
         self.win_icon = QIcon(self.HVYM_IMG)
         self.icon = QIcon(self.LOGO_IMG)
@@ -1313,12 +1616,6 @@ class Metavinci(QMainWindow):
         stellar_testnet_account_action = QAction(self.add_icon, "Testnet Account", self)
         stellar_testnet_account_action.triggered.connect(self.new_stellar_testnet_account)
 
-        self.install_hvym_action = QAction(self.install_icon, "Install hvym", self)
-        self.install_hvym_action.triggered.connect(self._install_hvym)
-
-        self.update_hvym_action = QAction(self.update_icon, "Update hvym", self)
-        self.update_hvym_action.triggered.connect(self._update_hvym)
-
         self.open_tunnel_action = QAction(self.tunnel_icon, "Open Tunnel", self)
         self.open_tunnel_action.triggered.connect(self._open_tunnel)
         self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE)
@@ -1391,8 +1688,6 @@ class Metavinci(QMainWindow):
 
 
         self.tray_tools_update_menu = self.tray_tools_menu.addMenu("Installations")
-        self.tray_tools_update_menu.addAction(self.install_hvym_action)
-        self.tray_tools_update_menu.addAction(self.update_hvym_action)
         self.tray_tools_update_menu.addAction(self.install_press_action)
         self.tray_tools_update_menu.addAction(self.update_press_action)
         self.update_press_action.setVisible(False)
@@ -1415,14 +1710,8 @@ class Metavinci(QMainWindow):
             self.update_press_action.setVisible(False)
             self.install_press_action.setVisible(True)
 
-        if not self.HVYM.is_file():
-            self.install_hvym_action.setVisible(True)
-            self.update_hvym_action.setVisible(False)
-        else:
-            self.install_hvym_action.setVisible(False)
-            self.update_hvym_action.setVisible(True)
-            self._refresh_pintheon_ui_state()
-            
+        # Refresh Pintheon UI state
+        self._refresh_pintheon_ui_state()
 
         tray_menu.addAction(quit_action)
 
@@ -1438,15 +1727,11 @@ class Metavinci(QMainWindow):
         self.hide()
 
     def _update_install_stats(self):
-        if self.HVYM.is_file():
-            self.INSTALL_STATS = self.hvym_install_stats()
-            self.DOCKER_INSTALLED = self.INSTALL_STATS['docker_installed']
-            self.PINTHEON_INSTALLED = self.INSTALL_STATS['pintheon_image_exists']
-            self.TUNNEL_TOKEN = self.INSTALL_STATS['pinggy_token']
-        else:
-            self.DOCKER_INSTALLED = False
-            self.PINTHEON_INSTALLED = False
-            self.TUNNEL_TOKEN = ''
+        # Use direct implementation (no CLI dependency)
+        self.INSTALL_STATS = self._get_installation_stats()
+        self.DOCKER_INSTALLED = self.INSTALL_STATS['docker_installed']
+        self.PINTHEON_INSTALLED = self.INSTALL_STATS['pintheon_image_exists']
+        # Note: TUNNEL_TOKEN is now managed locally, not from CLI
 
     def _setup_pintheon_menu(self):  
         network_name = 'testnet'
@@ -1472,8 +1757,6 @@ class Metavinci(QMainWindow):
             self.pintheon_interface_menu.addAction(self.open_pintheon_action)
             self.pintheon_interface_menu.addAction(self.open_homepage_action)
             self.pintheon_interface_menu.setEnabled(False)
-            self.install_hvym_action.setVisible(False)
-            self.update_hvym_action.setVisible(True)
             self.tray_pintheon_menu.setVisible(True)
 
     def _setup_press_menu(self):
@@ -1577,23 +1860,7 @@ class Metavinci(QMainWindow):
         
         # Store logger reference
         self.logger = logger
-        
-        # Add a method to log HVYM path after it's initialized
-        def log_hvym_path():
-            if hasattr(self, 'HVYM') and self.HVYM is not None:
-                try:
-                    self.logger.info(f"HVYM path: {self.HVYM}")
-                    if hasattr(self.HVYM, 'exists') and callable(self.HVYM.exists):
-                        exists = self.HVYM.exists()
-                        self.logger.info(f"HVYM exists: {exists}")
-                        if not exists:
-                            self.logger.warning("HVYM binary not found at expected location")
-                except Exception as e:
-                    self.logger.warning(f"Error checking HVYM path: {e}")
-        
-        # Store the method for later use
-        self._log_hvym_path = log_hvym_path
-        
+
         # Log environment variables that might affect the application
         for var in ['PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH']:
             if var in os.environ:
@@ -2089,12 +2356,6 @@ class Metavinci(QMainWindow):
                 pass
             return None
         
-    def _subprocess_hvym(self, command, non_blocking=False):
-        # Run hvym from its install directory to preserve any relative resource lookups
-        hvym_path = Path(self.HVYM)
-        cli_dir = str(hvym_path.parent)
-        return self._subprocess(command, cwd=cli_dir, non_blocking=non_blocking)
-    
     def _run(self, command):
         try:
             # Use platform-specific shell command
@@ -2107,93 +2368,621 @@ class Metavinci(QMainWindow):
     def run_press(self, non_blocking=True):
         return self._subprocess([str(self.PRESS)], non_blocking=non_blocking)
 
-    def splash(self):
-        return self._subprocess_hvym([str(self.HVYM), 'splash'])
-    
+    # =========================================================================
+    # Direct Stellar Operations (no CLI dependency)
+    # =========================================================================
+
+    def _get_stellar_accounts_table(self):
+        """Get or create the Stellar accounts table in the database."""
+        return self.DB.table('stellar_accounts')
+
+    def _get_stellar_account_names(self):
+        """Get list of all Stellar account names."""
+        table = self._get_stellar_accounts_table()
+        return [acct['name'] for acct in table.all()]
+
+    def _get_active_stellar_account(self):
+        """Get the currently active Stellar account."""
+        table = self._get_stellar_accounts_table()
+        results = table.search(self.QUERY.active == True)
+        return results[0] if results else None
+
+    def _hash_password(self, password):
+        """Hash a password for storage."""
+        return hashlib.sha256(password.encode()).hexdigest()
+
+    def _verify_password(self, password, stored_hash):
+        """Verify a password against a stored hash."""
+        return self._hash_password(password) == stored_hash
+
     def new_stellar_account(self):
-        return self._subprocess_hvym([str(self.HVYM), 'stellar-new-account'])
+        """Create a new Stellar account directly (no CLI dependency)."""
+        if not HAS_STELLAR_SDK:
+            self.open_msg_dialog("Stellar SDK not installed. Please install stellar-sdk package.")
+            return
+
+        # Show user/password dialog
+        dialog = StellarUserPasswordDialog(
+            self, "New Stellar Account",
+            "Enter a name and passphrase for your new Stellar account.\n\nIMPORTANT: Remember this passphrase - it protects your account!",
+            self.STELLAR_LOGO_IMG
+        )
+        if not dialog.exec():
+            return
+
+        values = dialog.get_values()
+        account_name = values['user'].strip()
+        password = values['password']
+
+        if not account_name:
+            self.open_msg_dialog("Account name cannot be empty.")
+            return
+
+        if not password:
+            self.open_msg_dialog("Passphrase cannot be empty.")
+            return
+
+        # Check if account name already exists
+        table = self._get_stellar_accounts_table()
+        if table.search(self.QUERY.name == account_name):
+            self.open_msg_dialog("An account with this name already exists.")
+            return
+
+        # Confirm password
+        confirm_dialog = StellarPasswordDialog(
+            self, "Confirm Passphrase",
+            "Please confirm your passphrase.",
+            self.STELLAR_LOGO_IMG
+        )
+        if not confirm_dialog.exec():
+            return
+
+        if confirm_dialog.get_password() != password:
+            self.open_msg_dialog("Passphrases do not match.")
+            return
+
+        try:
+            # Generate Stellar keypair
+            keypair = StellarKeypair.random()
+            seed = keypair.secret
+
+            # Generate 25519 keypair from Stellar keypair
+            keypair_25519 = Stellar25519KeyPair(keypair)
+
+            # Set all existing accounts to inactive
+            table.update({'active': False})
+
+            # Store the new account
+            account_data = {
+                'data_type': 'STELLAR_ID',
+                'name': account_name,
+                'public': keypair.public_key,
+                '25519_pub': keypair_25519.public_key(),
+                'active': True,
+                'pw_hash': self._hash_password(password),
+                'network': 'mainnet'
+            }
+            table.insert(account_data)
+
+            # Show seed phrase - CRITICAL for user to save
+            seed_dialog = StellarCopyTextDialog(
+                self, "Save Your Seed Phrase",
+                "Your Stellar account has been created!\n\n"
+                "CRITICAL: Copy and securely store this seed phrase.\n"
+                "It is the ONLY way to recover your account. Never share it!",
+                seed,
+                self.STELLAR_LOGO_IMG
+            )
+            seed_dialog.exec()
+
+        except Exception as e:
+            self.open_msg_dialog(f"Error creating Stellar account: {str(e)}")
 
     def change_stellar_account(self):
-        return self._subprocess_hvym([str(self.HVYM), 'stellar-set-account'])
+        """Change the active Stellar account directly (no CLI dependency)."""
+        accounts = self._get_stellar_account_names()
+
+        if not accounts:
+            self.open_msg_dialog("No Stellar accounts found. Create one first.")
+            return
+
+        # Show account selection dialog
+        dialog = StellarAccountSelectDialog(
+            self, "Select Stellar Account",
+            "Choose which Stellar account to make active.",
+            accounts,
+            self.STELLAR_LOGO_IMG
+        )
+        if not dialog.exec():
+            return
+
+        selected = dialog.get_selected()
+        if not selected:
+            return
+
+        # Update active status
+        table = self._get_stellar_accounts_table()
+        table.update({'active': False})
+        table.update({'active': True}, self.QUERY.name == selected)
+
+        self.open_msg_dialog(f"Active account changed to: {selected}")
 
     def remove_stellar_account(self):
-        return self._subprocess_hvym([str(self.HVYM), 'stellar-remove-account'])
-    
+        """Remove a Stellar account directly (no CLI dependency)."""
+        accounts = self._get_stellar_account_names()
+
+        if not accounts:
+            self.open_msg_dialog("No Stellar accounts found.")
+            return
+
+        # Show account selection dialog
+        dialog = StellarAccountSelectDialog(
+            self, "Remove Stellar Account",
+            "Select the Stellar account to remove.\n\nWARNING: This cannot be undone!",
+            accounts,
+            self.STELLAR_LOGO_IMG
+        )
+        if not dialog.exec():
+            return
+
+        selected = dialog.get_selected()
+        if not selected:
+            return
+
+        # Verify password
+        table = self._get_stellar_accounts_table()
+        account = table.get(self.QUERY.name == selected)
+
+        if not account:
+            self.open_msg_dialog("Account not found.")
+            return
+
+        pw_dialog = StellarPasswordDialog(
+            self, "Verify Passphrase",
+            f"Enter the passphrase for '{selected}' to confirm removal.",
+            self.STELLAR_LOGO_IMG
+        )
+        if not pw_dialog.exec():
+            return
+
+        if not self._verify_password(pw_dialog.get_password(), account.get('pw_hash', '')):
+            self.open_msg_dialog("Incorrect passphrase.")
+            return
+
+        # Remove the account
+        was_active = account.get('active', False)
+        table.remove(self.QUERY.name == selected)
+
+        # If removed account was active, set another as active
+        remaining = table.all()
+        if was_active and remaining:
+            table.update({'active': True}, doc_ids=[remaining[0].doc_id])
+            self.open_msg_dialog(f"'{selected}' removed. Active account is now: {remaining[0]['name']}")
+        elif remaining:
+            self.open_msg_dialog(f"'{selected}' has been removed.")
+        else:
+            self.open_msg_dialog("All Stellar accounts have been removed.")
+
     def new_stellar_testnet_account(self):
-        return self._subprocess_hvym([str(self.HVYM), 'stellar-new-testnet-account'])
+        """Create a new Stellar testnet account with funding (no CLI dependency)."""
+        if not HAS_STELLAR_SDK:
+            self.open_msg_dialog("Stellar SDK not installed. Please install stellar-sdk package.")
+            return
 
-    def hvym_check(self):
-        return self._subprocess_hvym([str(self.HVYM), 'check'])
-    
-    def hvym_setup_pintheon(self):
-        return self._subprocess_hvym([str(self.HVYM), 'pintheon-setup'])
+        # Show user/password dialog
+        dialog = StellarUserPasswordDialog(
+            self, "New Stellar Testnet Account",
+            "Enter a name and passphrase for your new Stellar testnet account.\n\n"
+            "This account will be automatically funded via Friendbot.",
+            self.STELLAR_LOGO_IMG
+        )
+        if not dialog.exec():
+            return
 
-    def hvym_pintheon_exists(self):
-        return self._subprocess_hvym([str(self.HVYM), 'pintheon-image-exists'])
+        values = dialog.get_values()
+        account_name = values['user'].strip()
+        password = values['password']
 
-    def hvym_tunnel_token_exists(self):
-        return self._subprocess_hvym([str(self.HVYM), 'pinggy-token'])
-    
-    def hvym_start_pintheon(self):
-        # Only run the CLI; UI updates must occur on main thread after completion
-        return self._subprocess_hvym([str(self.HVYM), 'pintheon-start'])
-    
-    def hvym_open_pintheon(self):
-        # Only run the CLI; UI updates must occur on main thread after completion
-        return self._subprocess_hvym([str(self.HVYM), 'pintheon-open'])
-    
-    def hvym_stop_pintheon(self):
-        # Only run the CLI; UI updates must occur on main thread after completion
-        return self._subprocess_hvym([str(self.HVYM), 'pintheon-stop'])
-    
-    def hvym_open_tunnel(self):
-        # Update the pintheon icon variable
-        self.tunnel_icon = QIcon(self.OFF_IMG)
+        if not account_name:
+            self.open_msg_dialog("Account name cannot be empty.")
+            return
 
-        # Update the menu action icons
-        self.open_tunnel_action.setIcon(self.tunnel_icon)
+        if not password:
+            self.open_msg_dialog("Passphrase cannot be empty.")
+            return
 
-        return self._subprocess_hvym([str(self.HVYM), 'pintheon-tunnel-open'], non_blocking=True)
-    
-    def hvym_set_tunnel_token(self):
-        return self._subprocess_hvym([str(self.HVYM), 'pinggy-set-token'])
+        # Check if account name already exists
+        table = self._get_stellar_accounts_table()
+        if table.search(self.QUERY.name == account_name):
+            self.open_msg_dialog("An account with this name already exists.")
+            return
 
-    def hvym_set_tunnel_tier(self):
-        return self._subprocess_hvym([str(self.HVYM), 'pinggy-set-tier'])
+        # Confirm password
+        confirm_dialog = StellarPasswordDialog(
+            self, "Confirm Passphrase",
+            "Please confirm your passphrase.",
+            self.STELLAR_LOGO_IMG
+        )
+        if not confirm_dialog.exec():
+            return
 
-    def hvym_get_tunnel_tier(self):
-        return self._subprocess_hvym([str(self.HVYM), 'pinggy-tier'])
-    
-    def hvym_set_pintheon_network(self):
-        return self._subprocess_hvym([str(self.HVYM), 'pintheon-set-network'])
-    
-    def hvym_get_pintheon_network(self):
-        return self._subprocess_hvym([str(self.HVYM), 'pintheon-network'])
+        if confirm_dialog.get_password() != password:
+            self.open_msg_dialog("Passphrases do not match.")
+            return
 
-    def hvym_is_tunnel_open(self):
-        return self._subprocess_hvym([str(self.HVYM), 'is-pintheon-tunnel-open'])
-    
-    def hvym_docker_installed(self):
-        return self._subprocess_hvym([str(self.HVYM), 'docker-installed'])
+        try:
+            # Generate Stellar keypair
+            keypair = StellarKeypair.random()
+            seed = keypair.secret
 
-    def hvym_install_stats(self):
-        import json
-        result = self._subprocess_hvym([str(self.HVYM), 'installation-stats'])
-        if result:
+            # Generate 25519 keypair from Stellar keypair
+            keypair_25519 = Stellar25519KeyPair(keypair)
+
+            # Fund via Friendbot
+            funding_success = False
+            funding_message = ""
             try:
-                return json.loads(result)
-            except json.JSONDecodeError:
-                # Fallback to raw output if JSON parsing fails
-                return result
-        return None
+                friendbot_url = f"https://horizon-testnet.stellar.org/friendbot?addr={keypair.public_key}"
+                response = requests.get(friendbot_url, timeout=30)
+                if response.status_code == 200:
+                    funding_success = True
+                    funding_message = "Account funded with 10,000 test XLM!"
+                else:
+                    funding_message = f"Friendbot funding failed (status {response.status_code})"
+            except Exception as e:
+                funding_message = f"Friendbot funding error: {str(e)}"
+
+            # Set all existing accounts to inactive
+            table.update({'active': False})
+
+            # Store the new account
+            account_data = {
+                'data_type': 'STELLAR_ID',
+                'name': account_name,
+                'public': keypair.public_key,
+                '25519_pub': keypair_25519.public_key(),
+                'active': True,
+                'pw_hash': self._hash_password(password),
+                'network': 'testnet'
+            }
+            table.insert(account_data)
+
+            # Build result message
+            result_msg = "Your Stellar testnet account has been created!\n\n"
+            if funding_success:
+                result_msg += f"✓ {funding_message}\n\n"
+            else:
+                result_msg += f"⚠ {funding_message}\n\n"
+            result_msg += "CRITICAL: Copy and securely store this seed phrase.\n"
+            result_msg += "It is the ONLY way to recover your account!"
+
+            # Show seed phrase
+            seed_dialog = StellarCopyTextDialog(
+                self, "Save Your Seed Phrase",
+                result_msg,
+                seed,
+                self.STELLAR_LOGO_IMG
+            )
+            seed_dialog.exec()
+
+        except Exception as e:
+            self.open_msg_dialog(f"Error creating Stellar testnet account: {str(e)}")
+
+    # =========================================================================
+    # Direct Pintheon Operations (no CLI dependency)
+    # =========================================================================
+
+    def _check_docker_installed(self):
+        """Check if Docker is installed and running."""
+        try:
+            result = subprocess.run(
+                ['docker', '--version'],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            return 'Docker version' in result.stdout
+        except Exception:
+            return False
+
+    def _docker_container_exists(self, name):
+        """Check if a Docker container with the given name exists."""
+        try:
+            result = subprocess.run(
+                ['docker', 'ps', '-a', '--filter', f'name=^{name}$', '--format', '{{.Names}}'],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            return result.stdout.strip() == name
+        except Exception:
+            return False
+
+    def _docker_container_running(self, name):
+        """Check if a Docker container is currently running."""
+        try:
+            result = subprocess.run(
+                ['docker', 'ps', '--filter', f'name=^{name}$', '--format', '{{.Names}}'],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            return result.stdout.strip() == name
+        except Exception:
+            return False
+
+    def _docker_image_exists(self, image_name):
+        """Check if a Docker image exists locally."""
+        try:
+            result = subprocess.run(
+                ['docker', 'images', '-q', image_name],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            return bool(result.stdout.strip())
+        except Exception:
+            return False
+
+    def _get_pintheon_image_name(self):
+        """Get the full Pintheon Docker image name for the current architecture."""
+        machine = platform.machine().lower()
+        if machine in ('x86_64', 'amd64', 'intel64', 'i386', 'i686'):
+            arch = 'linux-amd64'
+        elif machine in ('aarch64', 'arm64', 'armv8', 'armv7l', 'arm'):
+            arch = 'linux-arm64'
+        else:
+            arch = f'linux-{machine}'
+        return f'metavinci/pintheon-{self.PINTHEON_NETWORK}-{arch}:latest'
+
+    def _get_docker_volume_path(self, local_path):
+        """Get cross-platform Docker volume path."""
+        path_str = str(local_path)
+        if platform.system().lower() == 'windows':
+            # Convert Windows path to Docker-compatible format: C:\Users\... -> /c/Users/...
+            if len(path_str) >= 2 and path_str[1] == ':':
+                drive = path_str[0].lower()
+                rest = path_str[2:].replace('\\', '/')
+                return f"/{drive}{rest}"
+        return path_str
+
+    def _pintheon_image_exists(self):
+        """Check if the Pintheon Docker image exists locally."""
+        image_name = self._get_pintheon_image_name()
+        return self._docker_image_exists(image_name)
+
+    def _start_pintheon_direct(self):
+        """Start Pintheon container directly without CLI."""
+        try:
+            if self._docker_container_exists('pintheon'):
+                # Container exists, just start it
+                result = subprocess.run(
+                    ['docker', 'start', 'pintheon'],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                return result.returncode == 0
+            else:
+                # Container doesn't exist, create and run it
+                port = getattr(self, 'PINTHEON_PORT', 9998)
+                data_dir = Path.home() / 'pintheon_data'
+                data_dir.mkdir(parents=True, exist_ok=True)
+                volume_path = self._get_docker_volume_path(data_dir)
+                image_name = self._get_pintheon_image_name()
+
+                command = [
+                    'docker', 'run', '-d',
+                    '--name', 'pintheon',
+                    '--dns=8.8.8.8',
+                    '--network', 'bridge',
+                    '-p', f'{port}:{port}/tcp',
+                    '-p', '9999:9999/tcp',
+                    '-v', f'{volume_path}:/home/pintheon/data',
+                    image_name
+                ]
+
+                result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    cwd=str(Path.home()),
+                    timeout=60
+                )
+                return result.returncode == 0
+        except Exception as e:
+            logging.error(f"Error starting Pintheon: {e}")
+            return False
+
+    def _stop_pintheon_direct(self):
+        """Stop Pintheon container directly without CLI."""
+        try:
+            result = subprocess.run(
+                ['docker', 'stop', 'pintheon'],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            return result.returncode == 0
+        except Exception as e:
+            logging.error(f"Error stopping Pintheon: {e}")
+            return False
+
+    def _open_pintheon_admin(self):
+        """Open Pintheon admin interface in browser."""
+        port = getattr(self, 'PINTHEON_PORT', 9998)
+        webbrowser.open(f'https://127.0.0.1:9999/admin')
+
+    def _open_pintheon_homepage(self):
+        """Open Pintheon homepage in browser."""
+        port = getattr(self, 'PINTHEON_PORT', 9998)
+        webbrowser.open(f'https://127.0.0.1:{port}/')
+
+    def _get_installation_stats(self):
+        """Get installation statistics without CLI dependency."""
+        return {
+            'docker_installed': self._check_docker_installed(),
+            'pintheon_image_exists': self._pintheon_image_exists(),
+            'pintheon_container_exists': self._docker_container_exists('pintheon'),
+            'pintheon_running': self._docker_container_running('pintheon'),
+            'pinggy_tier': getattr(self, 'PINGGY_TIER', 'free'),
+            'pinggy_token': getattr(self, 'TUNNEL_TOKEN', ''),
+            'pintheon_network': getattr(self, 'PINTHEON_NETWORK', 'testnet'),
+        }
+
+    # =========================================================================
+    # Direct Tunnel Operations (no CLI dependency)
+    # =========================================================================
+
+    def _get_pinggy_path(self):
+        """Get platform-specific Pinggy executable path."""
+        home = Path.home()
+        system = platform.system().lower()
+        if system == 'windows':
+            return home / 'AppData' / 'Local' / 'pinggy' / 'pinggy.exe'
+        elif system == 'darwin':
+            return home / '.local' / 'share' / 'pinggy' / 'pinggy'
+        else:  # Linux
+            return home / '.local' / 'share' / 'pinggy' / 'pinggy'
+
+    def _is_tunnel_open(self):
+        """Check if Pinggy tunnel is running by accessing the web debugger."""
+        try:
+            response = requests.get("http://localhost:4300", timeout=5)
+            return response.status_code == 200
+        except Exception:
+            return False
+
+    def _open_tunnel_direct(self):
+        """Open Pinggy tunnel in a new terminal window."""
+        # Check if token is configured
+        if not self.TUNNEL_TOKEN or len(self.TUNNEL_TOKEN) < 7:
+            self.open_msg_dialog('Pinggy token not configured. Please set your token first.')
+            return False
+
+        # Check if tunnel is already open
+        if self._is_tunnel_open():
+            self.open_msg_dialog('Tunnel is already running.')
+            return True
+
+        # Get pinggy path
+        pinggy_path = self._get_pinggy_path()
+        if not pinggy_path.exists():
+            self.open_msg_dialog('Pinggy not installed. Please install Pintheon first.')
+            return False
+
+        # Build pinggy command
+        port = getattr(self, 'PINTHEON_PORT', 9998)
+        tier = getattr(self, 'PINGGY_TIER', 'free')
+        token = self.TUNNEL_TOKEN
+
+        pinggy_command = f'"{pinggy_path}" -p 443 -R0:localhost:{port} -L4300:localhost:4300 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -t {token}@{tier}.pinggy.io x:https x:localServerTls:localhost x:passpreflight'
+
+        try:
+            system = platform.system().lower()
+
+            if system == 'windows':
+                # Open in new cmd window
+                cmd = f'start "Pintheon Tunnel" cmd /k {pinggy_command}'
+                subprocess.Popen(cmd, shell=True)
+            elif system == 'darwin':
+                # Open in Terminal.app
+                escaped_cmd = pinggy_command.replace('"', '\\"')
+                apple_script = f'tell app "Terminal" to do script "{escaped_cmd}"'
+                subprocess.Popen(['osascript', '-e', apple_script])
+            else:  # Linux
+                # Try xterm first, then gnome-terminal
+                if shutil.which('xterm'):
+                    subprocess.Popen(['xterm', '-title', 'Pintheon Tunnel', '-e', 'bash', '-c', pinggy_command])
+                elif shutil.which('gnome-terminal'):
+                    subprocess.Popen(['gnome-terminal', '--title=Pintheon Tunnel', '--', 'bash', '-c', pinggy_command])
+                else:
+                    # Fallback - run in background
+                    subprocess.Popen(pinggy_command, shell=True)
+
+            logging.info("Tunnel started successfully")
+            return True
+
+        except Exception as e:
+            logging.error(f"Failed to start tunnel: {e}")
+            self.open_msg_dialog(f'Failed to start tunnel: {e}')
+            return False
+
+    def _set_tunnel_token_direct(self):
+        """Show dialog to set Pinggy tunnel token."""
+        current_token = getattr(self, 'TUNNEL_TOKEN', '')
+
+        token, ok = QInputDialog.getText(
+            self,
+            'Set Pinggy Token',
+            'Enter your Pinggy authentication token:',
+            QLineEdit.Normal,
+            current_token
+        )
+
+        if ok and token:
+            self.TUNNEL_TOKEN = token.strip()
+            # Update visibility of tunnel action
+            if len(self.TUNNEL_TOKEN) >= 7:
+                self.open_tunnel_action.setVisible(self.PINTHEON_ACTIVE)
+            else:
+                self.open_tunnel_action.setVisible(False)
+            self.open_msg_dialog('Pinggy token saved successfully.')
+            return True
+        return False
+
+    def _set_tunnel_tier_direct(self):
+        """Show dialog to select Pinggy tunnel tier."""
+        tiers = ['pro', 'free']
+        current_tier = getattr(self, 'PINGGY_TIER', 'free')
+
+        # Set current tier as default selection
+        current_index = tiers.index(current_tier) if current_tier in tiers else 1
+
+        tier, ok = QInputDialog.getItem(
+            self,
+            'Set Pinggy Tier',
+            'Select your Pinggy subscription tier:',
+            tiers,
+            current_index,
+            False  # Not editable
+        )
+
+        if ok and tier:
+            self.PINGGY_TIER = tier
+            self.open_msg_dialog(f'Pinggy tier set to: {tier}')
+            return True
+        return False
+
+    def _set_pintheon_network_direct(self):
+        """Show dialog to select Pintheon network."""
+        networks = ['testnet', 'mainnet']
+        current_network = getattr(self, 'PINTHEON_NETWORK', 'testnet')
+
+        current_index = networks.index(current_network) if current_network in networks else 0
+
+        network, ok = QInputDialog.getItem(
+            self,
+            'Set Pintheon Network',
+            'Select network (requires re-installing Pintheon):',
+            networks,
+            current_index,
+            False  # Not editable
+        )
+
+        if ok and network:
+            if network != current_network:
+                self.PINTHEON_NETWORK = network
+                self.open_msg_dialog(f'Network set to: {network}\n\nNote: You need to re-install Pintheon for this to take effect.')
+            return True
+        return False
+
+    # =========================================================================
 
     def update_tools(self):
         update = self.open_confirm_dialog('You want to update Heavymeta Tools?')
         if update == True:
             self._update_blender_addon(self.BLENDER_VERSION)
-            if self.HVYM.is_file():
-                self._update_cli()
-                self._subprocess_hvym(f'{str(self.HVYM)} update-npm-modules')
             if self.PRESS.is_file():
                 self._update_press()
 
@@ -2345,14 +3134,8 @@ class Metavinci(QMainWindow):
         # No need to manually close or hide - the signal handlers will do that
 
     def _installation_check(self):
-        if not self.HVYM.is_file():
-            print('Install the cli')
-            self._install_hvym()
-        else:
-            print('hvym is installed')
-            check = self.hvym_check()
-            if check != None and check.strip() == 'ONE-TWO':
-                print('hvym is on path')
+        # All Pintheon and Stellar operations now work directly without CLI
+        pass
 
     def _check_press_installation(self):
         """Check if hvym_press is installed and update tray actions accordingly."""
@@ -2383,104 +3166,6 @@ class Metavinci(QMainWindow):
                 
         except Exception as e:
             print(f"Error refreshing startup UI state: {e}")
-
-    def _install_hvym(self):
-        install = self.open_confirm_dialog('Install Heavymeta cli?')
-        if install == True:
-            # Create custom worker
-            worker = HvymInstallWorker(self.HVYM)
-
-            # Create animated loading window
-            loading_window = AnimatedLoadingWindow(self, 'INSTALLING HVYM', self.LOADING_GIF)
-            loading_window.show()
-            loading_window.raise_()
-            loading_window.activateWindow()
-            loading_window.start_animation()
-            QApplication.processEvents()
-
-            # Connect signals
-            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_animated_loading_finished(loading_window, worker)))
-            worker.error.connect(lambda error_msg: self._on_animated_loading_error(loading_window, worker, error_msg))
-            worker.success.connect(lambda success_msg: QTimer.singleShot(0, lambda: self._on_hvym_install_success(loading_window, worker, success_msg)))
-
-            # Start the worker thread
-            worker.start()
-
-            # Store references to prevent garbage collection
-            self._current_loading_window = loading_window
-            self._current_worker = worker
-    
-    def _on_hvym_install_success(self, loading_window, worker, success_msg):
-        """Handle successful hvym installation."""
-        loading_window.close()
-        self.hide()
-        worker.deleteLater()
-        
-        # Update UI to reflect hvym availability
-        self._update_ui_on_hvym_installed()
-        # Show success message
-        self.open_msg_dialog(success_msg)
-
-
-    def _update_hvym(self):
-        update = self.open_confirm_dialog('Update Heavymeta cli?')
-        if update == True:
-            # Create custom worker
-            worker = HvymInstallWorker(self.HVYM)  # Reuse the same worker class
-            
-            # Create animated loading window
-            loading_window = AnimatedLoadingWindow(self, 'UPDATING HVYM', self.LOADING_GIF)
-            loading_window.show()
-            loading_window.raise_()
-            loading_window.activateWindow()
-            loading_window.start_animation()
-            QApplication.processEvents()
-            
-            # Connect signals
-            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_animated_loading_finished(loading_window, worker)))
-            worker.error.connect(lambda error_msg: self._on_animated_loading_error(loading_window, worker, error_msg))
-            worker.success.connect(lambda success_msg: QTimer.singleShot(0, lambda: self._on_hvym_update_success(loading_window, worker, success_msg)))
-            
-            # Start the worker thread
-            worker.start()
-            
-            # Store references to prevent garbage collection
-            self._current_loading_window = loading_window
-            self._current_worker = worker
-    
-    def _on_hvym_update_success(self, loading_window, worker, success_msg):
-        """Handle successful hvym update."""
-        loading_window.close()
-        self.hide()
-        worker.deleteLater()
-        
-        # Ensure UI remains consistent after update
-        self._update_ui_on_hvym_installed()
-        # Show success message
-        self.open_msg_dialog(success_msg)
-
-    def _delete_hvym(self):
-        """Delete the hvym CLI binary and clean up related files."""
-        try:
-            if self.HVYM.is_file():
-                self.HVYM.unlink()
-                print(f"Removed hvym binary: {self.HVYM}")
-            
-            # For macOS, also clean up directories if empty
-            if platform.system().lower() == "darwin":
-                try:
-                    from macos_install_helper import MacOSInstallHelper
-                    helper = MacOSInstallHelper()
-                    helper.uninstall_hvym_cli()
-                except ImportError:
-                    print("macOS installation helper not available for cleanup")
-                except Exception as e:
-                    print(f"Error during macOS cleanup: {e}")
-            
-            return True
-        except Exception as e:
-            print(f"Error deleting hvym: {e}")
-            return False
 
     def _install_blender_addon(self, version):
         install = self.open_confirm_dialog('Install Heavymeta Blender Addon?')
@@ -2554,52 +3239,48 @@ class Metavinci(QMainWindow):
         shutil.rmtree(str(self.ADDON_INSTALL_PATH))
 
     def _install_pintheon(self):
+        """Install Pintheon directly without CLI dependency."""
         install = self.open_confirm_dialog('Install Pintheon?')
         if install == True:
-            # Create custom worker
-            worker = PintheonInstallWorker(self.HVYM)
-            
-            # Create animated loading window
-            loading_window = AnimatedLoadingWindow(self, 'INSTALLING PINTHEON', self.LOADING_GIF)
-            loading_window.show()
-            loading_window.raise_()
-            loading_window.activateWindow()
-            loading_window.start_animation()
+            # Create output window to show real-time progress
+            output_window = OutputWindow(self, 'Installing Pintheon')
+            output_window.show()
+            output_window.raise_()
+            output_window.activateWindow()
             QApplication.processEvents()
-            
-            # Connect signals
-            worker.finished.connect(lambda: QTimer.singleShot(0, lambda: self._on_animated_loading_finished(loading_window, worker)))
-            worker.error.connect(lambda error_msg: self._on_animated_loading_error(loading_window, worker, error_msg))
-            worker.success.connect(lambda success_msg: QTimer.singleShot(0, lambda: self._on_pintheon_install_success(loading_window, worker, success_msg)))
-            
+
+            # Create the direct setup worker (no CLI dependency)
+            worker = PintheonSetupWorker()
+
+            # Connect signals for real-time output
+            worker.output_line.connect(output_window.append_output)
+            worker.finished.connect(lambda: self._on_pintheon_setup_finished(output_window, worker))
+            worker.error.connect(lambda error_msg: self._on_pintheon_setup_error(output_window, worker, error_msg))
+            worker.success.connect(lambda success_msg: self._on_pintheon_setup_success(output_window, worker, success_msg))
+
             # Start the worker thread
             worker.start()
-            
-            # Store references to prevent garbage collection
-            self._current_loading_window = loading_window
-            self._current_worker = worker
-    
-    def _on_pintheon_install_success(self, loading_window, worker, success_msg):
-        """Handle successful Pintheon installation."""
 
-        loading_window.close()
-        self.hide()
+            # Store references to prevent garbage collection
+            self._current_output_window = output_window
+            self._current_worker = worker
+
+    def _on_pintheon_setup_finished(self, output_window, worker):
+        """Handle setup completion."""
+        output_window.enable_close()
         worker.deleteLater()
 
+    def _on_pintheon_setup_error(self, output_window, worker, error_msg):
+        """Handle setup error."""
+        output_window.set_status(error_msg, is_error=True)
+        output_window.enable_close()
+
+    def _on_pintheon_setup_success(self, output_window, worker, success_msg):
+        """Handle successful Pintheon setup."""
         self.PINTHEON_INSTALLED = True
         self.DOCKER_INSTALLED = True
-        
-        # Refresh UI to show start/stop actions
         self._refresh_pintheon_ui_state()
-        # Show success message
-        self.open_msg_dialog(success_msg)
-        
-    def _update_ui_on_hvym_installed(self):
-        # Toggle install/update visibility
-        self.install_hvym_action.setVisible(False)
-        self.update_hvym_action.setVisible(True)
-        # Refresh Pintheon UI state based on actual installation
-        self._refresh_pintheon_ui_state()
+        output_window.enable_close()
 
     def _update_ui_on_press_installed(self):
         """Update UI to reflect hvym_press availability after installation."""
@@ -2669,15 +3350,13 @@ class Metavinci(QMainWindow):
     def _start_pintheon(self):
         start = self.open_confirm_dialog('Start Pintheon Gateway?')
         if start:
-            # Run synchronously on main thread (simpler, avoids threading/timer issues)
-            result = self.hvym_start_pintheon()
-            if result is not None:
+            # Use direct Docker command (no CLI dependency)
+            if self._start_pintheon_direct():
                 self.PINTHEON_ACTIVE = True
                 self._update_ui_on_pintheon_started()
-                self.hvym_open_pintheon()
+                self._open_pintheon_admin()
             else:
                 self.open_msg_dialog('Failed to start Pintheon. Check logs for details.')
-
 
     def _update_ui_on_pintheon_started(self):
         self.pintheon_icon = QIcon(self.ON_IMG)
@@ -2695,23 +3374,22 @@ class Metavinci(QMainWindow):
         if confirm:
             stop = self.open_confirm_dialog('Stop Pintheon Gateway?')
         if stop:
-            # Run synchronously on main thread
-            result = self.hvym_stop_pintheon()
-            if result is not None:
+            # Use direct Docker command (no CLI dependency)
+            if self._stop_pintheon_direct():
                 self.PINTHEON_ACTIVE = False
                 self._update_ui_on_pintheon_stopped()
             else:
                 self.open_msg_dialog('Failed to stop Pintheon. Check logs for details.')
-    
+
     def _open_pintheon(self):
-        open = self.open_confirm_dialog('Open Pintheon Admin Interface?')
-        if open == True:
-            webbrowser.open('https://127.0.0.1:9999/admin')
+        open_it = self.open_confirm_dialog('Open Pintheon Admin Interface?')
+        if open_it:
+            self._open_pintheon_admin()
 
     def _open_homepage(self):
-        open = self.open_confirm_dialog('Open Local Homepage?')
-        if open == True:
-            webbrowser.open('https://127.0.0.1:9998/')
+        open_it = self.open_confirm_dialog('Open Local Homepage?')
+        if open_it:
+            self._open_pintheon_homepage()
         
     def _update_ui_on_pintheon_stopped(self):
         self.pintheon_icon = QIcon(self.OFF_IMG)
@@ -2726,24 +3404,22 @@ class Metavinci(QMainWindow):
 
     def _open_tunnel(self):
         expose = self.open_confirm_dialog('Expose Pintheon Gateway to the Internet?')
-        if expose == True:
-            self.hvym_open_tunnel()
-            # self.open_tunnel_action.setVisible(False)
+        if expose:
+            # Use direct implementation (no CLI dependency)
+            self._open_tunnel_direct()
 
     def _set_tunnel_token(self):
-        self.hvym_set_tunnel_token()
-        self.TUNNEL_TOKEN = self.hvym_tunnel_token_exists()
-        if len(self.TUNNEL_TOKEN) < 7:
-            self.open_tunnel_action.setVisible(False)
-        else:
-            self.open_tunnel_action.setVisible(True)
+        # Use direct implementation with Qt dialog (no CLI dependency)
+        self._set_tunnel_token_direct()
 
     def _set_tunnel_tier(self):
-        self.hvym_set_tunnel_tier()
+        # Use direct implementation with Qt dialog (no CLI dependency)
+        self._set_tunnel_tier_direct()
         self._refresh_pintheon_ui_state()
 
     def _set_pintheon_network(self):
-        self.hvym_set_pintheon_network()
+        # Use direct implementation with Qt dialog (no CLI dependency)
+        self._set_pintheon_network_direct()
         self._refresh_pintheon_ui_state()
 
     def _install_press(self):

@@ -59,22 +59,7 @@ class PlatformManager:
             return Path.home() / '.local' / 'share' / 'dfx' / 'bin' / 'dfx'
         else:  # Linux - maintain existing pattern
             return Path.home() / '.local' / 'share' / 'dfx' / 'bin' / 'dfx'
-    
-    def get_hvym_path(self):
-        """Get Heavymeta CLI path"""
-        if self.is_windows:
-            return Path.home() / 'AppData' / 'Local' / 'heavymeta-cli' / 'hvym-windows.exe'
-        elif self.is_macos:
-            # Use a more accessible location for macOS that doesn't require elevated permissions
-            # Binary name is architecture-specific: hvym-macos-arm64 (Apple Silicon) or hvym-macos-amd64 (Intel)
-            import platform as _platform
-            machine = (_platform.machine() or '').lower()
-            arch_suffix = 'arm64' if 'arm' in machine or 'aarch64' in machine else 'amd64'
-            binary_name = f'hvym-macos-{arch_suffix}'
-            return Path.home() / 'Library' / 'Application Support' / 'Metavinci' / 'bin' / binary_name
-        else:  # Linux - maintain existing pattern
-            return Path.home() / '.local' / 'share' / 'heavymeta-cli' / 'hvym-linux'
-    
+
     def get_didc_path(self):
         """Get DIDC binary path"""
         if self.is_windows:
@@ -112,14 +97,7 @@ class PlatformManager:
             return ['cmd', '/c', command]
         else:  # Linux/macOS
             return ['bash', '-c', command]
-    
-    def get_install_script_url(self):
-        """Get platform-specific install script URL"""
-        if self.is_windows:
-            return 'https://github.com/inviti8/hvym/raw/main/install.ps1'
-        else:  # Linux/macOS
-            return 'https://github.com/inviti8/hvym/raw/main/install.sh'
-    
+
     def get_press_install_script_url(self):
         """Get platform-specific press install script URL"""
         if self.is_windows:

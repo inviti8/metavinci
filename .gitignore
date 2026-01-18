@@ -39,6 +39,7 @@ ENV/
 # Local development
 .DS_Store
 Thumbs.db
+.claude/
 
 # Package files
 *.msi
