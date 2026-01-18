@@ -38,7 +38,7 @@ pystray==0.19.5
 python-xlib==0.33
 QtPy==2.4.1
 qtwidgets==1.1
-requests==2.31.0
+requests>=2.32.3,<3.0.0
 six==1.16.0
 tinydb==4.8.0
 tinydb-encrypted-jsonstorage==0.1.2
