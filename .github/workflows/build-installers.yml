@@ -157,26 +157,6 @@ jobs:
         python -c "import cx_Freeze; print('cx_Freeze version:', cx_Freeze.__version__); print('cx_Freeze location:', cx_Freeze.__file__)"
         python -c "import setuptools; print('setuptools location:', setuptools.__file__)"
 
-    - name: Build Windows installer (PyInstaller + cx_Freeze)
-      run: |
-        echo "=== Building Windows installer ==="
-        echo "Current directory:"
-        pwd
-        echo "Source files:"
-        dir *.py *.qrc
-        echo "Starting build..."
-        python build_installers.py --platform windows --version ${{ github.ref_name }}
-        echo "=== Build completed ==="
-        echo "Build output:"
-        dir build\ || echo "Build directory not found"
-        echo "Dist output:"
-        dir dist\ || echo "Dist directory not found"
-
-    - name: Download lessmsi
-      run: |
-        curl -L -o lessmsi.zip https://github.com/activescott/lessmsi/releases/download/v1.10.0/lessmsi-v1.10.0.zip
-        tar -xf lessmsi.zip
-        
     - name: Find and set up Signtool
       id: signtool_setup
       run: |
@@ -221,26 +201,87 @@ jobs:
         Write-Host "##[debug] SDK Path: $sdkPath"
         exit 1
 
-    - name: Sign Windows MSI and prepare certificate
+    - name: Prepare code signing certificate
       if: success()
       run: |
         # Create a temporary directory for certificate files
         $tempDir = "$env:RUNNER_TEMP\certs"
         New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
-        
+
         # Write the PFX certificate to a secure temporary file
         $certBytes = [System.Convert]::FromBase64String("${{ secrets.WINDOWS_SIGNING_CERT }}")
         $pfxPath = "$tempDir\heavymeta-code-sign.pfx"
         [System.IO.File]::WriteAllBytes($pfxPath, $certBytes)
-        
-        # Export the public certificate using certutil (more reliable cross-platform)
-        $publicCertPath = "$tempDir\heavymeta-code-sign.cer"
+
+        # Export to environment for later steps
+        echo "PFX_PATH=$pfxPath" >> $env:GITHUB_ENV
+        echo "CERT_TEMP_DIR=$tempDir" >> $env:GITHUB_ENV
+
+    - name: Build Windows EXE (PyInstaller)
+      env:
+        BUILD_VERSION: ${{ github.ref_name }}
+      run: |
+        echo "=== Building Windows EXE with version info ==="
+        echo "Build version: $env:BUILD_VERSION"
+        python build_cross_platform.py --platform windows
+        echo "=== EXE Build completed ==="
+        echo "Checking for built EXE:"
+        dir build\dist\windows\
+
+    - name: Sign Windows EXE
+      if: success()
+      run: |
+        $signTool = "$env:SIGNTOOL_PATH"
+        $pfxPath = "$env:PFX_PATH"
         $password = "${{ secrets.WINDOWS_SIGNING_PASSWORD }}"
-        
-        # First, import the certificate to the temporary store
+        $exePath = "build\dist\windows\metavinci.exe"
+
+        if (-not (Test-Path $exePath)) {
+            Write-Host "##[error] EXE not found at: $exePath"
+            exit 1
+        }
+
+        Write-Host "##[info] Signing EXE: $exePath"
+        & "$signTool" sign `
+            /f "$pfxPath" `
+            /p "$password" `
+            /fd sha256 `
+            /td sha256 `
+            /tr "http://timestamp.digicert.com" `
+            /v `
+            "$exePath"
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "##[error] Failed to sign EXE"
+            exit 1
+        }
+
+        Write-Host "##[info] EXE signed successfully"
+        & "$signTool" verify /pa /v "$exePath" || Write-Host "##[warning] Verification warning (expected with self-signed certs)"
+
+    - name: Build Windows MSI (cx_Freeze)
+      env:
+        BUILD_VERSION: ${{ github.ref_name }}
+      run: |
+        echo "=== Building Windows MSI installer ==="
+        python setup.py bdist_msi
+        echo "=== MSI Build completed ==="
+        echo "Checking for built MSI:"
+        dir dist\
+
+    - name: Sign Windows MSI
+      if: success()
+      run: |
+        $pfxPath = "$env:PFX_PATH"
+        $tempDir = "$env:CERT_TEMP_DIR"
+        $password = "${{ secrets.WINDOWS_SIGNING_PASSWORD }}"
+
+        # Export the public certificate for distribution
+        $publicCertPath = "$tempDir\heavymeta-code-sign.cer"
+
         $certStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("My", "CurrentUser")
         $certStore.Open("ReadWrite")
-        
+
         try {
             $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
                 $pfxPath,
@@ -248,47 +289,37 @@ jobs:
                 [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
             )
             $certStore.Add($cert)
-            
+
             # Export the public certificate
             $publicCertData = $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
             [System.IO.File]::WriteAllBytes($publicCertPath, $publicCertData)
-            
+
             Write-Host "Successfully exported public certificate to: $publicCertPath"
         }
         finally {
-            # Clean up the certificate from the store
             if ($cert) {
                 $certStore.Remove($cert)
             }
             $certStore.Close()
         }
-        
-        # Get signtool path from environment variable
+
         $signTool = "$env:SIGNTOOL_PATH"
-        if (-not (Test-Path $signTool)) {
-            Write-Host "##[error] SignTool not found at: $signTool"
-            exit 1
-        }
-        Write-Host "##[info] Using SignTool from: $signTool"
-        
-        # Look for MSI in both root dist and build/dist directories
+
+        # Look for MSI in dist directory
         $msiFile = (Get-ChildItem -Path "dist\*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
         if (-not $msiFile) {
             $msiFile = (Get-ChildItem -Path "build\dist\*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
         }
-        
+
         if (-not $msiFile) {
             Write-Host "##[error] MSI file not found in expected locations"
-            Write-Host "##[debug] Current directory: $(Get-Location)"
-            Write-Host "##[debug] Directory contents:"
             Get-ChildItem -Recurse -Filter "*.msi" | Format-Table FullName
             exit 1
         }
-        
+
         Write-Host "##[info] Found MSI file at: $msiFile"
-        
-        # First, try to sign with the original PFX file
-        Write-Host "##[info] Attempting to sign with PFX file..."
+        Write-Host "##[info] Signing MSI with PFX file..."
+
         & "$signTool" sign `
             /f "$pfxPath" `
             /p "$password" `
@@ -297,39 +328,15 @@ jobs:
             /tr "http://timestamp.digicert.com" `
             /v `
             "$msiFile"
-        
-        # If that fails, try with the certificate from the store
+
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "##[warning] PFX signing failed, trying with certificate from store..."
-            $certThumbprint = $cert.Thumbprint
-            & "$signTool" sign `
-                /sha1 "$certThumbprint" `
-                /fd sha256 `
-                /td sha256 `
-                /tr "http://timestamp.digicert.com" `
-                /v `
-                "$msiFile"
-        }
-        
-        # Verify the signature (using /a to find all valid certs in the chain)
-        if (Test-Path $msiFile) {
-            Write-Host "##[info] Verifying signature with signtool..."
-            & "$signTool" verify /pa /v /a "$msiFile"
-            if ($LASTEXITCODE -ne 0) {
-                Write-Host "##[warning] Standard verification failed, trying with /all flag..."
-                & "$signTool" verify /pa /v /all "$msiFile"
-                if ($LASTEXITCODE -ne 0) {
-                    Write-Host "##[warning] Note: Verification warnings are expected with self-signed certificates"
-                    # Don't fail the build for verification issues with self-signed certs
-                    $global:LASTEXITCODE = 0
-                }
-            }
-        } else {
-            Write-Host "##[error] Error: MSI file not found at $msiFile"
-            Get-ChildItem -Path "dist" -Recurse -ErrorAction SilentlyContinue | Format-Table FullName
+            Write-Host "##[error] Failed to sign MSI"
             exit 1
         }
-        
+
+        Write-Host "##[info] MSI signed successfully"
+        & "$signTool" verify /pa /v "$msiFile" || Write-Host "##[warning] Verification warning (expected with self-signed certs)"
+
         # Clean up the certificate files
         if (Test-Path $pfxPath) {
             Remove-Item -Path $pfxPath -Force -ErrorAction SilentlyContinue

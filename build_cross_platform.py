@@ -63,6 +63,7 @@ class CrossPlatformBuilder:
             ('hosts_utils.py', 'hosts_utils.py'),
             ('macos_install_helper.py', 'macos_install_helper.py'),
             ('resources.qrc', 'resources.qrc'),
+            ('windows_version_info.py', 'windows_version_info.py'),
         ]
         
         directories = ['images', 'data', 'service']
@@ -147,6 +148,28 @@ class CrossPlatformBuilder:
             pyinstaller_cmd.append('metavinci.py')
             # DO NOT add '--onefile' for macOS
         elif target_platform == 'windows' or (target_platform is None and self.platform_manager.is_windows):
+            # Generate Windows version info file
+            version_info_file = self.build_dir / 'version_info.txt'
+            try:
+                # Import and run the version info generator
+                import importlib.util
+                spec = importlib.util.spec_from_file_location(
+                    "windows_version_info",
+                    self.build_dir / 'windows_version_info.py'
+                )
+                if spec and spec.loader:
+                    version_module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(version_module)
+                    # Try to get version from environment variable (set by CI)
+                    build_version = os.environ.get('BUILD_VERSION', None)
+                    version_module.generate_version_file(
+                        output_path=str(version_info_file),
+                        version_override=build_version
+                    )
+            except Exception as e:
+                print(f"[WARN] Could not generate version info file: {e}")
+                version_info_file = None
+
             pyinstaller_cmd = [
                 'pyinstaller',
                 '--noconsole',
@@ -157,6 +180,10 @@ class CrossPlatformBuilder:
                 '--exclude-module', 'doctest',
                 '--collect-all', 'PyQt5.Qt',
             ]
+            # Add version info file if generated successfully
+            if version_info_file and version_info_file.exists():
+                pyinstaller_cmd.extend(['--version-file', str(version_info_file)])
+                print(f"[INFO] Using Windows version info file: {version_info_file}")
             if icon_file.exists():
                 pyinstaller_cmd.extend(['--icon', str(icon_file)])
             pyinstaller_cmd.append('metavinci.py')
