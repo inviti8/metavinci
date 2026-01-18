@@ -552,7 +552,7 @@ jobs:
           hdiutil detach "$MOUNT_POINT"
 
       - name: Notarize DMG with Apple ID (notarytool)
-        if: ${{ inputs.skip-notarize != true }}
+        if: ${{ inputs.skip-notarize != true && !contains(github.ref_name, '-no-notarize') }}
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -597,7 +597,7 @@ jobs:
           fi
 
       - name: Staple notarization ticket to DMG
-        if: ${{ inputs.skip-notarize != true }}
+        if: ${{ inputs.skip-notarize != true && !contains(github.ref_name, '-no-notarize') }}
         run: |
           set -eo pipefail
           ARCH="${{ matrix.arch }}"
