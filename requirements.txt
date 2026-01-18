@@ -16,7 +16,7 @@ deprecated==1.2.14
 dload==0.6
 docutils==0.22.4
 easygui==0.98.3
-filelock==3.18.0
+filelock>=3.20.1
 freeze-core==0.4.2
 hvym-stellar==0.12
 icnsutil==1.1.0
