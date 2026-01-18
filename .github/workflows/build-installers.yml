@@ -257,7 +257,15 @@ jobs:
         }
 
         Write-Host "##[info] EXE signed successfully"
-        & "$signTool" verify /pa /v "$exePath" || Write-Host "##[warning] Verification warning (expected with self-signed certs)"
+
+        # Verify signature (will fail for self-signed certs, which is expected)
+        & "$signTool" verify /pa /v "$exePath"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "##[warning] Verification warning (expected with self-signed certificates)"
+            Write-Host "##[warning] The EXE is signed, but the certificate is not trusted by Windows by default"
+        }
+        # Don't fail the build for verification issues with self-signed certs
+        $global:LASTEXITCODE = 0
 
     - name: Build Windows MSI (cx_Freeze)
       env:
@@ -335,7 +343,15 @@ jobs:
         }
 
         Write-Host "##[info] MSI signed successfully"
-        & "$signTool" verify /pa /v "$msiFile" || Write-Host "##[warning] Verification warning (expected with self-signed certs)"
+
+        # Verify signature (will fail for self-signed certs, which is expected)
+        & "$signTool" verify /pa /v "$msiFile"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "##[warning] Verification warning (expected with self-signed certificates)"
+            Write-Host "##[warning] The MSI is signed, but the certificate is not trusted by Windows by default"
+        }
+        # Don't fail the build for verification issues with self-signed certs
+        $global:LASTEXITCODE = 0
 
         # Clean up the certificate files
         if (Test-Path $pfxPath) {
