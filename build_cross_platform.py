@@ -64,6 +64,10 @@ class CrossPlatformBuilder:
             ('macos_install_helper.py', 'macos_install_helper.py'),
             ('resources.qrc', 'resources.qrc'),
             ('windows_version_info.py', 'windows_version_info.py'),
+            # API server files
+            ('hvym_metadata.py', 'hvym_metadata.py'),
+            ('api_server.py', 'api_server.py'),
+            ('api_routes.py', 'api_routes.py'),
         ]
         
         directories = ['images', 'data', 'service']
@@ -128,6 +132,32 @@ class CrossPlatformBuilder:
         dist_dir.mkdir(parents=True, exist_ok=True)
         
         # Build PyInstaller command with minimal exclusions
+        # Hidden imports for API server (FastAPI + uvicorn)
+        api_hidden_imports = [
+            'fastapi',
+            'uvicorn',
+            'uvicorn.logging',
+            'uvicorn.loops',
+            'uvicorn.loops.auto',
+            'uvicorn.protocols',
+            'uvicorn.protocols.http',
+            'uvicorn.protocols.http.auto',
+            'uvicorn.protocols.websockets',
+            'uvicorn.protocols.websockets.auto',
+            'uvicorn.lifespan',
+            'uvicorn.lifespan.on',
+            'starlette',
+            'starlette.routing',
+            'starlette.middleware',
+            'starlette.middleware.cors',
+            'anyio',
+            'anyio._backends',
+            'anyio._backends._asyncio',
+            'hvym_metadata',
+            'api_server',
+            'api_routes',
+        ]
+
         if target_platform == 'macos':
             pyinstaller_cmd = [
                 'pyinstaller',
@@ -143,6 +173,9 @@ class CrossPlatformBuilder:
                 '--osx-bundle-identifier', 'com.heavymeta.metavinci',
                 '--hidden-import', 'macos_install_helper',
             ]
+            # Add API server hidden imports
+            for imp in api_hidden_imports:
+                pyinstaller_cmd.extend(['--hidden-import', imp])
             if icon_file.exists():
                 pyinstaller_cmd.extend(['--icon', str(icon_file)])
             pyinstaller_cmd.append('metavinci.py')
@@ -180,6 +213,9 @@ class CrossPlatformBuilder:
                 '--exclude-module', 'doctest',
                 '--collect-all', 'PyQt5.Qt',
             ]
+            # Add API server hidden imports
+            for imp in api_hidden_imports:
+                pyinstaller_cmd.extend(['--hidden-import', imp])
             # Add version info file if generated successfully
             if version_info_file and version_info_file.exists():
                 pyinstaller_cmd.extend(['--version-file', str(version_info_file)])
@@ -200,6 +236,9 @@ class CrossPlatformBuilder:
                 '--collect-all', 'PyQt5.Qt',
                 '--hidden-import', 'PyQt5.sip',
             ]
+            # Add API server hidden imports
+            for imp in api_hidden_imports:
+                pyinstaller_cmd.extend(['--hidden-import', imp])
             if icon_file.exists():
                 pyinstaller_cmd.extend(['--icon', str(icon_file)])
             pyinstaller_cmd.append('metavinci.py')

@@ -16,6 +16,7 @@ deprecated==1.2.14
 dload==0.6
 docutils==0.22.4
 easygui==0.98.3
+fastapi>=0.109.0
 filelock>=3.20.1
 freeze-core==0.4.2
 hvym-stellar==0.12
@@ -68,6 +69,7 @@ typing-extensions==4.15.0
 typing-inspect==0.9.0
 typing-inspection==0.4.2
 urllib3==2.6.3
+uvicorn[standard]>=0.27.0
 wrapt==1.16.0
 xdrlib3==0.1.1
 zipp==3.18.1

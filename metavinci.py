@@ -83,6 +83,14 @@ except ImportError:
 
 import hashlib
 
+# Try to import API server
+try:
+    from api_server import ApiServerWorker, FASTAPI_AVAILABLE
+    HAS_API_SERVER = FASTAPI_AVAILABLE
+except ImportError:
+    HAS_API_SERVER = False
+    ApiServerWorker = None
+
 # Constants
 EXTRACT_RETRY_ATTEMPTS = 2
 EXTRACT_RETRY_DELAY = 1  # seconds
@@ -1540,6 +1548,13 @@ class Metavinci(QMainWindow):
 
         self._update_install_stats()
         self.PINTHEON_ACTIVE = False
+
+        # Initialize API server
+        self.api_server = None
+        self.API_PORT = self._get_api_port()
+        self.API_ACTIVE = False
+        if HAS_API_SERVER:
+            self._start_api_server()
         self.win_icon = QIcon(self.HVYM_IMG)
         self.icon = QIcon(self.LOGO_IMG)
         self.pintheon_icon = QIcon(self.PINTHEON_IMG)
@@ -1643,7 +1658,22 @@ class Metavinci(QMainWindow):
 
         self.open_homepage_action = QAction(self.web_icon, "Open Homepage", self)
         self.open_homepage_action.triggered.connect(self._open_homepage)
-        
+
+        # API Server actions
+        self.api_status_action = QAction("Status: Stopped", self)
+        self.api_status_action.setEnabled(False)
+
+        self.api_open_docs_action = QAction(self.web_icon, "Open API Docs", self)
+        self.api_open_docs_action.triggered.connect(self._open_api_docs)
+        self.api_open_docs_action.setVisible(False)
+
+        self.api_restart_action = QAction(self.cog_icon, "Restart API Server", self)
+        self.api_restart_action.triggered.connect(self._restart_api_server)
+        self.api_restart_action.setVisible(False)
+
+        self.api_port_action = QAction(self.cog_icon, "Change Port...", self)
+        self.api_port_action.triggered.connect(self._change_api_port)
+
         # Set initial visibility based on PINTHEON_ACTIVE state
         self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
         self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
@@ -1672,7 +1702,7 @@ class Metavinci(QMainWindow):
         update_tools_action.triggered.connect(self.update_tools)
 
         quit_action = QAction("Exit", self)
-        quit_action.triggered.connect(qApp.quit)
+        quit_action.triggered.connect(self._quit_application)
 
         test_action = QAction("TEST", self)
         test_action.triggered.connect(self.test_process)
@@ -1712,6 +1742,10 @@ class Metavinci(QMainWindow):
 
         # Refresh Pintheon UI state
         self._refresh_pintheon_ui_state()
+
+        # Add Metadata API menu if available
+        if HAS_API_SERVER:
+            self._setup_api_menu(tray_menu)
 
         tray_menu.addAction(quit_action)
 
@@ -1765,7 +1799,134 @@ class Metavinci(QMainWindow):
             self.tray_press_menu.setIcon(self.press_icon)
             self.tray_press_menu.addAction(self.run_press_action)
             self.tray_press_menu.setVisible(True)
-        
+
+    # =========================================================================
+    # API Server Methods
+    # =========================================================================
+
+    def _get_api_port(self) -> int:
+        """Get API port from database config or use default."""
+        try:
+            result = self.DB.search(self.QUERY.type == 'app_data')
+            if result and 'api_port' in result[0]:
+                return result[0]['api_port']
+        except Exception:
+            pass
+        return 7777  # Default port
+
+    def _set_api_port(self, port: int):
+        """Save API port to database config."""
+        try:
+            self.DB.update({'api_port': port}, self.QUERY.type == 'app_data')
+            self.API_PORT = port
+        except Exception as e:
+            logging.error(f"Failed to save API port: {e}")
+
+    def _setup_api_menu(self, tray_menu):
+        """Set up the Metadata API submenu in the system tray."""
+        self.tray_api_menu = tray_menu.addMenu("Metadata API")
+        self.tray_api_menu.setIcon(self.web_icon)
+
+        self.tray_api_menu.addAction(self.api_status_action)
+        self.tray_api_menu.addSeparator()
+        self.tray_api_menu.addAction(self.api_open_docs_action)
+        self.tray_api_menu.addAction(self.api_restart_action)
+        self.tray_api_menu.addAction(self.api_port_action)
+
+    def _start_api_server(self):
+        """Start the local metadata API server."""
+        if not HAS_API_SERVER:
+            logging.warning("API server not available (FastAPI not installed)")
+            return
+
+        if self.api_server and self.api_server.isRunning():
+            logging.info("API server already running")
+            return
+
+        self.api_server = ApiServerWorker(port=self.API_PORT, parent=self)
+        self.api_server.started_signal.connect(self._on_api_started)
+        self.api_server.stopped_signal.connect(self._on_api_stopped)
+        self.api_server.error_signal.connect(self._on_api_error)
+        self.api_server.start()
+        logging.info(f"Starting HEAVYMETADATA API server on port {self.API_PORT}")
+
+    def _stop_api_server(self):
+        """Stop the API server gracefully."""
+        if self.api_server and self.api_server.isRunning():
+            self.api_server.stop()
+            self.api_server.wait(5000)  # Wait up to 5 seconds
+            logging.info("HEAVYMETADATA API server stopped")
+
+    def _restart_api_server(self):
+        """Restart the API server."""
+        self._stop_api_server()
+        self._start_api_server()
+
+    def _on_api_started(self):
+        """Handle API server started signal."""
+        self.API_ACTIVE = True
+        self.api_status_action.setText(f"Status: Running (port {self.API_PORT})")
+        self.api_open_docs_action.setVisible(True)
+        self.api_restart_action.setVisible(True)
+        logging.info(f"HEAVYMETADATA API started on http://127.0.0.1:{self.API_PORT}")
+
+    def _on_api_stopped(self):
+        """Handle API server stopped signal."""
+        self.API_ACTIVE = False
+        self.api_status_action.setText("Status: Stopped")
+        self.api_open_docs_action.setVisible(False)
+        self.api_restart_action.setVisible(False)
+
+    def _on_api_error(self, error: str):
+        """Handle API server error signal."""
+        self.API_ACTIVE = False
+        self.api_status_action.setText(f"Status: Error")
+        self.api_open_docs_action.setVisible(False)
+        self.api_restart_action.setVisible(False)
+        logging.error(f"HEAVYMETADATA API error: {error}")
+        QMessageBox.warning(self, "API Server Error", f"Failed to start Metadata API server:\n{error}")
+
+    def _open_api_docs(self):
+        """Open the API documentation in browser."""
+        webbrowser.open(f"http://127.0.0.1:{self.API_PORT}/docs")
+
+    def _change_api_port(self):
+        """Show dialog to change API server port."""
+        port, ok = QInputDialog.getInt(
+            self,
+            "Change API Port",
+            "Enter new port number:",
+            self.API_PORT,
+            1024,  # Min port
+            65535,  # Max port
+            1  # Step
+        )
+        if ok and port != self.API_PORT:
+            self._set_api_port(port)
+            if self.API_ACTIVE:
+                reply = QMessageBox.question(
+                    self,
+                    "Restart API Server",
+                    f"Port changed to {port}. Restart the API server now?",
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                if reply == QMessageBox.Yes:
+                    self._restart_api_server()
+            else:
+                QMessageBox.information(
+                    self,
+                    "Port Changed",
+                    f"API port changed to {port}. It will be used on next server start."
+                )
+
+    def _quit_application(self):
+        """Clean shutdown of the application."""
+        # Stop API server
+        if HAS_API_SERVER and self.api_server:
+            self._stop_api_server()
+
+        # Call the original quit
+        qApp.quit()
 
     def _init_logging(self):
         # Configure basic logging to console first

@@ -52,7 +52,7 @@ setup(
     description="Metavinci Desktop Application",
     author=publisher,
     author_email="metavinci@heavymeta.art",
-    url="https://heavymeta.io",
+    url="https://heavymeta.art",
     executables=executables,
     options={
         "build_exe": {
