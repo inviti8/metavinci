@@ -68,8 +68,12 @@ class CrossPlatformBuilder:
             ('hvym_metadata.py', 'hvym_metadata.py'),
             ('api_server.py', 'api_server.py'),
             ('api_routes.py', 'api_routes.py'),
+            # Wallet management
+            ('wallet_manager.py', 'wallet_manager.py'),
             # Soroban contract generator
             ('soroban_generator.py', 'soroban_generator.py'),
+            ('jinja2', 'jinja2'),
+            ('jinja2.ext', 'jinja2.ext'),
         ]
 
         directories = ['images', 'data', 'service', 'templates']
@@ -158,6 +162,13 @@ class CrossPlatformBuilder:
             'hvym_metadata',
             'api_server',
             'api_routes',
+            # Wallet management
+            'wallet_manager',
+            'stellar_sdk',
+            'tinydb',
+            'tinydb_encrypted_json_storage',
+            'cryptography',
+            'cryptography.fernet',
             # Soroban contract generator
             'soroban_generator',
             'jinja2',

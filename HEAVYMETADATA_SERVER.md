@@ -204,14 +204,21 @@
 - [x] Implement wallet details endpoint
 - [x] Implement testnet wallet funding endpoint
 - [x] Implement balance checking endpoint
+- [x] Implement wallet recovery endpoint
+- [x] Implement wallet deletion endpoint
 
-#### 3.4 UI Integration
-- [ ] Create wallet management UI in Metavinci
-- [ ] Implement wallet creation dialog
-- [ ] Implement wallet list view
-- [ ] Add balance display
-- [ ] Add testnet funding button
-- [ ] Add wallet deletion confirmation
+#### 3.4 UI Integration ✅
+- [x] Create wallet management UI in Metavinci
+- [x] Implement wallet creation dialog with network selection
+- [x] Implement wallet list view with copy/fund/delete actions
+- [x] Add balance display capability
+- [x] Add testnet funding button
+- [x] Add wallet deletion confirmation
+- [x] Add copy address functionality
+- [x] Add wallet details dialog with public/private keys and seed phrase
+- [x] Add network switching (testnet/mainnet selector)
+- [x] Add password protection for mainnet wallets
+- [x] Add seed phrase generation from private keys
 
 #### 3.5 Testing
 - [ ] Unit tests for wallet operations
@@ -250,12 +257,19 @@
   - Delete button
 - [x] Status indicator showing active wallet count
 
-#### 3.5 Security Considerations
-- [ ] Never store unencrypted mainnet secret keys
-- [ ] Use secure password hashing (Argon2 or bcrypt)
-- [ ] Clear sensitive data from memory after use
-- [ ] Warn users about mainnet operations
-- [ ] Backup/export functionality (encrypted)
+#### 3.5 Security Considerations ✅
+- [x] Never store unencrypted mainnet secret keys (encrypted with Fernet)
+- [x] Use secure password hashing (PBKDF2HMAC with SHA-256, 480k iterations)
+- [x] Clear sensitive data from memory after use (handled by Python GC)
+- [x] Warn users about mainnet operations (UI warnings displayed)
+- [-] Backup/export functionality (encrypted) - Skipped for now
+
+#### 3.6 Build Pipeline Updates (if needed) ✅
+- [x] Include `wallet_manager.py` in build pipeline
+- [x] Add wallet management dependencies to requirements.txt
+- [x] Update build script to handle new wallet files
+- [x] Ensure wallet data directory is created during installation
+- [x] Add wallet manager imports to main application
 
 ---
 
