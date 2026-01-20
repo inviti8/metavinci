@@ -23,7 +23,7 @@ Usage Example:
     # The windows and workers are automatically cleaned up when work completes
 """
 
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QLineEdit, QWidgetAction, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QComboBox, QDialogButtonBox, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp, QVBoxLayout, QPushButton, QDialog, QDesktopWidget, QFileDialog, QMessageBox, QSplashScreen, QPlainTextEdit, QScrollBar, QInputDialog
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QLineEdit, QWidgetAction, QGridLayout, QWidget, QCheckBox, QSystemTrayIcon, QComboBox, QDialogButtonBox, QSpacerItem, QSizePolicy, QMenu, QAction, QStyle, qApp, QVBoxLayout, QHBoxLayout, QPushButton, QDialog, QDesktopWidget, QFileDialog, QMessageBox, QSplashScreen, QPlainTextEdit, QScrollBar, QInputDialog, QListWidget, QListWidgetItem
 from PyQt5.QtCore import Qt, QSize, QTimer, QByteArray, QThread, pyqtSignal, QCoreApplication
 from PyQt5.QtGui import QMovie
 from PyQt5.QtGui import QIcon, QPixmap, QImageReader, QPalette
@@ -90,6 +90,14 @@ try:
 except ImportError:
     HAS_API_SERVER = False
     ApiServerWorker = None
+
+# Try to import wallet manager
+try:
+    from wallet_manager import WalletManager
+    HAS_WALLET_MANAGER = True
+except ImportError:
+    HAS_WALLET_MANAGER = False
+    WalletManager = None
 
 # Constants
 EXTRACT_RETRY_ATTEMPTS = 2
@@ -1674,6 +1682,16 @@ class Metavinci(QMainWindow):
         self.api_port_action = QAction(self.cog_icon, "Change Port...", self)
         self.api_port_action.triggered.connect(self._change_api_port)
 
+        # Wallet Management actions
+        self.wallet_manage_action = QAction(self.stellar_icon, "Manage Wallets", self)
+        self.wallet_manage_action.triggered.connect(self._open_wallet_manager)
+        
+        self.wallet_create_action = QAction(self.stellar_icon, "Create Wallet", self)
+        self.wallet_create_action.triggered.connect(self._create_wallet)
+        
+        self.wallet_recover_action = QAction(self.stellar_icon, "Recover Wallet", self)
+        self.wallet_recover_action.triggered.connect(self._recover_wallet)
+
         # Set initial visibility based on PINTHEON_ACTIVE state
         self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
         self.stop_pintheon_action.setVisible(self.PINTHEON_ACTIVE)
@@ -1746,6 +1764,10 @@ class Metavinci(QMainWindow):
         # Add Metadata API menu if available
         if HAS_API_SERVER:
             self._setup_api_menu(tray_menu)
+
+        # Add Wallet Management menu if available
+        if HAS_WALLET_MANAGER:
+            self._setup_wallet_menu(tray_menu)
 
         tray_menu.addAction(quit_action)
 
@@ -1833,6 +1855,16 @@ class Metavinci(QMainWindow):
         self.tray_api_menu.addAction(self.api_restart_action)
         self.tray_api_menu.addAction(self.api_port_action)
 
+    def _setup_wallet_menu(self, tray_menu):
+        """Set up the Wallet Management submenu in the system tray."""
+        self.tray_wallet_menu = tray_menu.addMenu("Wallet Management")
+        self.tray_wallet_menu.setIcon(self.stellar_icon)
+
+        self.tray_wallet_menu.addAction(self.wallet_manage_action)
+        self.tray_wallet_menu.addSeparator()
+        self.tray_wallet_menu.addAction(self.wallet_create_action)
+        self.tray_wallet_menu.addAction(self.wallet_recover_action)
+
     def _start_api_server(self):
         """Start the local metadata API server."""
         if not HAS_API_SERVER:
@@ -1917,6 +1949,104 @@ class Metavinci(QMainWindow):
                     self,
                     "Port Changed",
                     f"API port changed to {port}. It will be used on next server start."
+                )
+
+    # =========================================================================
+    # Wallet Management Methods
+    # =========================================================================
+
+    def _open_wallet_manager(self):
+        """Open the wallet management window."""
+        if not HAS_WALLET_MANAGER:
+            QMessageBox.warning(self, "Wallet Manager Not Available", 
+                              "Wallet management is not available. Please ensure wallet_manager.py is present.")
+            return
+        
+        # Create and show wallet manager dialog
+        dialog = WalletManagerDialog(self)
+        dialog.exec_()
+
+    def _create_wallet(self):
+        """Create a new wallet with network selection."""
+        if not HAS_WALLET_MANAGER:
+            QMessageBox.warning(self, "Wallet Manager Not Available", 
+                              "Wallet management is not available. Please ensure wallet_manager.py is present.")
+            return
+        
+        # Create unified wallet creation dialog
+        dialog = WalletCreationDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            network = dialog.get_network()
+            label = dialog.get_label()
+            password = dialog.get_password()
+            
+            try:
+                wallet_manager = WalletManager()
+                
+                if network == "testnet":
+                    wallet = wallet_manager.create_testnet_wallet(label=label)
+                    # Get the actual secret key (testnet wallets store plaintext)
+                    secret_key = wallet.secret_key
+                else:  # mainnet
+                    wallet, unencrypted_secret = wallet_manager.create_mainnet_wallet(label=label, password=password)
+                    secret_key = unencrypted_secret
+                
+                # Generate seed phrase
+                seed_phrase = wallet_manager.generate_seed_phrase(secret_key)
+                
+                # Show wallet details dialog
+                details_dialog = WalletDetailsDialog(
+                    self, 
+                    wallet=wallet, 
+                    secret_key=secret_key, 
+                    seed_phrase=seed_phrase
+                )
+                details_dialog.exec_()
+                
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Wallet Creation Failed",
+                    f"Failed to create {network} wallet:\n{str(e)}"
+                )
+
+    def _recover_wallet(self):
+        """Recover a wallet from secret key."""
+        if not HAS_WALLET_MANAGER:
+            QMessageBox.warning(self, "Wallet Manager Not Available", 
+                              "Wallet management is not available. Please ensure wallet_manager.py is present.")
+            return
+        
+        # Create recovery dialog
+        dialog = WalletRecoveryDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            secret_key = dialog.get_secret_key()
+            network = dialog.get_network()
+            label = dialog.get_label()
+            password = dialog.get_password()
+            
+            try:
+                wallet_manager = WalletManager()
+                wallet = wallet_manager.recover_wallet_from_secret(
+                    secret_key=secret_key,
+                    network=network,
+                    label=label,
+                    password=password
+                )
+                
+                QMessageBox.information(
+                    self,
+                    "Wallet Recovered",
+                    f"Wallet recovered successfully!\n\n"
+                    f"Address: {wallet.address}\n"
+                    f"Network: {wallet.network}\n"
+                    f"Label: {wallet.label}"
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Wallet Recovery Failed",
+                    f"Failed to recover wallet:\n{str(e)}"
                 )
 
     def _quit_application(self):
@@ -3670,6 +3800,463 @@ class Metavinci(QMainWindow):
             # Store references to prevent garbage collection
             self._current_loading_window = loading_window
             self._current_worker = worker
+
+
+# ============================================================================
+# Wallet Management Dialog Classes
+# ============================================================================
+
+class WalletManagerDialog(QDialog):
+    """Dialog for managing wallets."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Wallet Manager")
+        self.setMinimumSize(600, 400)
+        self.wallet_manager = WalletManager()
+        
+        layout = QVBoxLayout(self)
+        
+        # Wallet list
+        self.wallet_list = QListWidget()
+        layout.addWidget(QLabel("Your Wallets:"))
+        layout.addWidget(self.wallet_list)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn.clicked.connect(self.refresh_wallets)
+        button_layout.addWidget(self.refresh_btn)
+        
+        self.fund_btn = QPushButton("Fund Testnet")
+        self.fund_btn.clicked.connect(self.fund_selected_wallet)
+        button_layout.addWidget(self.fund_btn)
+        
+        self.copy_btn = QPushButton("Copy Address")
+        self.copy_btn.clicked.connect(self.copy_selected_address)
+        button_layout.addWidget(self.copy_btn)
+        
+        self.delete_btn = QPushButton("Delete")
+        self.delete_btn.clicked.connect(self.delete_selected_wallet)
+        button_layout.addWidget(self.delete_btn)
+        
+        button_layout.addStretch()
+        
+        self.close_btn = QPushButton("Close")
+        self.close_btn.clicked.connect(self.accept)
+        button_layout.addWidget(self.close_btn)
+        
+        layout.addLayout(button_layout)
+        
+        # Load initial wallets
+        self.refresh_wallets()
+        
+        # Enable/disable buttons based on selection
+        self.wallet_list.itemSelectionChanged.connect(self.update_buttons)
+        self.update_buttons()
+    
+    def refresh_wallets(self):
+        """Refresh the wallet list."""
+        self.wallet_list.clear()
+        
+        try:
+            # Get testnet wallets
+            testnet_wallets = self.wallet_manager.list_testnet_wallets()
+            for wallet in testnet_wallets:
+                item = QListWidgetItem(f"Testnet: {wallet.label} - {wallet.address[:8]}...")
+                item.setData(32, wallet)  # Qt.UserRole = 32
+                self.wallet_list.addItem(item)
+            
+            # Get mainnet wallets
+            mainnet_wallets = self.wallet_manager.list_mainnet_wallets()
+            for wallet in mainnet_wallets:
+                item = QListWidgetItem(f"Mainnet: {wallet.label} - {wallet.address[:8]}...")
+                item.setData(32, wallet)  # Qt.UserRole = 32
+                self.wallet_list.addItem(item)
+                
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to load wallets: {str(e)}")
+    
+    def update_buttons(self):
+        """Update button states based on selection."""
+        has_selection = bool(self.wallet_list.currentItem())
+        self.fund_btn.setEnabled(has_selection)
+        self.copy_btn.setEnabled(has_selection)
+        self.delete_btn.setEnabled(has_selection)
+        
+        # Only enable fund button for testnet wallets
+        if has_selection:
+            wallet = self.wallet_list.currentItem().data(32)
+            self.fund_btn.setEnabled(wallet.network == "testnet")
+    
+    def fund_selected_wallet(self):
+        """Fund the selected testnet wallet."""
+        item = self.wallet_list.currentItem()
+        if not item:
+            return
+        
+        wallet = item.data(32)
+        if wallet.network != "testnet":
+            return
+        
+        try:
+            result = self.wallet_manager.fund_testnet_wallet(wallet.address)
+            if result.get("success"):
+                QMessageBox.information(self, "Success", "Wallet funded successfully!")
+            else:
+                QMessageBox.warning(self, "Failed", "Failed to fund wallet")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to fund wallet: {str(e)}")
+    
+    def copy_selected_address(self):
+        """Copy the selected wallet address to clipboard."""
+        item = self.wallet_list.currentItem()
+        if not item:
+            return
+        
+        wallet = item.data(32)
+        
+        clipboard = QApplication.clipboard()
+        clipboard.setText(wallet.address)
+        
+        QMessageBox.information(self, "Success", f"Address copied to clipboard:\n{wallet.address}")
+    
+    def delete_selected_wallet(self):
+        """Delete the selected wallet."""
+        item = self.wallet_list.currentItem()
+        if not item:
+            return
+        
+        wallet = item.data(32)
+        
+        reply = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Are you sure you want to delete wallet '{wallet.label}'?\n\n"
+            f"Address: {wallet.address}\n"
+            f"This action cannot be undone!",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                if self.wallet_manager.delete_wallet(wallet.address):
+                    self.refresh_wallets()
+                    QMessageBox.information(self, "Success", "Wallet deleted successfully")
+                else:
+                    QMessageBox.warning(self, "Failed", "Failed to delete wallet")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to delete wallet: {str(e)}")
+
+
+class WalletRecoveryDialog(QDialog):
+    """Dialog for recovering a wallet from secret key."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Recover Wallet")
+        self.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(self)
+        
+        # Secret key input
+        layout.addWidget(QLabel("Secret Key:"))
+        self.secret_key_edit = QLineEdit()
+        self.secret_key_edit.setPlaceholderText("S...")
+        layout.addWidget(self.secret_key_edit)
+        
+        # Network selection
+        layout.addWidget(QLabel("Network:"))
+        self.network_combo = QComboBox()
+        self.network_combo.addItems(["testnet", "mainnet"])
+        self.network_combo.currentTextChanged.connect(self.on_network_changed)
+        layout.addWidget(self.network_combo)
+        
+        # Label input
+        layout.addWidget(QLabel("Label (optional):"))
+        self.label_edit = QLineEdit()
+        self.label_edit.setPlaceholderText("My recovered wallet")
+        layout.addWidget(self.label_edit)
+        
+        # Password input (for mainnet only)
+        self.password_label = QLabel("Password:")
+        self.password_edit = QLineEdit()
+        self.password_edit.setEchoMode(QLineEdit.Password)
+        self.password_edit.setPlaceholderText("Enter password to encrypt secret key")
+        layout.addWidget(self.password_label)
+        layout.addWidget(self.password_edit)
+        
+        # Initially hide password fields
+        self.on_network_changed("testnet")
+        
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+    
+    def on_network_changed(self, network):
+        """Handle network selection change."""
+        is_mainnet = (network == "mainnet")
+        self.password_label.setVisible(is_mainnet)
+        self.password_edit.setVisible(is_mainnet)
+        if is_mainnet:
+            self.password_edit.setFocus()
+    
+    def get_secret_key(self):
+        """Get the secret key."""
+        return self.secret_key_edit.text().strip()
+    
+    def get_network(self):
+        """Get the selected network."""
+        return self.network_combo.currentText()
+    
+    def get_label(self):
+        """Get the wallet label."""
+        label = self.label_edit.text().strip()
+        return label if label else None
+    
+    def get_password(self):
+        """Get the password (for mainnet only)."""
+        if self.network_combo.currentText() == "mainnet":
+            return self.password_edit.text()
+        return None
+    
+    def accept(self):
+        """Validate input before accepting."""
+        secret_key = self.get_secret_key()
+        if not secret_key:
+            QMessageBox.warning(self, "Invalid Input", "Please enter a secret key")
+            return
+        
+        if not secret_key.startswith('S'):
+            QMessageBox.warning(self, "Invalid Input", "Secret key must start with 'S'")
+            return
+        
+        network = self.get_network()
+        if network == "mainnet":
+            password = self.get_password()
+            if not password:
+                QMessageBox.warning(self, "Invalid Input", "Password is required for mainnet wallets")
+                return
+        
+        super().accept()
+
+
+class WalletCreationDialog(QDialog):
+    """Dialog for creating a new wallet with network selection."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Create Wallet")
+        self.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(self)
+        
+        # Network selection
+        layout.addWidget(QLabel("Network:"))
+        self.network_combo = QComboBox()
+        self.network_combo.addItems(["testnet", "mainnet"])
+        self.network_combo.currentTextChanged.connect(self.on_network_changed)
+        layout.addWidget(self.network_combo)
+        
+        # Label input
+        layout.addWidget(QLabel("Label (optional):"))
+        self.label_edit = QLineEdit()
+        self.label_edit.setPlaceholderText("My wallet")
+        layout.addWidget(self.label_edit)
+        
+        # Password input (for mainnet only)
+        self.password_label = QLabel("Password:")
+        self.password_edit = QLineEdit()
+        self.password_edit.setEchoMode(QLineEdit.Password)
+        self.password_edit.setPlaceholderText("Enter password to encrypt secret key")
+        layout.addWidget(self.password_label)
+        layout.addWidget(self.password_edit)
+        
+        # Password confirmation (for mainnet only)
+        self.password_confirm_label = QLabel("Confirm Password:")
+        self.password_confirm_edit = QLineEdit()
+        self.password_confirm_edit.setEchoMode(QLineEdit.Password)
+        self.password_confirm_edit.setPlaceholderText("Re-enter password")
+        layout.addWidget(self.password_confirm_label)
+        layout.addWidget(self.password_confirm_edit)
+        
+        # Warning text for mainnet
+        self.warning_label = QLabel()
+        self.warning_label.setStyleSheet("color: red; font-weight: bold;")
+        layout.addWidget(self.warning_label)
+        
+        # Initially hide password fields
+        self.on_network_changed("testnet")
+        
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+    
+    def on_network_changed(self, network):
+        """Handle network selection change."""
+        is_mainnet = (network == "mainnet")
+        self.password_label.setVisible(is_mainnet)
+        self.password_edit.setVisible(is_mainnet)
+        self.password_confirm_label.setVisible(is_mainnet)
+        self.password_confirm_edit.setVisible(is_mainnet)
+        self.warning_label.setVisible(is_mainnet)
+        
+        if is_mainnet:
+            self.warning_label.setText("⚠ Mainnet wallets use real funds. Keep your password safe!")
+            self.password_edit.setFocus()
+        else:
+            self.warning_label.setText("")
+    
+    def get_network(self):
+        """Get the selected network."""
+        return self.network_combo.currentText()
+    
+    def get_label(self):
+        """Get the wallet label."""
+        label = self.label_edit.text().strip()
+        return label if label else None
+    
+    def get_password(self):
+        """Get the password (for mainnet only)."""
+        if self.network_combo.currentText() == "mainnet":
+            return self.password_edit.text()
+        return None
+    
+    def accept(self):
+        """Validate input before accepting."""
+        network = self.get_network()
+        
+        if network == "mainnet":
+            password = self.get_password()
+            password_confirm = self.password_confirm_edit.text()
+            
+            if not password:
+                QMessageBox.warning(self, "Invalid Input", "Password is required for mainnet wallets")
+                return
+            
+            if password != password_confirm:
+                QMessageBox.warning(self, "Invalid Input", "Passwords do not match")
+                return
+            
+            if len(password) < 8:
+                QMessageBox.warning(self, "Invalid Input", "Password must be at least 8 characters")
+                return
+        
+        super().accept()
+
+
+class WalletDetailsDialog(QDialog):
+    """Dialog for displaying newly created wallet details."""
+    
+    def __init__(self, parent=None, wallet=None, secret_key=None, seed_phrase=None):
+        super().__init__(parent)
+        self.setWindowTitle("Wallet Created Successfully")
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(400)
+        
+        self.wallet = wallet
+        self.secret_key = secret_key
+        self.seed_phrase = seed_phrase
+        
+        layout = QVBoxLayout(self)
+        
+        # Success message
+        layout.addWidget(QLabel(f"✅ {wallet.network.title()} wallet created successfully!"))
+        layout.addWidget(QLabel(f"Label: {wallet.label}"))
+        layout.addSpacing(10)
+        
+        # Public Key (copyable)
+        layout.addWidget(QLabel("Public Key (Address):"))
+        self.public_key_edit = QLineEdit(wallet.address)
+        self.public_key_edit.setReadOnly(True)
+        public_layout = QHBoxLayout()
+        public_layout.addWidget(self.public_key_edit)
+        self.copy_public_btn = QPushButton("Copy")
+        self.copy_public_btn.clicked.connect(self.copy_public_key)
+        public_layout.addWidget(self.copy_public_btn)
+        layout.addLayout(public_layout)
+        
+        # Private Key (copyable password field)
+        layout.addWidget(QLabel("Private Key (Secret):"))
+        self.private_key_edit = QLineEdit(secret_key)
+        self.private_key_edit.setEchoMode(QLineEdit.Password)
+        self.private_key_edit.setReadOnly(True)
+        private_layout = QHBoxLayout()
+        private_layout.addWidget(self.private_key_edit)
+        self.copy_private_btn = QPushButton("Copy")
+        self.copy_private_btn.clicked.connect(self.copy_private_key)
+        self.reveal_private_btn = QPushButton("Show")
+        self.reveal_private_btn.clicked.connect(self.toggle_private_visibility)
+        self.reveal_private_btn.setCheckable(True)
+        private_layout.addWidget(self.copy_private_btn)
+        private_layout.addWidget(self.reveal_private_btn)
+        layout.addLayout(private_layout)
+        
+        # Seed Phrase (copyable text area)
+        layout.addWidget(QLabel("Seed Phrase (12 words):"))
+        self.seed_edit = QPlainTextEdit(seed_phrase)
+        self.seed_edit.setReadOnly(True)
+        self.seed_edit.setMaximumHeight(80)
+        seed_layout = QHBoxLayout()
+        seed_layout.addWidget(self.seed_edit)
+        self.copy_seed_btn = QPushButton("Copy")
+        self.copy_seed_btn.clicked.connect(self.copy_seed_phrase)
+        seed_layout.addWidget(self.copy_seed_btn)
+        layout.addLayout(seed_layout)
+        
+        # Warning message
+        if wallet.network == "mainnet":
+            warning = QLabel("⚠️ WARNING: This is a MAINNET wallet with real funds!")
+            warning.setStyleSheet("color: red; font-weight: bold; padding: 10px;")
+            layout.addWidget(warning)
+        
+        warning2 = QLabel("⚠️ Keep your private key and seed phrase secure and never share them!")
+        warning2.setStyleSheet("color: orange; font-weight: bold; padding: 10px;")
+        layout.addWidget(warning2)
+        
+        # Auto-funding status for testnet
+        if wallet.network == "testnet":
+            layout.addWidget(QLabel("🪙 The wallet has been auto-funded with test lumens."))
+        
+        layout.addSpacing(10)
+        
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok)
+        button_box.accepted.connect(self.accept)
+        layout.addWidget(button_box)
+    
+    def copy_public_key(self):
+        """Copy public key to clipboard."""
+        clipboard = QApplication.clipboard()
+        clipboard.setText(self.wallet.address)
+        QMessageBox.information(self, "Copied", "Public key copied to clipboard!")
+    
+    def copy_private_key(self):
+        """Copy private key to clipboard."""
+        clipboard = QApplication.clipboard()
+        clipboard.setText(self.secret_key)
+        QMessageBox.warning(self, "Copied", "Private key copied to clipboard!\n\nKeep it secure!")
+    
+    def copy_seed_phrase(self):
+        """Copy seed phrase to clipboard."""
+        clipboard = QApplication.clipboard()
+        clipboard.setText(self.seed_phrase)
+        QMessageBox.warning(self, "Copied", "Seed phrase copied to clipboard!\n\nKeep it secure!")
+    
+    def toggle_private_visibility(self):
+        """Toggle private key visibility."""
+        if self.reveal_private_btn.isChecked():
+            self.private_key_edit.setEchoMode(QLineEdit.Normal)
+            self.reveal_private_btn.setText("Hide")
+        else:
+            self.private_key_edit.setEchoMode(QLineEdit.Password)
+            self.reveal_private_btn.setText("Show")
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

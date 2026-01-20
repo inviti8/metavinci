@@ -9,6 +9,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 
+from wallet_manager import WalletManager, WalletManagerError, WalletNotFoundError
+
 from hvym_metadata import (
     # Base/Widget
     SliderDataClass,
@@ -420,6 +422,12 @@ async def get_status():
                 "behavior-val-prop": "/api/v1/parse/behavior-val-prop",
                 "blender-collection": "/api/v1/parse/blender-collection",
                 "interactables": "/api/v1/parse/interactables",
+            },
+            "soroban": {
+                "generate": "/api/v1/soroban/generate",
+                "types": "/api/v1/soroban/types",
+                "validate": "/api/v1/soroban/validate",
+                "templates": "/api/v1/soroban/templates",
             }
         }
     }
@@ -1361,3 +1369,527 @@ async def parse_interactables(req: InteractablesParseRequest):
             data[obj['name']] = interactable
 
     return data
+
+
+# =============================================================================
+# Soroban Contract Generation Endpoints
+# =============================================================================
+
+class SorobanValPropRequest(BaseModel):
+    """Value property configuration for Soroban contract generation."""
+    default: int = 0
+    min: int = 0
+    max: int = 100
+    amount: int = 1
+    prop_action_type: str = Field("Setter", description="Incremental, Decremental, Bicremental, or Setter")
+
+
+class SorobanContractRequest(BaseModel):
+    """Request model for Soroban contract generation."""
+    contract_name: str = Field(..., description="Name of the contract/collection")
+    symbol: str = Field(..., description="Token symbol (e.g., 'SWARS')")
+    max_supply: int = Field(10000, description="Maximum NFT supply")
+    nft_type: str = Field("HVYC", description="NFT type: HVYC, HVYI, HVYA, HVYW, HVYO, HVYG, HVYAU")
+    val_props: Optional[Dict[str, SorobanValPropRequest]] = Field(None, description="Value properties configuration")
+
+
+class SorobanGenerateResponse(BaseModel):
+    """Response model for Soroban contract generation."""
+    success: bool
+    contract_name: str
+    files: Dict[str, str]
+    build_command: str
+    deploy_command: str
+
+
+class SorobanValidateResponse(BaseModel):
+    """Response model for Soroban contract validation."""
+    valid: bool
+    errors: List[str]
+
+
+class SorobanTemplateInfo(BaseModel):
+    """Template information model."""
+    name: str
+    description: str
+
+
+class SorobanTemplatesResponse(BaseModel):
+    """Response model for listing Soroban templates."""
+    templates: List[SorobanTemplateInfo]
+
+
+@router.post("/soroban/generate", response_model=SorobanGenerateResponse)
+async def generate_soroban_contract(req: SorobanContractRequest):
+    """
+    Generate a complete Soroban smart contract from collection metadata.
+
+    This endpoint generates all necessary files for a Stellar Soroban NFT contract:
+    - Cargo.toml: Build configuration
+    - src/lib.rs: Main contract with NFT core and value property functions
+    - src/types.rs: Type definitions and error enums
+    - src/storage.rs: Storage key definitions
+    - src/test.rs: Unit tests
+
+    The generated contract includes:
+    - NFT minting and transfer functions
+    - Balance and ownership queries
+    - Value property getter/setter/increment/decrement functions based on prop_action_type
+
+    Value property action types:
+    - Setter: Direct value assignment (generates set_<name> and get_<name>)
+    - Incremental: Can only increase (generates increment_<name> and get_<name>)
+    - Decremental: Can only decrease (generates decrement_<name> and get_<name>)
+    - Bicremental: Can increase or decrease (generates increment_<name>, decrement_<name>, and get_<name>)
+    """
+    from soroban_generator import SorobanGenerator, ValidationError, TemplateError
+
+    try:
+        generator = SorobanGenerator()
+
+        # Convert Pydantic model to dict, handling nested models
+        data = {
+            "contract_name": req.contract_name,
+            "symbol": req.symbol,
+            "max_supply": req.max_supply,
+            "nft_type": req.nft_type,
+            "val_props": {
+                name: prop.model_dump() if hasattr(prop, 'model_dump') else prop.dict()
+                for name, prop in (req.val_props or {}).items()
+            } if req.val_props else {}
+        }
+
+        files = generator.generate(data)
+        snake_name = generator._to_snake_case(req.contract_name)
+
+        return SorobanGenerateResponse(
+            success=True,
+            contract_name=req.contract_name,
+            files=files,
+            build_command="soroban contract build",
+            deploy_command=f"soroban contract deploy --wasm target/wasm32-unknown-unknown/release/{snake_name}.wasm --network testnet"
+        )
+
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except TemplateError as e:
+        raise HTTPException(status_code=500, detail=f"Template error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+
+
+@router.post("/soroban/types")
+async def generate_soroban_types(req: SorobanContractRequest):
+    """
+    Generate only the type definitions (types.rs) for a Soroban contract.
+
+    Useful when you only need the type definitions without the full contract.
+    """
+    from soroban_generator import SorobanGenerator, ValidationError, TemplateError
+
+    try:
+        generator = SorobanGenerator()
+
+        data = {
+            "contract_name": req.contract_name,
+            "symbol": req.symbol,
+            "max_supply": req.max_supply,
+            "nft_type": req.nft_type,
+            "val_props": {
+                name: prop.model_dump() if hasattr(prop, 'model_dump') else prop.dict()
+                for name, prop in (req.val_props or {}).items()
+            } if req.val_props else {}
+        }
+
+        types_content = generator.generate_types_only(data)
+
+        return {
+            "success": True,
+            "contract_name": req.contract_name,
+            "content": types_content
+        }
+
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except TemplateError as e:
+        raise HTTPException(status_code=500, detail=f"Template error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+
+
+@router.post("/soroban/validate", response_model=SorobanValidateResponse)
+async def validate_soroban_contract(req: SorobanContractRequest):
+    """
+    Validate Soroban contract configuration without generating.
+
+    Returns validation result with any errors found.
+    """
+    from soroban_generator import SorobanGenerator
+
+    generator = SorobanGenerator()
+
+    data = {
+        "contract_name": req.contract_name,
+        "symbol": req.symbol,
+        "max_supply": req.max_supply,
+        "nft_type": req.nft_type,
+        "val_props": {
+            name: prop.model_dump() if hasattr(prop, 'model_dump') else prop.dict()
+            for name, prop in (req.val_props or {}).items()
+        } if req.val_props else {}
+    }
+
+    result = generator.validate(data)
+
+    return SorobanValidateResponse(
+        valid=result["valid"],
+        errors=result["errors"]
+    )
+
+
+@router.get("/soroban/templates", response_model=SorobanTemplatesResponse)
+async def list_soroban_templates():
+    """
+    List available Soroban contract templates and their descriptions.
+    """
+    from soroban_generator import SorobanGenerator, TemplateError
+
+    try:
+        generator = SorobanGenerator()
+        templates = generator.list_templates()
+
+        return SorobanTemplatesResponse(
+            templates=[SorobanTemplateInfo(**t) for t in templates]
+        )
+
+    except TemplateError as e:
+        raise HTTPException(status_code=500, detail=f"Template error: {str(e)}")
+
+
+# ============================================================================
+# Wallet Management Endpoints (Testnet Only)
+# ============================================================================
+
+# Wallet API Models
+class WalletCreateRequest(BaseModel):
+    label: Optional[str] = Field(None, description="Optional label for the wallet")
+
+class WalletRecoverRequest(BaseModel):
+    secret_key: str = Field(..., description="Stellar secret key (S...)")
+    network: str = Field(..., description="Network: 'testnet' or 'mainnet'")
+    label: Optional[str] = Field(None, description="Optional label for the wallet")
+    password: Optional[str] = Field(None, description="Password for mainnet wallet encryption")
+
+class WalletCreateResponse(BaseModel):
+    success: bool
+    address: str
+    label: str
+    network: str
+    funded: bool
+    message: str
+
+class WalletInfo(BaseModel):
+    address: str
+    label: str
+    network: str
+    created_at: str
+    balance: Optional[Dict[str, Any]] = None
+
+class WalletListResponse(BaseModel):
+    success: bool
+    wallets: List[WalletInfo]
+    count: int
+
+class WalletFundRequest(BaseModel):
+    address: str
+
+class WalletFundResponse(BaseModel):
+    success: bool
+    address: str
+    funded: bool
+    balance: Optional[Dict[str, Any]] = None
+    message: str
+
+class WalletBalanceResponse(BaseModel):
+    success: bool
+    address: str
+    balance: Dict[str, Any]
+
+class WalletDeleteResponse(BaseModel):
+    success: bool
+    address: str
+    message: str
+
+
+@router.post("/api/v1/wallet/testnet/create", response_model=WalletCreateResponse, tags=["wallet"])
+async def create_testnet_wallet(request: WalletCreateRequest):
+    """
+    Create a new testnet wallet (auto-funded via Friendbot).
+    
+    This endpoint is restricted to testnet wallets only for security.
+    Mainnet wallets must be created through the Metavinci UI.
+    """
+    try:
+        wallet_manager = WalletManager()
+        wallet = wallet_manager.create_testnet_wallet(label=request.label)
+        
+        # Get initial balance
+        try:
+            balance = wallet_manager.get_balance(wallet.address, "testnet")
+        except:
+            balance = None
+        
+        return WalletCreateResponse(
+            success=True,
+            address=wallet.address,
+            label=wallet.label,
+            network=wallet.network,
+            funded=balance is not None and balance.get("balance", 0) > 0,
+            message="Testnet wallet created successfully"
+        )
+        
+    except WalletManagerError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/api/v1/wallet/recover", response_model=WalletCreateResponse, tags=["wallet"])
+async def recover_wallet(request: WalletRecoverRequest):
+    """
+    Recover a wallet from a secret key.
+    
+    Supports both testnet and mainnet wallet recovery.
+    Mainnet wallets require a password for encryption.
+    """
+    try:
+        wallet_manager = WalletManager()
+        
+        # Validate network
+        if request.network not in ["testnet", "mainnet"]:
+            raise HTTPException(status_code=400, detail="Network must be 'testnet' or 'mainnet'")
+        
+        # For mainnet wallets, password is required
+        if request.network == "mainnet" and not request.password:
+            raise HTTPException(status_code=400, detail="Password is required for mainnet wallet recovery")
+        
+        wallet = wallet_manager.recover_wallet_from_secret(
+            secret_key=request.secret_key,
+            network=request.network,
+            label=request.label,
+            password=request.password
+        )
+        
+        # Get initial balance
+        try:
+            balance = wallet_manager.get_balance(wallet.address, wallet.network)
+        except:
+            balance = None
+        
+        # Auto-fund testnet wallets
+        funded = False
+        if wallet.network == "testnet":
+            try:
+                wallet_manager.fund_testnet_wallet(wallet.address)
+                funded = True
+            except:
+                funded = False
+        
+        return WalletCreateResponse(
+            success=True,
+            address=wallet.address,
+            label=wallet.label,
+            network=wallet.network,
+            funded=funded or (balance is not None and balance.get("balance", 0) > 0),
+            message=f"{wallet.network.title()} wallet recovered successfully"
+        )
+        
+    except WalletManagerError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/api/v1/wallet/testnet/list", response_model=WalletListResponse, tags=["wallet"])
+async def list_testnet_wallets():
+    """
+    List all testnet wallets.
+    
+    Returns public information only (no secret keys).
+    """
+    try:
+        wallet_manager = WalletManager()
+        wallets = wallet_manager.list_testnet_wallets()
+        
+        wallet_infos = []
+        for wallet in wallets:
+            info = WalletInfo(
+                address=wallet.address,
+                label=wallet.label,
+                network=wallet.network,
+                created_at=wallet.created_at
+            )
+            
+            # Try to get balance
+            try:
+                balance = wallet_manager.get_balance(wallet.address, "testnet")
+                info.balance = balance
+            except:
+                info.balance = None
+            
+            wallet_infos.append(info)
+        
+        return WalletListResponse(
+            success=True,
+            wallets=wallet_infos,
+            count=len(wallet_infos)
+        )
+        
+    except WalletManagerError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/api/v1/wallet/testnet/{address}", response_model=WalletInfo, tags=["wallet"])
+async def get_testnet_wallet(address: str):
+    """
+    Get details of a specific testnet wallet.
+    
+    Returns public information only (no secret keys).
+    """
+    try:
+        wallet_manager = WalletManager()
+        wallet = wallet_manager.get_wallet(address)
+        
+        if wallet.network != "testnet":
+            raise HTTPException(status_code=400, detail="This endpoint only supports testnet wallets")
+        
+        info = WalletInfo(
+            address=wallet.address,
+            label=wallet.label,
+            network=wallet.network,
+            created_at=wallet.created_at
+        )
+        
+        # Try to get balance
+        try:
+            balance = wallet_manager.get_balance(wallet.address, "testnet")
+            info.balance = balance
+        except:
+            info.balance = None
+        
+        return info
+        
+    except WalletNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Wallet not found: {address}")
+    except WalletManagerError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.delete("/api/v1/wallet/testnet/{address}", response_model=WalletDeleteResponse, tags=["wallet"])
+async def delete_testnet_wallet(address: str):
+    """
+    Delete a testnet wallet.
+    
+    This action is irreversible. Make sure you have backed up any important secret keys.
+    """
+    try:
+        wallet_manager = WalletManager()
+        wallet = wallet_manager.get_wallet(address)
+        
+        if wallet.network != "testnet":
+            raise HTTPException(status_code=400, detail="This endpoint only supports testnet wallets")
+        
+        deleted = wallet_manager.delete_wallet(address)
+        
+        if deleted:
+            return WalletDeleteResponse(
+                success=True,
+                address=address,
+                message="Testnet wallet deleted successfully"
+            )
+        else:
+            return WalletDeleteResponse(
+                success=False,
+                address=address,
+                message="Wallet not found"
+            )
+        
+    except WalletNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Wallet not found: {address}")
+    except WalletManagerError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/api/v1/wallet/testnet/fund", response_model=WalletFundResponse, tags=["wallet"])
+async def fund_testnet_wallet(request: WalletFundRequest):
+    """
+    Fund a testnet wallet via Friendbot.
+    
+    This endpoint uses the Stellar testnet Friendbot to fund the wallet with test lumens.
+    """
+    try:
+        wallet_manager = WalletManager()
+        wallet = wallet_manager.get_wallet(request.address)
+        
+        if wallet.network != "testnet":
+            raise HTTPException(status_code=400, detail="This endpoint only supports testnet wallets")
+        
+        # Fund the wallet
+        result = wallet_manager.fund_testnet_wallet(request.address)
+        
+        # Get updated balance
+        try:
+            balance = wallet_manager.get_balance(request.address, "testnet")
+        except:
+            balance = None
+        
+        return WalletFundResponse(
+            success=True,
+            address=request.address,
+            funded=result.get("success", False),
+            balance=balance,
+            message="Wallet funded successfully" if result.get("success") else "Funding failed"
+        )
+        
+    except WalletNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Wallet not found: {request.address}")
+    except WalletManagerError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/api/v1/wallet/testnet/balance/{address}", response_model=WalletBalanceResponse, tags=["wallet"])
+async def get_testnet_wallet_balance(address: str):
+    """
+    Get the balance of a testnet wallet.
+    
+    Returns the current XLM balance and any other tokens held by the wallet.
+    """
+    try:
+        wallet_manager = WalletManager()
+        wallet = wallet_manager.get_wallet(address)
+        
+        if wallet.network != "testnet":
+            raise HTTPException(status_code=400, detail="This endpoint only supports testnet wallets")
+        
+        balance = wallet_manager.get_balance(address, "testnet")
+        
+        return WalletBalanceResponse(
+            success=True,
+            address=address,
+            balance=balance
+        )
+        
+    except WalletNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Wallet not found: {address}")
+    except WalletManagerError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

@@ -927,6 +927,230 @@ class APITester:
             self.add_result(TestResult("parse/interactables", False, f"Parse interactables failed: {api_data}", api_data))
 
     # =========================================================================
+    # Soroban Contract Generation Tests
+    # =========================================================================
+
+    def test_soroban_templates(self):
+        """Test /api/v1/soroban/templates endpoint."""
+        success, api_data = self.api_get("/api/v1/soroban/templates")
+
+        if not success:
+            self.add_result(TestResult("soroban/templates", False, f"API request failed: {api_data}"))
+            return
+
+        if "templates" in api_data and len(api_data["templates"]) >= 5:
+            template_names = [t["name"] for t in api_data["templates"]]
+            expected = ["lib.rs.j2", "types.rs.j2", "storage.rs.j2", "Cargo.toml.j2", "test.rs.j2"]
+            missing = [t for t in expected if t not in template_names]
+            if not missing:
+                self.add_result(TestResult("soroban/templates", True, f"All {len(template_names)} templates listed", api_data))
+            else:
+                self.add_result(TestResult("soroban/templates", False, f"Missing templates: {missing}", api_data))
+        else:
+            self.add_result(TestResult("soroban/templates", False, f"Invalid templates response: {api_data}", api_data))
+
+    def test_soroban_validate_valid(self):
+        """Test /api/v1/soroban/validate with valid input."""
+        test_data = {
+            "contract_name": "TestNFT",
+            "symbol": "TEST",
+            "max_supply": 1000,
+            "nft_type": "HVYC",
+            "val_props": {
+                "health": {
+                    "default": 100,
+                    "min": 0,
+                    "max": 100,
+                    "amount": 10,
+                    "prop_action_type": "Bicremental"
+                }
+            }
+        }
+        success, api_data = self.api_post("/api/v1/soroban/validate", test_data)
+
+        if success and api_data.get("valid") is True:
+            self.add_result(TestResult("soroban/validate (valid)", True, "Valid config accepted", api_data))
+        else:
+            self.add_result(TestResult("soroban/validate (valid)", False, f"Validation failed: {api_data}", api_data))
+
+    def test_soroban_validate_invalid(self):
+        """Test /api/v1/soroban/validate with invalid input."""
+        test_data = {
+            "contract_name": "",  # Invalid: empty name
+            "symbol": "TEST",
+            "max_supply": -1,  # Invalid: negative supply
+        }
+        success, api_data = self.api_post("/api/v1/soroban/validate", test_data)
+
+        if success and api_data.get("valid") is False and len(api_data.get("errors", [])) > 0:
+            self.add_result(TestResult("soroban/validate (invalid)", True, f"Invalid config rejected with {len(api_data['errors'])} errors", api_data))
+        else:
+            self.add_result(TestResult("soroban/validate (invalid)", False, f"Should have rejected invalid config: {api_data}", api_data))
+
+    def test_soroban_generate_basic(self):
+        """Test /api/v1/soroban/generate with basic config (no val_props)."""
+        test_data = {
+            "contract_name": "BasicNFT",
+            "symbol": "BASIC",
+            "max_supply": 100,
+            "nft_type": "HVYC"
+        }
+        success, api_data = self.api_post("/api/v1/soroban/generate", test_data)
+
+        if not success:
+            self.add_result(TestResult("soroban/generate (basic)", False, f"API request failed: {api_data}"))
+            return
+
+        if api_data.get("success") and "files" in api_data:
+            files = api_data["files"]
+            expected_files = ["Cargo.toml", "src/lib.rs", "src/types.rs", "src/storage.rs", "src/test.rs"]
+            missing = [f for f in expected_files if f not in files]
+            if not missing:
+                # Verify content - check for contract struct and mint function
+                lib_rs = files.get("src/lib.rs", "")
+                has_contract = "Contract" in lib_rs and "#[contract]" in lib_rs
+                has_mint = "pub fn mint" in lib_rs
+                if has_contract and has_mint:
+                    self.add_result(TestResult("soroban/generate (basic)", True, f"Generated {len(files)} files", api_data))
+                else:
+                    self.add_result(TestResult("soroban/generate (basic)", False, f"lib.rs missing content: contract={has_contract}, mint={has_mint}", api_data))
+            else:
+                self.add_result(TestResult("soroban/generate (basic)", False, f"Missing files: {missing}", api_data))
+        else:
+            self.add_result(TestResult("soroban/generate (basic)", False, f"Generation failed: {api_data}", api_data))
+
+    def test_soroban_generate_with_val_props(self):
+        """Test /api/v1/soroban/generate with value properties."""
+        test_data = {
+            "contract_name": "SpaceWarriors",
+            "symbol": "SWARS",
+            "max_supply": 10000,
+            "nft_type": "HVYC",
+            "val_props": {
+                "health": {
+                    "default": 100,
+                    "min": 0,
+                    "max": 100,
+                    "amount": 10,
+                    "prop_action_type": "Bicremental"
+                },
+                "power": {
+                    "default": 50,
+                    "min": 0,
+                    "max": 200,
+                    "amount": 5,
+                    "prop_action_type": "Incremental"
+                },
+                "level": {
+                    "default": 1,
+                    "min": 1,
+                    "max": 99,
+                    "amount": 1,
+                    "prop_action_type": "Setter"
+                }
+            }
+        }
+        success, api_data = self.api_post("/api/v1/soroban/generate", test_data)
+
+        if not success:
+            self.add_result(TestResult("soroban/generate (val_props)", False, f"API request failed: {api_data}"))
+            return
+
+        if api_data.get("success") and "files" in api_data:
+            lib_rs = api_data["files"].get("src/lib.rs", "")
+            types_rs = api_data["files"].get("src/types.rs", "")
+
+            # Check for expected functions
+            checks = [
+                ("increment_health", "increment_health" in lib_rs),
+                ("decrement_health", "decrement_health" in lib_rs),
+                ("increment_power", "increment_power" in lib_rs),
+                ("set_level", "set_level" in lib_rs),
+                ("get_health", "get_health" in lib_rs),
+                ("get_power", "get_power" in lib_rs),
+                ("get_level", "get_level" in lib_rs),
+                ("HEALTH_DEFAULT", "HEALTH_DEFAULT" in types_rs),
+                ("POWER_AMOUNT", "POWER_AMOUNT" in types_rs),
+                ("LEVEL_MAX", "LEVEL_MAX" in types_rs),
+            ]
+
+            failed_checks = [name for name, passed in checks if not passed]
+            if not failed_checks:
+                self.add_result(TestResult("soroban/generate (val_props)", True, "All value property functions generated", api_data))
+            else:
+                self.add_result(TestResult("soroban/generate (val_props)", False, f"Missing: {failed_checks}", api_data))
+        else:
+            self.add_result(TestResult("soroban/generate (val_props)", False, f"Generation failed: {api_data}", api_data))
+
+    def test_soroban_generate_action_types(self):
+        """Test all prop_action_type variations generate correct functions."""
+        test_data = {
+            "contract_name": "ActionTest",
+            "symbol": "ACT",
+            "max_supply": 100,
+            "val_props": {
+                "inc_only": {"default": 0, "min": 0, "max": 100, "amount": 1, "prop_action_type": "Incremental"},
+                "dec_only": {"default": 100, "min": 0, "max": 100, "amount": 1, "prop_action_type": "Decremental"},
+                "both": {"default": 50, "min": 0, "max": 100, "amount": 1, "prop_action_type": "Bicremental"},
+                "setter": {"default": 0, "min": 0, "max": 100, "amount": 1, "prop_action_type": "Setter"},
+            }
+        }
+        success, api_data = self.api_post("/api/v1/soroban/generate", test_data)
+
+        if not success:
+            self.add_result(TestResult("soroban/generate (action_types)", False, f"API request failed: {api_data}"))
+            return
+
+        if api_data.get("success") and "files" in api_data:
+            lib_rs = api_data["files"].get("src/lib.rs", "")
+
+            # Incremental: only increment, no decrement
+            inc_ok = "increment_inc_only" in lib_rs and "decrement_inc_only" not in lib_rs
+            # Decremental: only decrement, no increment
+            dec_ok = "decrement_dec_only" in lib_rs and "increment_dec_only" not in lib_rs
+            # Bicremental: both increment and decrement
+            both_ok = "increment_both" in lib_rs and "decrement_both" in lib_rs
+            # Setter: only set, no increment/decrement
+            setter_ok = "set_setter" in lib_rs and "increment_setter" not in lib_rs and "decrement_setter" not in lib_rs
+
+            if inc_ok and dec_ok and both_ok and setter_ok:
+                self.add_result(TestResult("soroban/generate (action_types)", True, "All action types generate correct functions", api_data))
+            else:
+                errors = []
+                if not inc_ok: errors.append("Incremental")
+                if not dec_ok: errors.append("Decremental")
+                if not both_ok: errors.append("Bicremental")
+                if not setter_ok: errors.append("Setter")
+                self.add_result(TestResult("soroban/generate (action_types)", False, f"Wrong functions for: {errors}", api_data))
+        else:
+            self.add_result(TestResult("soroban/generate (action_types)", False, f"Generation failed: {api_data}", api_data))
+
+    def test_soroban_types_only(self):
+        """Test /api/v1/soroban/types endpoint."""
+        test_data = {
+            "contract_name": "TypesTest",
+            "symbol": "TYPE",
+            "max_supply": 100,
+            "val_props": {
+                "score": {"default": 0, "min": 0, "max": 1000, "amount": 10, "prop_action_type": "Bicremental"}
+            }
+        }
+        success, api_data = self.api_post("/api/v1/soroban/types", test_data)
+
+        if not success:
+            self.add_result(TestResult("soroban/types", False, f"API request failed: {api_data}"))
+            return
+
+        if api_data.get("success") and "content" in api_data:
+            content = api_data["content"]
+            if "SCORE_DEFAULT" in content and "SCORE_MAX" in content and "Error" in content:
+                self.add_result(TestResult("soroban/types", True, "Types content generated correctly", api_data))
+            else:
+                self.add_result(TestResult("soroban/types", False, "Types content missing expected definitions", api_data))
+        else:
+            self.add_result(TestResult("soroban/types", False, f"Types generation failed: {api_data}", api_data))
+
+    # =========================================================================
     # Run All Tests
     # =========================================================================
 
@@ -1008,6 +1232,16 @@ class APITester:
         self.test_parse_val_prop()
         self.test_parse_behavior_val_prop()
         self.test_parse_interactables()
+
+        # Soroban Contract Generation
+        print("\n[Soroban Contract Generation]")
+        self.test_soroban_templates()
+        self.test_soroban_validate_valid()
+        self.test_soroban_validate_invalid()
+        self.test_soroban_generate_basic()
+        self.test_soroban_generate_with_val_props()
+        self.test_soroban_generate_action_types()
+        self.test_soroban_types_only()
 
         # Summary
         self.print_summary()

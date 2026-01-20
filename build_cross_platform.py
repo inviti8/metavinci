@@ -68,9 +68,11 @@ class CrossPlatformBuilder:
             ('hvym_metadata.py', 'hvym_metadata.py'),
             ('api_server.py', 'api_server.py'),
             ('api_routes.py', 'api_routes.py'),
+            # Soroban contract generator
+            ('soroban_generator.py', 'soroban_generator.py'),
         ]
-        
-        directories = ['images', 'data', 'service']
+
+        directories = ['images', 'data', 'service', 'templates']
         
         # Copy files
         for src, dst in source_files:
@@ -132,7 +134,7 @@ class CrossPlatformBuilder:
         dist_dir.mkdir(parents=True, exist_ok=True)
         
         # Build PyInstaller command with minimal exclusions
-        # Hidden imports for API server (FastAPI + uvicorn)
+        # Hidden imports for API server (FastAPI + uvicorn + Soroban generator)
         api_hidden_imports = [
             'fastapi',
             'uvicorn',
@@ -156,6 +158,10 @@ class CrossPlatformBuilder:
             'hvym_metadata',
             'api_server',
             'api_routes',
+            # Soroban contract generator
+            'soroban_generator',
+            'jinja2',
+            'jinja2.ext',
         ]
 
         if target_platform == 'macos':
@@ -249,11 +255,13 @@ class CrossPlatformBuilder:
             pyinstaller_cmd.extend(['--add-data', 'images;images'])
             pyinstaller_cmd.extend(['--add-data', 'data;data'])
             pyinstaller_cmd.extend(['--add-data', 'service;service'])
+            pyinstaller_cmd.extend(['--add-data', 'templates;templates'])
         else:
             # Unix systems use colon separator
             pyinstaller_cmd.extend(['--add-data', 'images:images'])
             pyinstaller_cmd.extend(['--add-data', 'data:data'])
             pyinstaller_cmd.extend(['--add-data', 'service:service'])
+            pyinstaller_cmd.extend(['--add-data', 'templates:templates'])
         
         # Add PyQt5 Qt platforms plugin directory
         try:
