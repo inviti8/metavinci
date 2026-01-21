@@ -99,6 +99,18 @@ except ImportError:
     HAS_WALLET_MANAGER = False
     WalletManager = None
 
+# Try to import Soroban components
+try:
+    from contract_builder import ContractBuilder
+    from contract_deployer import ContractDeployer
+    from deployment_manager import DeploymentManager
+    HAS_SOROBAN = True
+except ImportError:
+    HAS_SOROBAN = False
+    ContractBuilder = None
+    ContractDeployer = None
+    DeploymentManager = None
+
 # Constants
 EXTRACT_RETRY_ATTEMPTS = 2
 EXTRACT_RETRY_DELAY = 1  # seconds
@@ -1691,6 +1703,9 @@ class Metavinci(QMainWindow):
         
         self.wallet_recover_action = QAction(self.stellar_icon, "Recover Wallet", self)
         self.wallet_recover_action.triggered.connect(self._recover_wallet)
+        
+        self.soroban_deployments_action = QAction(self.stellar_icon, "Soroban Deployments", self)
+        self.soroban_deployments_action.triggered.connect(self._show_soroban_deployments)
 
         # Set initial visibility based on PINTHEON_ACTIVE state
         self.run_pintheon_action.setVisible(not self.PINTHEON_ACTIVE)
@@ -1864,6 +1879,8 @@ class Metavinci(QMainWindow):
         self.tray_wallet_menu.addSeparator()
         self.tray_wallet_menu.addAction(self.wallet_create_action)
         self.tray_wallet_menu.addAction(self.wallet_recover_action)
+        self.tray_wallet_menu.addSeparator()
+        self.tray_wallet_menu.addAction(self.soroban_deployments_action)
 
     def _start_api_server(self):
         """Start the local metadata API server."""
@@ -2048,6 +2065,32 @@ class Metavinci(QMainWindow):
                     "Wallet Recovery Failed",
                     f"Failed to recover wallet:\n{str(e)}"
                 )
+
+    def _show_soroban_deployments(self):
+        """Show Soroban deployments for current network."""
+        try:
+            # Import deployment list dialog
+            from ui.soroban.deployment_list_dialog import DeploymentListDialog
+            
+            # Get current network (default to testnet)
+            current_network = "testnet"  # This could be made configurable
+            
+            # Show deployment list dialog
+            deployment_dialog = DeploymentListDialog(self, network=current_network)
+            deployment_dialog.exec_()
+            
+        except ImportError:
+            QMessageBox.warning(
+                self, 
+                "Soroban Deployments Not Available",
+                "Soroban deployment management is not available. Please ensure the UI components are properly installed."
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error Opening Deployments",
+                f"Failed to open Soroban deployments: {str(e)}"
+            )
 
     def _quit_application(self):
         """Clean shutdown of the application."""

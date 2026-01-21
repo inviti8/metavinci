@@ -278,18 +278,29 @@
 > **Prerequisite:** Phase 3 (Wallet Management) must be completed first
 
 #### 4.1 Contract Build System
-- [ ] Create `contract_builder.py` module
-- [ ] Save generated contract files to temp directory
-- [ ] Execute `soroban contract build` command
-- [ ] Capture build output and errors
-- [ ] Return compiled WASM path on success
+- [ ] Create `contract_builder.py` module with ContractBuilder class
+- [ ] Implement contract structure validation (Cargo.toml, src/lib.rs)
+- [ ] Add Soroban CLI detection and version checking
+- [ ] Create temporary build directory management
+- [ ] Execute `soroban contract build` command with progress callbacks
+- [ ] Capture build output, errors, and WASM file generation
+- [ ] Return structured build results with metadata
+- [ ] Add build artifact cleanup functionality
+- [ ] Implement error handling for missing dependencies and build failures
 
 #### 4.2 Contract Deployment System
-- [ ] Create `contract_deployer.py` module
-- [ ] Deploy compiled WASM to network
-- [ ] Support network selection (testnet/mainnet)
-- [ ] Return deployed contract ID
-- [ ] Store deployment records (contract ID, network, timestamp, metadata)
+- [ ] Create `contract_deployer.py` module with ContractDeployer class
+- [ ] Implement wallet integration with WalletManager for authentication
+- [ ] Add network configuration (testnet/mainnet/futurenet/local)
+- [ ] Deploy compiled WASM to selected network with proper transaction building
+- [ ] Implement wallet selection dialog for deployment authorization
+- [ ] Add mainnet password protection and validation
+- [ ] Return deployed contract ID and transaction hash
+- [ ] Generate Stellar Expert URLs for deployed contracts
+- [ ] Create `deployment_manager.py` for deployment record storage
+- [ ] Store comprehensive deployment records (contract ID, network, timestamp, stellar_expert_url, deployment_wallet, metadata)
+- [ ] Implement deployment status tracking and error handling
+- [ ] Add balance checking and fee estimation
 
 #### 4.3 Deployment API Endpoints (Testnet Only)
 
@@ -304,17 +315,22 @@
   - Output: Contract ID, transaction hash
 - [ ] `POST /api/v1/soroban/generate-and-deploy` - Full pipeline (testnet)
   - Input: Contract config + testnet wallet
-  - Output: Contract ID, all generated files
-- [ ] `GET /api/v1/soroban/deployments` - List deployed contracts (all networks)
-- [ ] `GET /api/v1/soroban/deployment/{contract_id}` - Get deployment details
+  - Output: Build status + deployment results
+- [ ] `GET /api/v1/soroban/deployments` - List deployment records
+  - Query params: network, wallet_address
+  - Output: Deployment records with metadata
 
-#### 4.4 Metavinci UI Integration
-- [ ] Add "Contract Deployment" section to UI
-- [ ] Network selector (linked to wallet network)
-- [ ] Wallet selector (from available wallets)
-- [ ] Deploy button with confirmation
-- [ ] Deployment status/progress indicator
-- [ ] View deployed contracts list
+#### 4.4 UI Integration
+- [x] Create WalletSelectionDialog for deployment authorization
+- [x] Implement DeploymentCompletionDialog showing deployment results
+- [x] Create DeploymentListDialog for viewing deployment history
+- [x] Add "Soroban Deployments" to wallet tray menu
+- [ ] Implement build/deploy progress dialogs with callbacks
+- [x] Add network-specific filtering in deployment list
+- [x] Implement copy-to-clipboard for contract IDs
+- [x] Add Stellar Expert URL integration for contract exploration
+- [x] Create deployment record management UI (view, delete, export)
+- [x] Add deployment status indicators and color coding
 
 #### 4.5 Soroban CLI Integration
 - [ ] Detect Soroban CLI installation
@@ -981,6 +997,7 @@ curl -X POST http://127.0.0.1:7777/api/v1/soroban/generate \
     "symbol": "SWARS",
     "max_supply": 10000,
     "nft_type": "HVYC",
+    "write_to_disk": true,
     "val_props": {
         "health": {
             "default": 100,
@@ -1013,10 +1030,13 @@ curl -X POST http://127.0.0.1:7777/api/v1/soroban/generate \
         "src/storage.rs": "...",
         "src/test.rs": "..."
     },
+    "output_path": "C:/Users/.../AppData/Local/Temp/soroban_contracts/space_warriors_abc12345",
     "build_command": "soroban contract build",
     "deploy_command": "soroban contract deploy --wasm target/wasm32-unknown-unknown/release/space_warriors.wasm --network testnet"
 }
 ```
+
+**Note:** When `write_to_disk` is `true` (default), the generated contract files are written to `output_path` on disk, ready for compilation with `soroban contract build`. Set `write_to_disk: false` to return files in memory only without writing to disk.
 
 ### Value Property Action Types
 

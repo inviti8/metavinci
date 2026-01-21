@@ -49,6 +49,7 @@ class SorobanGenerator:
     - Template data transformation
     - Jinja2 template rendering
     - Output file generation
+    - Writing generated files to disk for compilation
     """
 
     # Valid property action types
@@ -122,6 +123,82 @@ class SorobanGenerator:
             raise TemplateError(f"Template not found: {e}")
         except Exception as e:
             raise TemplateError(f"Template rendering failed: {e}")
+
+    def generate_and_write(self, data: Dict[str, Any], output_dir: Optional[Path] = None) -> Dict[str, Any]:
+        """
+        Generate all contract files and write them to disk.
+
+        Args:
+            data: Contract configuration dictionary
+            output_dir: Optional output directory. If not provided, creates a temp directory.
+
+        Returns:
+            Dictionary containing:
+                - files: Dict mapping file paths to content
+                - output_path: Path where files were written
+                - contract_name_snake: Snake case contract name
+
+        Raises:
+            ValidationError: If input data is invalid
+            TemplateError: If template rendering fails
+        """
+        import tempfile
+        import uuid
+
+        # Generate the files in memory first
+        files = self.generate(data)
+        template_data = self._build_template_data(data)
+        contract_name_snake = template_data["contract"]["name_snake"]
+
+        # Determine output directory
+        if output_dir is None:
+            # Create a temp directory with a unique name
+            base_temp = Path(tempfile.gettempdir()) / "soroban_contracts"
+            base_temp.mkdir(exist_ok=True)
+            output_dir = base_temp / f"{contract_name_snake}_{uuid.uuid4().hex[:8]}"
+
+        output_dir = Path(output_dir)
+
+        # Write files to disk
+        self.write_to_directory(files, output_dir)
+
+        return {
+            "files": files,
+            "output_path": output_dir,
+            "contract_name_snake": contract_name_snake,
+        }
+
+    def write_to_directory(self, files: Dict[str, str], output_dir: Path) -> Path:
+        """
+        Write generated contract files to a directory.
+
+        Creates the directory structure and writes all files.
+
+        Args:
+            files: Dictionary mapping file paths to content (from generate())
+            output_dir: Directory to write files to
+
+        Returns:
+            Path to the output directory
+
+        Raises:
+            IOError: If writing files fails
+        """
+        output_dir = Path(output_dir)
+
+        # Create the directory structure
+        output_dir.mkdir(parents=True, exist_ok=True)
+        src_dir = output_dir / "src"
+        src_dir.mkdir(exist_ok=True)
+
+        # Write each file
+        for file_path, content in files.items():
+            full_path = output_dir / file_path
+            # Ensure parent directory exists (for src/ files)
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+            full_path.write_text(content, encoding="utf-8")
+
+        return output_dir
 
     def generate_types_only(self, data: Dict[str, Any]) -> str:
         """

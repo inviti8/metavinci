@@ -70,13 +70,17 @@ class CrossPlatformBuilder:
             ('api_routes.py', 'api_routes.py'),
             # Wallet management
             ('wallet_manager.py', 'wallet_manager.py'),
+            # Soroban contract build and deploy
+            ('contract_builder.py', 'contract_builder.py'),
+            ('contract_deployer.py', 'contract_deployer.py'),
+            ('deployment_manager.py', 'deployment_manager.py'),
             # Soroban contract generator
             ('soroban_generator.py', 'soroban_generator.py'),
             ('jinja2', 'jinja2'),
             ('jinja2.ext', 'jinja2.ext'),
         ]
 
-        directories = ['images', 'data', 'service', 'templates']
+        directories = ['images', 'data', 'service', 'templates', 'ui']
         
         # Copy files
         for src, dst in source_files:
@@ -169,10 +173,20 @@ class CrossPlatformBuilder:
             'tinydb_encrypted_json_storage',
             'cryptography',
             'cryptography.fernet',
+            # Soroban contract build and deploy
+            'contract_builder',
+            'contract_deployer',
+            'deployment_manager',
             # Soroban contract generator
             'soroban_generator',
             'jinja2',
             'jinja2.ext',
+            # Soroban UI dialogs
+            'ui',
+            'ui.soroban',
+            'ui.soroban.deployment_list_dialog',
+            'ui.soroban.deployment_completion_dialog',
+            'ui.soroban.wallet_selection_dialog',
         ]
 
         if target_platform == 'macos':
@@ -267,12 +281,14 @@ class CrossPlatformBuilder:
             pyinstaller_cmd.extend(['--add-data', 'data;data'])
             pyinstaller_cmd.extend(['--add-data', 'service;service'])
             pyinstaller_cmd.extend(['--add-data', 'templates;templates'])
+            pyinstaller_cmd.extend(['--add-data', 'ui;ui'])
         else:
             # Unix systems use colon separator
             pyinstaller_cmd.extend(['--add-data', 'images:images'])
             pyinstaller_cmd.extend(['--add-data', 'data:data'])
             pyinstaller_cmd.extend(['--add-data', 'service:service'])
             pyinstaller_cmd.extend(['--add-data', 'templates:templates'])
+            pyinstaller_cmd.extend(['--add-data', 'ui:ui'])
         
         # Add PyQt5 Qt platforms plugin directory
         try:

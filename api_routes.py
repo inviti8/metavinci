@@ -1391,6 +1391,8 @@ class SorobanContractRequest(BaseModel):
     max_supply: int = Field(10000, description="Maximum NFT supply")
     nft_type: str = Field("HVYC", description="NFT type: HVYC, HVYI, HVYA, HVYW, HVYO, HVYG, HVYAU")
     val_props: Optional[Dict[str, SorobanValPropRequest]] = Field(None, description="Value properties configuration")
+    write_to_disk: bool = Field(True, description="Write generated files to disk for compilation/deployment")
+    output_dir: Optional[str] = Field(None, description="Custom output directory (uses temp dir if not specified)")
 
 
 class SorobanGenerateResponse(BaseModel):
@@ -1398,6 +1400,7 @@ class SorobanGenerateResponse(BaseModel):
     success: bool
     contract_name: str
     files: Dict[str, str]
+    output_path: Optional[str] = Field(None, description="Path where contract files were written (if write_to_disk=True)")
     build_command: str
     deploy_command: str
 
@@ -1441,7 +1444,11 @@ async def generate_soroban_contract(req: SorobanContractRequest):
     - Incremental: Can only increase (generates increment_<name> and get_<name>)
     - Decremental: Can only decrease (generates decrement_<name> and get_<name>)
     - Bicremental: Can increase or decrease (generates increment_<name>, decrement_<name>, and get_<name>)
+
+    Set write_to_disk=True (default) to write files to disk for compilation/deployment.
+    The output_path in the response indicates where files were written.
     """
+    from pathlib import Path
     from soroban_generator import SorobanGenerator, ValidationError, TemplateError
 
     try:
@@ -1459,13 +1466,25 @@ async def generate_soroban_contract(req: SorobanContractRequest):
             } if req.val_props else {}
         }
 
-        files = generator.generate(data)
-        snake_name = generator._to_snake_case(req.contract_name)
+        output_path = None
+
+        if req.write_to_disk:
+            # Generate and write files to disk
+            output_dir = Path(req.output_dir) if req.output_dir else None
+            result = generator.generate_and_write(data, output_dir)
+            files = result["files"]
+            output_path = str(result["output_path"])
+            snake_name = result["contract_name_snake"]
+        else:
+            # Generate in memory only (legacy behavior)
+            files = generator.generate(data)
+            snake_name = generator._to_snake_case(req.contract_name)
 
         return SorobanGenerateResponse(
             success=True,
             contract_name=req.contract_name,
             files=files,
+            output_path=output_path,
             build_command="soroban contract build",
             deploy_command=f"soroban contract deploy --wasm target/wasm32-unknown-unknown/release/{snake_name}.wasm --network testnet"
         )
@@ -1564,6 +1583,332 @@ async def list_soroban_templates():
 
     except TemplateError as e:
         raise HTTPException(status_code=500, detail=f"Template error: {str(e)}")
+
+
+# =============================================================================
+# Soroban Build & Deploy Endpoints (Testnet Only for API)
+# =============================================================================
+
+class SorobanBuildRequest(BaseModel):
+    """Request model for building a Soroban contract."""
+    contract_path: str = Field(..., description="Path to contract directory (from generate endpoint's output_path)")
+
+
+class SorobanBuildResponse(BaseModel):
+    """Response model for contract build."""
+    success: bool
+    build_id: Optional[str] = None
+    wasm_path: Optional[str] = None
+    wasm_size: Optional[int] = None
+    error: Optional[str] = None
+    build_output: Optional[str] = None
+
+
+class SorobanDeployRequest(BaseModel):
+    """Request model for deploying a Soroban contract."""
+    wasm_path: str = Field(..., description="Path to compiled WASM file (from build endpoint)")
+    wallet_address: str = Field(..., description="Testnet wallet address for deployment")
+    network: str = Field("testnet", description="Network to deploy to (testnet only via API)")
+
+
+class SorobanDeployResponse(BaseModel):
+    """Response model for contract deployment."""
+    success: bool
+    deployment_id: Optional[str] = None
+    contract_id: Optional[str] = None
+    network: Optional[str] = None
+    stellar_expert_url: Optional[str] = None
+    error: Optional[str] = None
+
+
+class SorobanDeploymentRecord(BaseModel):
+    """Model for deployment record."""
+    deployment_id: str
+    contract_id: str
+    network: str
+    wallet_address: str
+    deployment_wallet: str
+    stellar_expert_url: str
+    timestamp: str
+    status: str
+    wasm_size: int
+    error: str = ""
+
+
+class SorobanDeploymentsResponse(BaseModel):
+    """Response model for listing deployments."""
+    success: bool
+    deployments: List[Dict[str, Any]]
+    total: int
+
+
+class SorobanGenerateAndBuildRequest(BaseModel):
+    """Request model for generate + build pipeline."""
+    contract_name: str = Field(..., description="Name of the contract/collection")
+    symbol: str = Field(..., description="Token symbol (e.g., 'SWARS')")
+    max_supply: int = Field(10000, description="Maximum NFT supply")
+    nft_type: str = Field("HVYC", description="NFT type")
+    val_props: Optional[Dict[str, SorobanValPropRequest]] = Field(None, description="Value properties configuration")
+
+
+class SorobanGenerateAndBuildResponse(BaseModel):
+    """Response model for generate + build pipeline."""
+    success: bool
+    contract_name: str
+    output_path: Optional[str] = None
+    wasm_path: Optional[str] = None
+    wasm_size: Optional[int] = None
+    build_command: str
+    deploy_command: str
+    error: Optional[str] = None
+
+
+@router.post("/soroban/build", response_model=SorobanBuildResponse)
+async def build_soroban_contract(req: SorobanBuildRequest):
+    """
+    Build a Soroban contract from source files.
+
+    Takes a contract directory path (typically from the /soroban/generate endpoint's output_path)
+    and compiles it using the Soroban CLI.
+
+    Requires:
+    - Soroban CLI installed (`cargo install soroban-cli`)
+    - Rust toolchain with wasm32-unknown-unknown target
+    """
+    from pathlib import Path
+    from contract_builder import ContractBuilder
+
+    try:
+        builder = ContractBuilder()
+        contract_path = Path(req.contract_path)
+
+        if not contract_path.exists():
+            raise HTTPException(status_code=400, detail=f"Contract path not found: {req.contract_path}")
+
+        result = builder.build_contract(contract_path)
+
+        if result["success"]:
+            metadata = result.get("metadata", {})
+            return SorobanBuildResponse(
+                success=True,
+                build_id=result["build_id"],
+                wasm_path=result["wasm_path"],
+                wasm_size=metadata.get("wasm_size"),
+                build_output=metadata.get("build_output", "")
+            )
+        else:
+            return SorobanBuildResponse(
+                success=False,
+                build_id=result.get("build_id"),
+                error=result.get("error", "Build failed"),
+                build_output=result.get("stderr", "") or result.get("stdout", "")
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Build failed: {str(e)}")
+
+
+@router.post("/soroban/deploy", response_model=SorobanDeployResponse)
+async def deploy_soroban_contract(req: SorobanDeployRequest):
+    """
+    Deploy a compiled Soroban contract to testnet.
+
+    Takes a WASM file path (from the /soroban/build endpoint) and deploys it
+    using a testnet wallet.
+
+    **Security Note:** API deployment is restricted to testnet only.
+    Mainnet deployments must be done through the Metavinci UI.
+    """
+    from pathlib import Path
+    from contract_deployer import ContractDeployer
+    from deployment_manager import DeploymentManager
+
+    # Security: Only allow testnet deployments via API
+    if req.network != "testnet":
+        raise HTTPException(
+            status_code=403,
+            detail="API deployment is restricted to testnet only. Use Metavinci UI for mainnet deployments."
+        )
+
+    try:
+        wasm_path = Path(req.wasm_path)
+        if not wasm_path.exists():
+            raise HTTPException(status_code=400, detail=f"WASM file not found: {req.wasm_path}")
+
+        deployer = ContractDeployer(network=req.network)
+        result = deployer.deploy_contract(
+            wasm_path=str(wasm_path),
+            wallet_address=req.wallet_address
+        )
+
+        # Store deployment record
+        if "deployment_record" in result:
+            deployment_manager = DeploymentManager()
+            deployment_manager.store_deployment(result["deployment_record"])
+
+        if result["success"]:
+            return SorobanDeployResponse(
+                success=True,
+                deployment_id=result["deployment_id"],
+                contract_id=result["contract_id"],
+                network=req.network,
+                stellar_expert_url=result.get("stellar_expert_url")
+            )
+        else:
+            return SorobanDeployResponse(
+                success=False,
+                deployment_id=result.get("deployment_id"),
+                error=result.get("error", "Deployment failed")
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Deployment failed: {str(e)}")
+
+
+@router.post("/soroban/generate-and-build", response_model=SorobanGenerateAndBuildResponse)
+async def generate_and_build_soroban_contract(req: SorobanGenerateAndBuildRequest):
+    """
+    Generate and build a Soroban contract in one step.
+
+    Combines the /soroban/generate and /soroban/build endpoints for convenience.
+    Returns the compiled WASM path ready for deployment.
+    """
+    from pathlib import Path
+    from soroban_generator import SorobanGenerator, ValidationError, TemplateError
+    from contract_builder import ContractBuilder
+
+    try:
+        # 1. Generate contract
+        generator = SorobanGenerator()
+
+        data = {
+            "contract_name": req.contract_name,
+            "symbol": req.symbol,
+            "max_supply": req.max_supply,
+            "nft_type": req.nft_type,
+            "val_props": {
+                name: prop.model_dump() if hasattr(prop, 'model_dump') else prop.dict()
+                for name, prop in (req.val_props or {}).items()
+            } if req.val_props else {}
+        }
+
+        gen_result = generator.generate_and_write(data)
+        output_path = gen_result["output_path"]
+        snake_name = gen_result["contract_name_snake"]
+
+        # 2. Build contract
+        builder = ContractBuilder()
+        build_result = builder.build_contract(output_path)
+
+        if build_result["success"]:
+            metadata = build_result.get("metadata", {})
+            return SorobanGenerateAndBuildResponse(
+                success=True,
+                contract_name=req.contract_name,
+                output_path=str(output_path),
+                wasm_path=build_result["wasm_path"],
+                wasm_size=metadata.get("wasm_size"),
+                build_command="soroban contract build",
+                deploy_command=f"soroban contract deploy --wasm {build_result['wasm_path']} --network testnet"
+            )
+        else:
+            return SorobanGenerateAndBuildResponse(
+                success=False,
+                contract_name=req.contract_name,
+                output_path=str(output_path),
+                build_command="soroban contract build",
+                deploy_command="",
+                error=build_result.get("error", "Build failed")
+            )
+
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except TemplateError as e:
+        raise HTTPException(status_code=500, detail=f"Template error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Generate and build failed: {str(e)}")
+
+
+@router.get("/soroban/deployments", response_model=SorobanDeploymentsResponse)
+async def list_soroban_deployments(
+    network: Optional[str] = None,
+    wallet_address: Optional[str] = None,
+    status: Optional[str] = None
+):
+    """
+    List Soroban contract deployment records.
+
+    Optional filters:
+    - network: Filter by network (testnet/mainnet/futurenet)
+    - wallet_address: Filter by deploying wallet address
+    - status: Filter by status (success/failed/pending/error)
+    """
+    from deployment_manager import DeploymentManager
+
+    try:
+        manager = DeploymentManager()
+        deployments = manager.get_deployments(
+            network=network,
+            wallet_address=wallet_address,
+            status=status
+        )
+
+        return SorobanDeploymentsResponse(
+            success=True,
+            deployments=deployments,
+            total=len(deployments)
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list deployments: {str(e)}")
+
+
+@router.get("/soroban/deployments/{deployment_id}")
+async def get_soroban_deployment(deployment_id: str):
+    """
+    Get a specific deployment record by ID.
+    """
+    from deployment_manager import DeploymentManager
+
+    try:
+        manager = DeploymentManager()
+        deployment = manager.get_deployment_by_id(deployment_id)
+
+        if deployment:
+            return {"success": True, "deployment": deployment}
+        else:
+            raise HTTPException(status_code=404, detail="Deployment not found")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get deployment: {str(e)}")
+
+
+@router.delete("/soroban/deployments/{deployment_id}")
+async def delete_soroban_deployment(deployment_id: str):
+    """
+    Delete a deployment record.
+    """
+    from deployment_manager import DeploymentManager
+
+    try:
+        manager = DeploymentManager()
+        success = manager.delete_deployment(deployment_id)
+
+        if success:
+            return {"success": True, "message": "Deployment record deleted"}
+        else:
+            raise HTTPException(status_code=404, detail="Deployment not found or could not be deleted")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete deployment: {str(e)}")
 
 
 # ============================================================================
