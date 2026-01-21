@@ -176,7 +176,7 @@ class WalletSelectionDialog(QDialog):
             
             # Test password decryption
             try:
-                self.wallet_manager.decrypt_secret(wallet.secret_key, password)
+                self.wallet_manager.get_secret_key(wallet.address, password)
             except Exception as e:
                 QMessageBox.critical(self, "Invalid Password", f"Wallet password is incorrect: {str(e)}")
                 return

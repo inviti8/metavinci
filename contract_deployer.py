@@ -86,24 +86,22 @@ class ContractDeployer:
                 }
 
             # 3. Handle Wallet Authentication and get secret key
-            if wallet.network == "mainnet":
-                if not wallet_password:
-                    return {
-                        "success": False,
-                        "error": "Password required for mainnet wallet",
-                        "deployment_id": deployment_id
-                    }
-                try:
-                    secret_key = self.wallet_manager.decrypt_secret(wallet.secret_key, wallet_password)
-                except Exception as e:
-                    return {
-                        "success": False,
-                        "error": f"Invalid wallet password: {str(e)}",
-                        "deployment_id": deployment_id
-                    }
-            else:
-                # For testnet, the secret key is stored unencrypted
-                secret_key = wallet.secret_key
+            if wallet.network == "mainnet" and not wallet_password:
+                return {
+                    "success": False,
+                    "error": "Password required for mainnet wallet",
+                    "deployment_id": deployment_id
+                }
+
+            try:
+                # get_secret_key handles both testnet (plaintext) and mainnet (decryption)
+                secret_key = self.wallet_manager.get_secret_key(wallet_address, wallet_password)
+            except Exception as e:
+                return {
+                    "success": False,
+                    "error": f"Failed to get wallet secret key: {str(e)}",
+                    "deployment_id": deployment_id
+                }
 
             # 4. Check Soroban CLI availability
             cli_check = self._check_stellar_cli()

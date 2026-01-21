@@ -159,8 +159,8 @@
 
 #### 2.6 Testing
 - [x] Unit tests for template rendering (added to test_api.py)
-- [ ] Test generated contract compiles
-- [ ] Test generated contract deploys to testnet
+- [x] Test generated contract compiles (via Stellar CLI `stellar contract build`)
+- [x] Test generated contract deploys to testnet (deployed: CBTV2572MGWQBF5CXBNXZGCJFGTHSJ27MXYVJZBIIKOWYN4UYNRH6Y6M)
 - [ ] Verify value property functions work correctly
 
 ---
@@ -278,47 +278,49 @@
 > **Prerequisite:** Phase 3 (Wallet Management) must be completed first
 
 #### 4.1 Contract Build System
-- [ ] Create `contract_builder.py` module with ContractBuilder class
-- [ ] Implement contract structure validation (Cargo.toml, src/lib.rs)
-- [ ] Add Soroban CLI detection and version checking
-- [ ] Create temporary build directory management
-- [ ] Execute `soroban contract build` command with progress callbacks
-- [ ] Capture build output, errors, and WASM file generation
-- [ ] Return structured build results with metadata
-- [ ] Add build artifact cleanup functionality
-- [ ] Implement error handling for missing dependencies and build failures
+- [x] Create `contract_builder.py` module with ContractBuilder class
+- [x] Implement contract structure validation (Cargo.toml, src/lib.rs)
+- [x] Add Stellar CLI detection and version checking
+- [x] Create temporary build directory management
+- [x] Execute `stellar contract build` command with progress callbacks
+- [x] Capture build output, errors, and WASM file generation (with UTF-8 encoding fix for Windows)
+- [x] Return structured build results with metadata
+- [x] Add build artifact cleanup functionality
+- [x] Implement error handling for missing dependencies and build failures
 
 #### 4.2 Contract Deployment System
-- [ ] Create `contract_deployer.py` module with ContractDeployer class
-- [ ] Implement wallet integration with WalletManager for authentication
-- [ ] Add network configuration (testnet/mainnet/futurenet/local)
-- [ ] Deploy compiled WASM to selected network with proper transaction building
-- [ ] Implement wallet selection dialog for deployment authorization
-- [ ] Add mainnet password protection and validation
-- [ ] Return deployed contract ID and transaction hash
-- [ ] Generate Stellar Expert URLs for deployed contracts
-- [ ] Create `deployment_manager.py` for deployment record storage
-- [ ] Store comprehensive deployment records (contract ID, network, timestamp, stellar_expert_url, deployment_wallet, metadata)
-- [ ] Implement deployment status tracking and error handling
-- [ ] Add balance checking and fee estimation
+- [x] Create `contract_deployer.py` module with ContractDeployer class
+- [x] Implement wallet integration with WalletManager for authentication
+- [x] Add network configuration (testnet/mainnet/futurenet/local)
+- [x] Deploy compiled WASM to selected network via `stellar contract deploy` CLI
+- [x] Implement wallet selection dialog for deployment authorization
+- [x] Add mainnet password protection and validation
+- [x] Return deployed contract ID and transaction hash
+- [x] Generate Stellar Expert URLs for deployed contracts
+- [x] Create `deployment_manager.py` for deployment record storage (TinyDB with platform-specific data directory)
+- [x] Store comprehensive deployment records (contract ID, network, timestamp, stellar_expert_url, deployment_wallet, metadata)
+- [x] Implement deployment status tracking and error handling
+- [x] Add balance checking and fee estimation
 
 #### 4.3 Deployment API Endpoints (Testnet Only)
 
 > **Security Note:** API deployment is restricted to testnet only.
 > Mainnet deployments must be done through the Metavinci UI.
 
-- [ ] `POST /api/v1/soroban/build` - Build contract from generated files
-  - Input: Generated contract files (from `/soroban/generate`)
-  - Output: Build status, WASM path or errors
-- [ ] `POST /api/v1/soroban/deploy` - Deploy built contract to testnet
-  - Input: WASM path, testnet wallet address
-  - Output: Contract ID, transaction hash
-- [ ] `POST /api/v1/soroban/generate-and-deploy` - Full pipeline (testnet)
-  - Input: Contract config + testnet wallet
-  - Output: Build status + deployment results
-- [ ] `GET /api/v1/soroban/deployments` - List deployment records
-  - Query params: network, wallet_address
+- [x] `POST /api/v1/soroban/build` - Build contract from generated files
+  - Input: contract_path (path to generated contract directory)
+  - Output: Build status, WASM path, WASM size, or errors
+- [x] `POST /api/v1/soroban/deploy` - Deploy built contract to testnet
+  - Input: WASM path, testnet wallet address, network
+  - Output: Contract ID, Stellar Expert URL, deployment_id
+- [x] `POST /api/v1/soroban/generate-and-build` - Generate and build in one step
+  - Input: Contract config (name, symbol, max_supply, nft_type, val_props)
+  - Output: Generated files + build status + WASM path
+- [x] `GET /api/v1/soroban/deployments` - List deployment records
+  - Query params: network, wallet_address, status
   - Output: Deployment records with metadata
+- [x] `GET /api/v1/soroban/deployments/{deployment_id}` - Get specific deployment
+- [x] `DELETE /api/v1/soroban/deployments/{deployment_id}` - Delete deployment record
 
 #### 4.4 UI Integration
 - [x] Create WalletSelectionDialog for deployment authorization
@@ -332,17 +334,19 @@
 - [x] Create deployment record management UI (view, delete, export)
 - [x] Add deployment status indicators and color coding
 
-#### 4.5 Soroban CLI Integration
-- [ ] Detect Soroban CLI installation
-- [ ] Prompt user to install if missing
-- [ ] Verify Rust/Cargo toolchain
-- [ ] Handle CLI version compatibility
+#### 4.5 Stellar CLI Integration
+> **Note:** The `soroban` CLI is deprecated. All functionality now uses the `stellar` CLI.
+
+- [x] Detect Stellar CLI installation (`stellar --version`)
+- [x] Prompt user to install if missing (error message with install instructions)
+- [x] Verify Rust/Cargo toolchain (requires Rust 1.85+ with wasm32v1-none target)
+- [x] Handle CLI version compatibility and UTF-8 output encoding on Windows
 
 #### 4.6 Testing
-- [ ] Test contract compilation
-- [ ] Test testnet deployment
-- [ ] Test deployment record storage
-- [ ] End-to-end: generate → build → deploy → verify
+- [x] Test contract compilation (via API and CLI)
+- [x] Test testnet deployment (successfully deployed contract)
+- [x] Test deployment record storage (TinyDB persistence verified)
+- [x] End-to-end: generate → build → deploy → verify (full pipeline tested successfully)
 
 ---
 
@@ -421,11 +425,30 @@ def _get_data_dir() -> Path:
 | `api_server.py` | FastAPI server worker | Source file, hidden import |
 | `api_routes.py` | API route definitions | Source file, hidden import |
 | `soroban_generator.py` | Contract generation | Source file, hidden import, jinja2 import |
+| `contract_builder.py` | Soroban contract compilation | Source file, hidden import |
+| `contract_deployer.py` | Contract deployment to Stellar networks | Source file, hidden import |
+| `deployment_manager.py` | Deployment record storage (TinyDB) | Source file, hidden import |
+| `wallet_manager.py` | Wallet storage and management | Source file, hidden import |
 | `templates/` | Jinja2 templates | Data directory, --add-data |
+| `ui/` | PyQt5 UI dialogs | Data directory, --add-data, hidden imports |
+| `ui/soroban/` | Soroban deployment dialogs | Hidden imports for all dialog classes |
+
+#### Platform-Specific Data Storage
+
+The following modules use platform-specific data directories for persistence:
+
+| Module | Data Location |
+|--------|---------------|
+| `deployment_manager.py` | Windows: `%LOCALAPPDATA%/heavymeta/deployments/` |
+| | macOS: `~/Library/Application Support/heavymeta/deployments/` |
+| | Linux: `~/.local/share/heavymeta/deployments/` |
+| `wallet_manager.py` | Windows: `%LOCALAPPDATA%/heavymeta/wallets/` |
+| | macOS: `~/Library/Application Support/heavymeta/wallets/` |
+| | Linux: `~/.local/share/heavymeta/wallets/` |
 
 ---
 
-*Last updated: 2026-01-19 - Phase 3 & 4 planned (Wallet Management & Deployment)*
+*Last updated: 2026-01-20 - Phase 4 completed (Contract Compilation & Deployment)*
 
 ---
 
@@ -982,6 +1005,12 @@ dataclasses-json>=0.6.0
 | POST | `/api/v1/soroban/types` | Generate only type definitions |
 | POST | `/api/v1/soroban/validate` | Validate contract configuration |
 | GET | `/api/v1/soroban/templates` | List available contract templates |
+| POST | `/api/v1/soroban/build` | Build contract from generated files |
+| POST | `/api/v1/soroban/deploy` | Deploy built contract to network |
+| POST | `/api/v1/soroban/generate-and-build` | Generate and build in one step |
+| GET | `/api/v1/soroban/deployments` | List deployment records |
+| GET | `/api/v1/soroban/deployments/{id}` | Get specific deployment |
+| DELETE | `/api/v1/soroban/deployments/{id}` | Delete deployment record |
 
 ---
 
@@ -1031,12 +1060,12 @@ curl -X POST http://127.0.0.1:7777/api/v1/soroban/generate \
         "src/test.rs": "..."
     },
     "output_path": "C:/Users/.../AppData/Local/Temp/soroban_contracts/space_warriors_abc12345",
-    "build_command": "soroban contract build",
-    "deploy_command": "soroban contract deploy --wasm target/wasm32-unknown-unknown/release/space_warriors.wasm --network testnet"
+    "build_command": "stellar contract build",
+    "deploy_command": "stellar contract deploy --wasm target/wasm32-unknown-unknown/release/space_warriors.wasm --network testnet"
 }
 ```
 
-**Note:** When `write_to_disk` is `true` (default), the generated contract files are written to `output_path` on disk, ready for compilation with `soroban contract build`. Set `write_to_disk: false` to return files in memory only without writing to disk.
+**Note:** When `write_to_disk` is `true` (default), the generated contract files are written to `output_path` on disk, ready for compilation with `stellar contract build`. Set `write_to_disk: false` to return files in memory only without writing to disk.
 
 ### Value Property Action Types
 
@@ -1057,13 +1086,15 @@ mkdir my_contract && cd my_contract
 # (save src/*.rs files to ./src/)
 
 # Build the contract
-soroban contract build
+stellar contract build
 
 # Deploy to testnet
-soroban contract deploy \
+stellar contract deploy \
   --wasm target/wasm32-unknown-unknown/release/my_contract.wasm \
   --network testnet
 ```
+
+> **Note:** The `soroban` CLI is deprecated. Use the `stellar` CLI instead.
 
 ---
 
@@ -1076,15 +1107,26 @@ metavinci/
 ├── api_server.py             # NEW - Server worker thread
 ├── api_routes.py             # NEW - FastAPI routes
 ├── soroban_generator.py      # NEW - Soroban contract generator
+├── contract_builder.py       # NEW - Contract compilation via Stellar CLI
+├── contract_deployer.py      # NEW - Contract deployment to Stellar networks
+├── deployment_manager.py     # NEW - Deployment record storage (TinyDB)
+├── wallet_manager.py         # NEW - Wallet storage and management
 ├── requirements.txt          # Modified - new dependencies
-├── build_cross_platform.py   # Modified - includes templates
-└── templates/
+├── build_cross_platform.py   # Modified - includes templates and ui
+├── templates/
+│   └── soroban/
+│       ├── Cargo.toml.j2     # Cargo build configuration
+│       ├── lib.rs.j2         # Main contract implementation
+│       ├── types.rs.j2       # Type definitions & errors
+│       ├── storage.rs.j2     # Storage key definitions
+│       └── test.rs.j2        # Unit test scaffolding
+└── ui/
+    ├── __init__.py           # NEW - UI package init
     └── soroban/
-        ├── Cargo.toml.j2     # Cargo build configuration
-        ├── lib.rs.j2         # Main contract implementation
-        ├── types.rs.j2       # Type definitions & errors
-        ├── storage.rs.j2     # Storage key definitions
-        └── test.rs.j2        # Unit test scaffolding
+        ├── __init__.py                    # NEW - Soroban UI package init
+        ├── deployment_list_dialog.py      # NEW - View deployment history
+        ├── deployment_completion_dialog.py # NEW - Deployment results dialog
+        └── wallet_selection_dialog.py     # NEW - Select wallet for deployment
 ```
 
 ---
@@ -1423,8 +1465,8 @@ POST /api/v1/soroban/generate
     "src/types.rs": "...",
     "src/test.rs": "..."
   },
-  "build_command": "soroban contract build",
-  "deploy_command": "soroban contract deploy --wasm target/wasm32-unknown-unknown/release/space_warriors.wasm --network testnet"
+  "build_command": "stellar contract build",
+  "deploy_command": "stellar contract deploy --wasm target/wasm32-unknown-unknown/release/space_warriors.wasm --network testnet"
 }
 ```
 
@@ -2152,7 +2194,7 @@ public type MetadataVal = {
 
 6. **Type System:** Motoko is garbage-collected with null safety; Rust/Soroban is ownership-based with explicit memory management.
 
-7. **Deployment:** ICP uses `dfx deploy`; Soroban uses `soroban contract deploy --wasm`.
+7. **Deployment:** ICP uses `dfx deploy`; Soroban uses `stellar contract deploy --wasm`.
 
 8. **Principal → Address:** ICP principals are text-encoded; Soroban addresses are 32-byte identifiers.
 
