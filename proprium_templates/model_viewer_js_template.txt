@@ -1,0 +1,14 @@
+import * as PROPRIUM from 'hvym-proprium';
+
+
+const SCENE =  new PROPRIUM.HVYM_DefaultScene();
+SCENE.createCameraOrbitControls();
+
+const ORIGIN = new PROPRIUM.InvisibleBox(SCENE.scene).box;
+SCENE.setOrigin(ORIGIN);
+ORIGIN.name = "ORIGIN";
+PROPRIUM.defaultGLTFModel(SCENE, ORIGIN, '{{data.model}}');
+
+SCENE.scene.add( ORIGIN );
+
+SCENE.animate();

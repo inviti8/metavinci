@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>{{data.contract.minterName}}</title>
+    <style>
+      body {
+        background: #fff;
+        overflow: hidden;
+        margin: 0;
+        position: relative;
+        }
+    </style>
+  </head>
+  <body>
+    <div id="menu" style="position:absolute;display:none;background-color:transparent">
+      <br>
+      <button id="showProprium" style="display:;background-color:#cf5270;color:#afe8c5;border:2px solid #afe8c5;border-radius: 10px;">
+        show proprium
+      </button>
+      <button id="hideProprium" style="display:;background-color:#cf5270;color:#afe8c5;border:2px solid #afe8c5;border-radius: 10px;">
+        hide proprium
+      </button>
+    </div>
+    <script type="module" src="/index.js"></script>
+    <script type="x-shader/x-vertex" id="vertexshader">
+
+      attribute float size;
+
+      varying vec3 vColor;
+
+      void main() {
+
+        vColor = color;
+
+        vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+
+        gl_PointSize = size * ( 300.0 / -mvPosition.z );
+
+        gl_Position = projectionMatrix * mvPosition;
+
+      }
+
+    </script>
+    <script type="x-shader/x-fragment" id="fragmentshader">
+
+      uniform sampler2D pointTexture;
+
+      varying vec3 vColor;
+
+      void main() {
+
+        gl_FragColor = vec4( vColor, 1.0 );
+
+        gl_FragColor = gl_FragColor * texture2D( pointTexture, gl_PointCoord );
+
+      }
+
+    </script>
+    <script id="minter-vertex-shader" type="x-shader/x-vertex" >
+      varying vec3 vNormal;  // Varying for normal interpolation
+      uniform float uTime;   // Uniform for time
+
+      void main() {
+          vNormal = normal;                // Pass the vertex normal to the fragment shader
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    </script>
+    <script id="minter-fragment-shader" type="x-shader/x-fragment">
+      varying vec2 vUv;
+      uniform float uTime;
+      varying vec3 vNormal; // Varying for normal interpolation
+      void main() {
+        vec3 scaledNormal = normalize(vNormal);
+        float r = scaledNormal.r + 1.0;        // Get the x component and add 1.0 to it
+        float g = scaledNormal.g + 0.2;      // Get the y component and add 1.0 to it
+        float b = scaledNormal.b + 0.7;       // Get the z component and add 1.0 to it
+        gl_FragColor = vec4(r, g, b, 1.0);   // Use these channels for your color
+      }
+    </script>
+  </body>
+</html>

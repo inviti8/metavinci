@@ -273,6 +273,925 @@
 
 ---
 
+### Phase 5: 3D Asset Pipeline Port
+
+> **Prerequisite:** Phase 4 (Contract Compilation & Deployment) must be completed first
+
+This phase recreates the functionality formerly provided by hvym-cli-dev in conjunction with proprium_dev for deploying 3D assets with 3JS-based interface systems.
+
+#### 5.1 Current hvym-cli + proprium_dev Workflow Analysis
+
+**Original Pipeline:**
+```
+Blender (with Heavymeta Addon) 
+    ↓ (exports glb with embedded HVYM metadata)
+hvym-cli (intermediary)
+    ↓ (renders templates + generates Motoko contract)
+ICP CLI
+    ↓ (deploys to ICP canister)
+Web Interface (3JS + Proprium.js)
+```
+
+**New Pipeline:**
+```
+Blender (with Heavymeta Addon)
+    ↓ (exports glb with embedded HVYM metadata)
+Metavinci API
+    ↓ (renders templates + generates Soroban contract)
+Pintheon IPFS
+    ↓ (stores assets and web interface)
+Web Interface (3JS + Proprium.js)
+```
+
+#### 5.2 Template System Analysis (Based on hvym-cli Templates)
+
+**Template Structure Discovered:**
+```
+proprium_templates/
+├── model_viewer_html_template.txt      # Basic 3D model viewer
+├── model_viewer_js_template.txt        # Simple GLTF model display
+├── model_minter_frontend_index_template.txt  # NFT minting interface
+├── model_minter_frontend_js_template.txt      # ICP-based minting logic
+├── model_minter_backend_main_template.txt     # Motoko NFT contract
+├── model_minter_backend_types_template.txt    # Motoko type definitions
+├── custom_client_frontend_index_template.txt  # Custom client interface
+└── custom_client_frontend_js_template.txt      # Custom client logic
+```
+
+**Template Types and Their Purpose:**
+
+#### **1. Model Viewer Templates**
+- **HTML Template**: Basic HTML structure with Proprium.js integration
+- **JS Template**: Simple 3D model loading with `PROPRIUM.defaultGLTFModel()`
+- **Use Case**: Display-only 3D models without minting functionality
+
+#### **2. Model Minter Templates** 
+- **HTML Template**: Full NFT minting interface with shaders and controls
+- **JS Template**: ICP-based authentication and minting with `SCENE.addICModelMinterClient()`
+- **Motoko Backend**: Complete NFT contract with metadata, custodians, and transaction handling
+- **Use Case**: Full NFT creation and minting workflow
+
+#### **3. Custom Client Templates**
+- **HTML Template**: Flexible interface for custom client implementations
+- **JS Template**: Custom backend integration with `SCENE.addICCustomClient()`
+- **Use Case**: Custom dApp integrations beyond standard minting
+
+**Template Variables Identified:**
+```handlebars
+{{ data.model_name }}           # Model display name
+{{ data.js_file_name }}         # Generated JS filename
+{{ data.model }}                # GLB model path/CID
+{{ data.contract.minterName }}  # NFT collection name
+{{ data.contract.nftName }}     # Individual NFT name
+{{ data.contract.nftType }}     # Token symbol (HVYC, HVYI, etc.)
+{{ data.contract.maxSupply }}   # Maximum NFT supply
+{{ data.project.name }}         # Custom project name
+```
+
+**Proprium.js Integration Points:**
+```javascript
+// Core Scene Setup
+const SCENE = new PROPRIUM.HVYM_DefaultScene();
+SCENE.createCameraOrbitControls();
+
+// Model Loading
+PROPRIUM.defaultGLTFModel(SCENE, ORIGIN, '{{data.model}}');
+
+// ICP Integration (to be replaced with Stellar)
+SCENE.addIC_FullAuth(CANISTER_ID, AuthClient, HttpAgent, createActor, ID_PROVIDER, idlFactory, [CANISTER_ID]);
+const IC_MINTER = SCENE.addICModelMinterClient('{{data.model}}', true);
+const IC_CLIENT = SCENE.addICCustomClient('{{data.model}}', backend);
+```
+
+**Template Processing Requirements:**
+- Use Handlebars-style templating (`{{variable}}`)
+- Support for conditional rendering in templates
+- Asset bundling and optimization
+- Shader preservation (vertex/fragment shaders in HTML)
+- Environment variable substitution
+
+#### 5.3 Pintheon IPFS Integration
+
+**File Upload Workflow:**
+```python
+# Pintheon API integration
+class PintheonClient:
+    def __init__(self, api_url="https://localhost:9999/api_upload"):
+        self.api_url = api_url
+    
+    def upload_file(self, file_path, access_token, encrypted=False):
+        """Upload file to Pintheon IPFS node"""
+        with open(file_path, 'rb') as f:
+            files = {'file': (os.path.basename(file_path), f, 'application/octet-stream')}
+            data = {
+                'access_token': access_token,
+                'encrypted': 'true' if encrypted else 'false'
+            }
+            response = requests.post(self.api_url, files=files, data=data, verify=False, timeout=30)
+            
+        if response.status_code == 200:
+            result = response.json()
+            cid = result.get('Hash') or result.get('IpfsHash')
+            gateway_url = f"https://your-pintheon-gateway/ipfs/{cid}"
+            return {"success": True, "cid": cid, "gateway_url": gateway_url}
+        else:
+            return {"success": False, "error": response.text}
+```
+
+**Asset Types to Upload:**
+- **GLB Files**: 3D models with embedded HVYM metadata
+- **HTML/JS Files**: Generated web interfaces
+- **Contract Metadata**: Soroban contract information
+- **Static Assets**: Images, textures, supporting files
+
+#### 5.4 Soroban Contract Integration for 3D Assets
+
+**Replace Motoko Contract Generation:**
+```python
+# Generate Soroban contract that extracts HVYM metadata
+def generate_3d_asset_contract(asset_config):
+    contract_config = {
+        "contract_name": asset_config["name"],
+        "symbol": asset_config["symbol"],
+        "max_supply": asset_config.get("max_supply", 1),  # Typically unique 3D assets
+        "nft_type": asset_config.get("nft_type", "HVYC"),
+        "val_props": {
+            "model_cid": {
+                "prop_name": "model_cid",
+                "prop_type": "String",
+                "prop_action_type": "Setter",
+                "initial_value": asset_config["model_cid"]
+            },
+            "interface_cid": {
+                "prop_name": "interface_cid", 
+                "prop_type": "String",
+                "prop_action_type": "Setter",
+                "initial_value": asset_config["interface_cid"]
+            },
+            "asset_type": {
+                "prop_name": "asset_type",
+                "prop_type": "String", 
+                "prop_action_type": "Setter",
+                "initial_value": asset_config.get("asset_type", "3d_model")
+            }
+        }
+    }
+    return contract_config
+```
+
+#### 5.5 Template Rendering System (Updated with Actual hvym-cli Implementation)
+
+**Original Template Rendering Implementation:**
+```python
+# From hvym.py - Original Jinja2-based template rendering
+def _render_template(template_file, data, out_file_path):
+    file_loader = FileSystemLoader(FILE_PATH / 'templates')
+    env = Environment(loader=file_loader)
+    template = env.get_template(template_file)
+    
+    with open(out_file_path, 'w') as f:
+        output = template.render(data=data)
+        f.write(output)
+
+# HVYM Data Loading and Parsing
+def _load_hvym_data(model_path):
+    gltf = None
+    result = None
+    if os.path.isfile(model_path):
+        gltf = GLTF2().load(model_path)
+        if 'HVYM_nft_data' in gltf.extensions.keys():
+            result = gltf.extensions['HVYM_nft_data']
+        else:
+            click.echo("No Heavymeta Data in model.")
+    return result
+
+# Data Structure Parsing for Templates
+def _parse_hvym_data(hvym_data, model):
+    all_val_props = {}
+    all_call_props = {}
+    contract_props = None
+    data = {}
+    active = _ic_get_active_id().strip()
+    principal = _ic_get_stored_principal(active)
+    creator_hash = _create_hex(principal.encode('utf-8')).upper()
+    
+    for key, value in hvym_data.items():
+        if key != 'contract':
+            for propType, props in value.items():
+                if propType == 'valProps':
+                    for name, prop in props.items():
+                        if prop['prop_action_type'] != 'Static' and not prop['immutable']:
+                            all_val_props[name] = prop
+                if propType == 'callProps':
+                    for name, prop in props.items():
+                        all_call_props[name] = prop
+        else:
+            contract_props = value
+    
+    data['valProps'] = all_val_props
+    data['callProps'] = all_call_props
+    data['contract'] = contract_props
+    data['creatorHash'] = creator_hash
+    data['model'] = model
+    data['project'] = hvym_data['project']
+    
+    return data
+```
+
+**Enhanced Template Renderer for Metavinci:**
+```python
+# Template rendering with Jinja2 (matching original implementation)
+from jinja2 import Environment, FileSystemLoader
+from pathlib import Path
+import json
+
+class TemplateRenderer:
+    def __init__(self, template_dir="proprium_templates"):
+        self.template_dir = Path(template_dir)
+        self.env = Environment(loader=FileSystemLoader(self.template_dir))
+    
+    def render_template(self, template_file, data, output_path):
+        """Render template using Jinja2 (matching original hvym-cli)"""
+        template = self.env.get_template(template_file)
+        
+        with open(output_path, 'w') as f:
+            output = template.render(data=data)
+            f.write(output)
+        
+        return {"success": True, "output_path": str(output_path)}
+    
+    def load_hvym_data(self, model_path):
+        """Load HVYM metadata from GLB file (matching original)"""
+        from pygltflib import GLTF2
+        
+        if not os.path.isfile(model_path):
+            return {"success": False, "error": "Model file not found"}
+        
+        try:
+            gltf = GLTF2().load(model_path)
+            if 'HVYM_nft_data' in gltf.extensions.keys():
+                return {"success": True, "data": gltf.extensions['HVYM_nft_data']}
+            else:
+                return {"success": False, "error": "No Heavymeta Data in model"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def parse_hvym_data_for_template(self, hvym_data, model_cid, creator_address):
+        """Parse HVYM data for template rendering (matching original structure)"""
+        all_val_props = {}
+        all_call_props = {}
+        contract_props = None
+        data = {}
+        
+        # Create creator hash from Stellar address (replacing ICP principal)
+        creator_hash = self._create_hex(creator_address.encode('utf-8')).upper()
+        
+        for key, value in hvym_data.items():
+            if key != 'contract':
+                for propType, props in value.items():
+                    if propType == 'valProps':
+                        for name, prop in props.items():
+                            if prop['prop_action_type'] != 'Static' and not prop.get('immutable', False):
+                                all_val_props[name] = prop
+                    if propType == 'callProps':
+                        for name, prop in props.items():
+                            all_call_props[name] = prop
+            else:
+                contract_props = value
+        
+        data['valProps'] = all_val_props
+        data['callProps'] = all_call_props
+        data['contract'] = contract_props
+        data['creatorHash'] = creator_hash
+        data['model'] = model_cid  # Replace model path with IPFS CID
+        data['project'] = hvym_data.get('project', {})
+        
+        return data
+    
+    def render_model_viewer(self, model_data, output_dir):
+        """Render model viewer templates (matching original hvym-cli)"""
+        output_path = Path(output_dir)
+        output_path.mkdir(exist_ok=True)
+        
+        # Render HTML template
+        html_result = self.render_template(
+            'model_viewer_html_template.txt',
+            {'data': model_data},
+            output_path / 'index.html'
+        )
+        
+        # Render JS template
+        js_result = self.render_template(
+            'model_viewer_js_template.txt',
+            {'data': model_data},
+            output_path / 'index.js'
+        )
+        
+        return {
+            "success": True,
+            "html_path": html_result["output_path"],
+            "js_path": js_result["output_path"]
+        }
+    
+    def render_model_minter(self, contract_data, model_data, output_dir):
+        """Render NFT minter templates (matching original hvym-cli)"""
+        output_path = Path(output_dir)
+        output_path.mkdir(exist_ok=True)
+        
+        # Prepare template data (matching original structure)
+        template_data = {
+            'data': {
+                'contract': contract_data,
+                'model': model_data['model']
+            }
+        }
+        
+        # Render HTML template
+        html_result = self.render_template(
+            'model_minter_frontend_index_template.txt',
+            template_data,
+            output_path / 'index.html'
+        )
+        
+        # Render JS template
+        js_result = self.render_template(
+            'model_minter_frontend_js_template.txt',
+            template_data,
+            output_path / 'index.js'
+        )
+        
+        return {
+            "success": True,
+            "html_path": html_result["output_path"],
+            "js_path": js_result["output_path"]
+        }
+    
+    def render_custom_client(self, project_data, model_data, output_dir):
+        """Render custom client templates (matching original hvym-cli)"""
+        output_path = Path(output_dir)
+        output_path.mkdir(exist_ok=True)
+        
+        # Prepare template data
+        template_data = {
+            'data': {
+                'project': project_data,
+                'model': model_data['model']
+            }
+        }
+        
+        # Render HTML template
+        html_result = self.render_template(
+            'custom_client_frontend_index_template.txt',
+            template_data,
+            output_path / 'index.html'
+        )
+        
+        # Render JS template
+        js_result = self.render_template(
+            'custom_client_frontend_js_template.txt',
+            template_data,
+            output_path / 'index.js'
+        )
+        
+        return {
+            "success": True,
+            "html_path": html_result["output_path"],
+            "js_path": js_result["output_path"]
+        }
+    
+    def _create_hex(self, input_bytes):
+        """Create hex hash (matching original implementation)"""
+        import hashlib
+        return hashlib.sha256(input_bytes).hexdigest()
+```
+
+**Template Variable Mapping (Enhanced):**
+```python
+# Complete mapping from Blender/HVYM data to template variables
+def map_template_variables(asset_data, contract_data, model_cid, creator_address):
+    """Map asset and contract data to template variables (matching original)"""
+    return {
+        # Model viewer variables
+        'model_name': asset_data.get('name', 'Untitled Model'),
+        'js_file_name': 'index.js',
+        'model': model_cid,
+        
+        # Contract variables (for minter templates)
+        'contract': {
+            'minterName': contract_data.get('contract_name', 'HVYM Collection'),
+            'nftName': contract_data.get('contract_name', 'HVYM NFT'),
+            'nftType': contract_data.get('symbol', 'HVYC'),
+            'maxSupply': contract_data.get('max_supply', 1)
+        },
+        
+        # Project variables
+        'project': {
+            'name': asset_data.get('project_name', 'HVYM Project')
+        },
+        
+        # HVYM-specific variables (from original parsing)
+        'valProps': asset_data.get('valProps', {}),
+        'callProps': asset_data.get('callProps', {}),
+        'creatorHash': hashlib.sha256(creator_address.encode('utf-8')).hexdigest().upper()
+    }
+```
+
+**NPM Integration (Matching Original):**
+```python
+# NPM module management (matching original hvym-cli)
+class NPMManager:
+    def __init__(self):
+        self.npm_links_path = Path.home() / '.local' / 'share' / 'metavinci' / 'npm_links'
+    
+    def install_dependencies(self, project_path):
+        """Install npm dependencies (matching original)"""
+        try:
+            subprocess.run('npm install', cwd=project_path, shell=True, check=True)
+            return {"success": True}
+        except subprocess.CalledProcessError as e:
+            return {"success": False, "error": str(e)}
+    
+    def link_proprium_module(self, project_path):
+        """Link hvym-proprium module (matching original)"""
+        try:
+            subprocess.run('npm link hvym-proprium', cwd=project_path, shell=True, check=True)
+            return {"success": True}
+        except subprocess.CalledProcessError as e:
+            return {"success": False, "error": str(e)}
+    
+    def bundle_assets(self, project_path, output_dir):
+        """Bundle assets for deployment (matching original)"""
+        try:
+            subprocess.run(f'npm run build -- --output-dir={output_dir}', 
+                         cwd=project_path, shell=True, check=True)
+            return {"success": True}
+        except subprocess.CalledProcessError as e:
+            return {"success": False, "error": str(e)}
+```
+
+#### 5.6 API Endpoints for 3D Asset Pipeline
+
+**New API Endpoints:**
+- [ ] `POST /api/v1/3d/upload-asset` - Upload GLB file to Pintheon
+- [ ] `POST /api/v1/3d/generate-interface` - Generate web interface from template
+- [ ] `POST /api/v1/3d/deploy-asset` - Full pipeline: upload + generate + deploy
+- [ ] `GET /api/v1/3d/templates` - List available web interface templates
+- [ ] `GET /api/v1/3d/assets/{asset_id}` - Get deployed asset information
+- [ ] `POST /api/v1/3d/pintheon-config` - Configure Pintheon node settings
+
+#### 5.7 Implementation Tasks (Updated with Template-Specific Details)
+
+**Core Infrastructure:**
+- [ ] Create `pintheon_client.py` for IPFS integration
+- [ ] Create `template_renderer.py` for template processing (based on actual templates)
+- [ ] Create `asset_pipeline.py` for end-to-end asset deployment
+- [ ] Add npm/Node.js dependency management
+- [ ] Copy `proprium_templates/` directory to Metavinci structure
+
+**Template System Migration:**
+- [ ] **Port Model Viewer Templates**:
+  - [ ] Migrate `model_viewer_html_template.txt` with Proprium.js integration
+  - [ ] Migrate `model_viewer_js_template.txt` with GLTF loading
+  - [ ] Replace `{{data.model}}` with IPFS CID references
+  - [ ] Update `{{data.js_file_name}}` generation logic
+
+- [ ] **Port Model Minter Templates**:
+  - [ ] Migrate `model_minter_frontend_index_template.txt` with shaders
+  - [ ] Migrate `model_minter_frontend_js_template.txt` (replace ICP auth)
+  - [ ] **Critical**: Replace `SCENE.addICModelMinterClient()` with Stellar equivalent
+  - [ ] Replace ICP environment variables with Stellar wallet integration
+  - [ ] Update contract variable mapping for Soroban
+
+- [ ] **Port Custom Client Templates**:
+  - [ ] Migrate `custom_client_frontend_index_template.txt`
+  - [ ] Migrate `custom_client_frontend_js_template.txt`
+  - [ ] Replace `SCENE.addICCustomClient()` with Stellar client integration
+  - [ ] Update backend integration for Soroban contracts
+
+- [ ] **Replace Motoko Backend Templates**:
+  - [ ] Convert `model_minter_backend_main_template.txt` to Soroban contract
+  - [ ] Convert `model_minter_backend_types_template.txt` to Soroban types
+  - [ ] Map Motoko NFT structure to Soroban value properties
+  - [ ] Replace ICP Principal with Stellar public key logic
+  - [ ] Convert custodian system to Stellar multi-sig equivalent
+
+**Proprium.js Integration Updates:**
+- [ ] **Replace ICP Authentication**:
+  - [ ] Remove `@dfinity/auth-client` and `@dfinity/agent` imports
+  - [ ] Replace `SCENE.addIC_FullAuth()` with Stellar wallet connection
+  - [ ] Create `SCENE.addStellarAuth()` equivalent function
+  - [ ] Update wallet connection flow for Stellar
+
+- [ ] **Replace ICP Canister Calls**:
+  - [ ] Remove `createActor` and `idlFactory` imports
+  - [ ] Replace canister ID references with Stellar contract IDs
+  - [ ] Update `SCENE.addICModelMinterClient()` to use Soroban contracts
+  - [ ] Create Stellar SDK integration for contract interactions
+
+- [ ] **Update Model Loading**:
+  - [ ] Ensure `PROPRIUM.defaultGLTFModel()` works with IPFS CIDs
+  - [ ] Test GLB loading from Pintheon gateway URLs
+  - [ ] Verify HVYM metadata parsing in new environment
+
+**Soroban Contract Integration:**
+- [ ] **Create 3D Asset Contract Templates**:
+  - [ ] Model Viewer Contract: Store IPFS CID, basic metadata
+  - [ ] NFT Minter Contract: Full minting logic, royalties, ownership
+  - [ ] Custom Client Contract: Flexible metadata and interaction logic
+  - [ ] Asset Verification Contract: Validate HVYM metadata integrity
+
+- [ ] **Implement Metadata Extraction**:
+  - [ ] Parse HVYM metadata from GLB files
+  - [ ] Extract asset properties and store in contract
+  - [ ] Create metadata validation functions
+  - [ ] Add IPFS CID verification in contracts
+
+- [ ] **Contract-Template Integration**:
+  - [ ] Generate contract variables for template rendering
+  - [ ] Map contract value properties to template variables
+  - [ ] Create contract deployment tracking
+  - [ ] Add contract metadata to web interface generation
+
+**Pintheon Integration:**
+- [ ] **File Upload System**:
+  - [ ] Implement GLB file upload with metadata preservation
+  - [ ] Upload generated HTML/JS bundles as complete packages
+  - [ ] Batch upload for multiple assets and dependencies
+  - [ ] Add access token management and rotation
+
+- [ ] **Asset Organization**:
+  - [ ] Create folder structure for different asset types
+  - [ ] Implement asset versioning and updates
+  - [ ] Add asset deletion and cleanup functions
+  - [ ] Create asset backup and recovery
+
+**API Endpoints Implementation:**
+- [ ] **Asset Upload Endpoints**:
+  - [ ] `POST /api/v1/3d/upload-asset` - GLB upload with HVYM validation
+  - [ ] `POST /api/v1/3d/upload-bundle` - Complete web interface upload
+  - [ ] `GET /api/v1/3d/upload-status/{upload_id}` - Progress tracking
+
+- [ ] **Template Generation Endpoints**:
+  - [ ] `POST /api/v1/3d/generate-viewer` - Basic model viewer
+  - [ ] `POST /api/v1/3d/generate-minter` - NFT minting interface
+  - [ ] `POST /api/v1/3d/generate-custom` - Custom client interface
+  - [ ] `GET /api/v1/3d/template-preview/{template_name}` - Preview templates
+
+- [ ] **Full Pipeline Endpoints**:
+  - [ ] `POST /api/v1/3d/deploy-asset` - Complete deployment pipeline
+  - [ ] `GET /api/v1/3d/assets/{asset_id}` - Asset information and status
+  - [ ] `GET /api/v1/3d/assets` - List all deployed assets
+  - [ ] `DELETE /api/v1/3d/assets/{asset_id}` - Remove deployed asset
+
+- [ ] **Configuration Endpoints**:
+  - [ ] `POST /api/v1/3d/pintheon-config` - Configure Pintheon settings
+  - [ ] `GET /api/v1/3d/pintheon-status` - Check Pintheon connectivity
+  - [ ] `POST /api/v1/3d/template-config` - Configure template settings
+
+**Testing Strategy:**
+- [ ] **Template Testing**:
+  - [ ] Test all 8 template migrations with sample data
+  - [ ] Verify Handlebars variable substitution
+  - [ ] Test shader preservation in HTML templates
+  - [ ] Validate Proprium.js integration in rendered output
+
+- [ ] **End-to-End Pipeline Testing**:
+  - [ ] Test Blender → Pintheon → Web Interface workflow
+  - [ ] Verify GLB upload and HVYM metadata preservation
+  - [ ] Test contract deployment and template integration
+  - [ ] Validate complete NFT minting workflow
+
+- [ ] **Integration Testing**:
+  - [ ] Test Stellar wallet integration with Proprium.js
+  - [ ] Verify Soroban contract interactions from web interface
+  - [ ] Test Pintheon file retrieval and gateway access
+  - [ ] Validate error handling and rollback scenarios
+
+#### 5.9 Soroban Project Management System (Mapping ICP Management to Metavinci Patterns)
+
+**Original ICP Management System (from hvym-cli):**
+```python
+# ICP Identity Management (hvym.py)
+IC_IDS = STORAGE.table('ic_identities')      # ICP identities storage
+IC_PROJECTS = STORAGE.table('ic_projects')    # ICP projects storage
+
+# Key ICP Management Functions:
+def _ic_get_ids()                    # List ICP identities
+def _ic_get_active_id()              # Get active identity
+def _ic_set_id(cryptonym)            # Set active identity
+def _ic_new_test_id(cryptonym)       # Create test identity
+def _ic_new_encrypted_id(cryptonym, pw)  # Create encrypted identity
+def _ic_remove_id(cryptonym)         # Remove identity
+def _ic_get_principal_by_id(id, pw)  # Get principal for identity
+def _ic_start_daemon(folder)         # Start ICP replica
+def _ic_stop_daemon(folder)          # Stop ICP replica
+```
+
+**Metavinci Pattern-Based Soroban Project Management:**
+```python
+# Leverage existing Metavinci patterns
+class SorobanProjectManager:
+    """Soroban project management using existing Metavinci patterns"""
+    
+    def __init__(self):
+        # Use existing TinyDB pattern from wallet_manager.py and deployment_manager.py
+        self.db_path = _get_data_dir() / "soroban_projects.json"
+        self.db = TinyDB(str(self.db_path))
+        self.projects = self.db.table('projects')
+        self.active_projects = self.db.table('active_projects')
+    
+    def create_project(self, project_name: str, project_type: str, network: str = "testnet"):
+        """Create new Soroban project (mirroring ICP project creation)"""
+        project_id = f"soroban_{project_name}_{int(time.time())}"
+        
+        project = {
+            "project_id": project_id,
+            "name": project_name,
+            "type": project_type,  # "model_viewer", "model_minter", "custom_client"
+            "network": network,
+            "created_at": datetime.now().isoformat(),
+            "status": "created",
+            "contract_id": None,
+            "model_cid": None,
+            "interface_cid": None,
+            "template_used": None,
+            "wallet_address": None
+        }
+        
+        self.projects.insert(project)
+        return project_id
+    
+    def set_active_project(self, project_id: str):
+        """Set active project (mirroring _ic_set_id)"""
+        # Clear previous active project
+        self.active_projects.truncate()
+        
+        # Set new active project
+        active_record = {
+            "data_type": "ACTIVE_SOROBAN_PROJECT",
+            "project_id": project_id,
+            "timestamp": datetime.now().isoformat()
+        }
+        self.active_projects.insert(active_record)
+    
+    def get_active_project(self) -> Optional[Dict]:
+        """Get active project (mirroring _ic_get_active_id)"""
+        from tinydb import Query
+        query = Query()
+        result = self.active_projects.get(query.data_type == "ACTIVE_SOROBAN_PROJECT")
+        if result:
+            return self.get_project(result["project_id"])
+        return None
+    
+    def list_projects(self) -> List[Dict]:
+        """List all Soroban projects (mirroring _ic_get_ids)"""
+        return self.projects.all()
+    
+    def get_project(self, project_id: str) -> Optional[Dict]:
+        """Get project by ID"""
+        from tinydb import Query
+        query = Query()
+        return self.projects.get(query.project_id == project_id)
+    
+    def update_project(self, project_id: str, updates: Dict):
+        """Update project record"""
+        from tinydb import Query
+        query = Query()
+        self.projects.update(updates, query.project_id == project_id)
+    
+    def delete_project(self, project_id: str):
+        """Delete project (mirroring _ic_remove_id)"""
+        from tinydb import Query
+        query = Query()
+        self.projects.remove(query.project_id == project_id)
+```
+
+**Project Types and Templates (Mapping ICP Templates):**
+```python
+# Project type definitions (mirroring ICP template system)
+SOROBAN_PROJECT_TYPES = {
+    "model_viewer": {
+        "template": "model_viewer_html_template.txt",
+        "js_template": "model_viewer_js_template.txt",
+        "contract_type": "basic_storage",
+        "description": "Basic 3D model viewer without minting"
+    },
+    "model_minter": {
+        "template": "model_minter_frontend_index_template.txt",
+        "js_template": "model_minter_frontend_js_template.txt",
+        "contract_type": "nft_minter",
+        "description": "Full NFT minting interface"
+    },
+    "custom_client": {
+        "template": "custom_client_frontend_index_template.txt",
+        "js_template": "custom_client_frontend_js_template.txt",
+        "contract_type": "custom_logic",
+        "description": "Custom client with flexible logic"
+    }
+}
+
+# Contract type mapping
+SOROBAN_CONTRACT_TYPES = {
+    "basic_storage": {
+        "val_props": ["model_cid", "interface_cid", "asset_type"],
+        "description": "Store IPFS CIDs and basic metadata"
+    },
+    "nft_minter": {
+        "val_props": ["model_cid", "interface_cid", "asset_type", "max_supply", "royalty_rate"],
+        "description": "Full NFT minting with royalties"
+    },
+    "custom_logic": {
+        "val_props": ["custom_data"],
+        "description": "Flexible contract for custom implementations"
+    }
+}
+```
+
+**Integration with Existing Metavinci Components:**
+```python
+# Extend existing wallet_manager.py for project-specific wallets
+class ProjectWalletManager(WalletManager):
+    """Project-specific wallet management extending existing WalletManager"""
+    
+    def __init__(self):
+        super().__init__()
+        self.project_wallets = self.db.table('project_wallets')
+    
+    def assign_wallet_to_project(self, project_id: str, wallet_address: str, network: str):
+        """Assign wallet to specific project"""
+        assignment = {
+            "project_id": project_id,
+            "wallet_address": wallet_address,
+            "network": network,
+            "assigned_at": datetime.now().isoformat()
+        }
+        self.project_wallets.insert(assignment)
+    
+    def get_project_wallet(self, project_id: str, network: str) -> Optional[Wallet]:
+        """Get wallet assigned to project"""
+        from tinydb import Query
+        query = Query()
+        result = self.project_wallets.get(
+            (query.project_id == project_id) & (query.network == network)
+        )
+        if result:
+            return self.get_wallet(result["wallet_address"], network)
+        return None
+
+# Extend existing deployment_manager.py for project deployments
+class ProjectDeploymentManager(DeploymentManager):
+    """Project-specific deployment management extending existing DeploymentManager"""
+    
+    def __init__(self):
+        super().__init__()
+        self.project_deployments = self.db.table('project_deployments')
+    
+    def deploy_project_contract(self, project_id: str, contract_config: Dict, wallet_address: str) -> Dict:
+        """Deploy contract for specific project"""
+        # Use existing contract_deployer.py functionality
+        from contract_deployer import ContractDeployer
+        
+        deployer = ContractDeployer()
+        result = deployer.deploy_contract(contract_config, wallet_address)
+        
+        # Link deployment to project
+        if result["success"]:
+            project_deployment = {
+                "project_id": project_id,
+                "deployment_id": result["deployment_id"],
+                "contract_id": result["contract_id"],
+                "deployed_at": datetime.now().isoformat()
+            }
+            self.project_deployments.insert(project_deployment)
+        
+        return result
+    
+    def get_project_deployments(self, project_id: str) -> List[Dict]:
+        """Get all deployments for a project"""
+        from tinydb import Query
+        query = Query()
+        return self.project_deployments.search(query.project_id == project_id)
+```
+
+**API Endpoints for Project Management:**
+```python
+# New API endpoints for Soroban project management
+@app.post("/api/v1/soroban/projects/create")
+async def create_soroban_project(project_data: Dict):
+    """Create new Soroban project"""
+    manager = SorobanProjectManager()
+    project_id = manager.create_project(
+        project_data["name"],
+        project_data["type"],
+        project_data.get("network", "testnet")
+    )
+    return {"success": True, "project_id": project_id}
+
+@app.get("/api/v1/soroban/projects")
+async def list_soroban_projects():
+    """List all Soroban projects"""
+    manager = SorobanProjectManager()
+    projects = manager.list_projects()
+    return {"success": True, "projects": projects}
+
+@app.get("/api/v1/soroban/projects/active")
+async def get_active_soroban_project():
+    """Get active Soroban project"""
+    manager = SorobanProjectManager()
+    project = manager.get_active_project()
+    return {"success": True, "project": project}
+
+@app.post("/api/v1/soroban/projects/{project_id}/set-active")
+async def set_active_soroban_project(project_id: str):
+    """Set active Soroban project"""
+    manager = SorobanProjectManager()
+    manager.set_active_project(project_id)
+    return {"success": True}
+
+@app.post("/api/v1/soroban/projects/{project_id}/deploy")
+async def deploy_soroban_project(project_id: str, contract_config: Dict):
+    """Deploy contract for Soroban project"""
+    project_manager = SorobanProjectManager()
+    deployment_manager = ProjectDeploymentManager()
+    
+    project = project_manager.get_project(project_id)
+    if not project:
+        return {"success": False, "error": "Project not found"}
+    
+    # Get project wallet
+    wallet_manager = ProjectWalletManager()
+    wallet = wallet_manager.get_project_wallet(project_id, project["network"])
+    if not wallet:
+        return {"success": False, "error": "No wallet assigned to project"}
+    
+    result = deployment_manager.deploy_project_contract(
+        project_id, contract_config, wallet.address
+    )
+    
+    return result
+```
+
+**UI Integration (Following Existing Metavinci Patterns):**
+```python
+# Add to existing tray menu system (metavinci.py)
+def _setup_soroban_projects_menu(self, tray_menu):
+    """Set up Soroban Projects submenu (following wallet menu pattern)"""
+    self.soroban_projects_menu = tray_menu.addMenu("Soroban Projects")
+    self.soroban_projects_menu.setIcon(self.stellar_icon)
+    
+    # Project management actions
+    self.soroban_projects_menu.addAction(self.create_project_action)
+    self.soroban_projects_menu.addAction(self.manage_projects_action)
+    self.soroban_projects_menu.addSeparator()
+    self.soroban_projects_menu.addAction(self.active_project_action)
+
+# Project management dialog (following wallet management pattern)
+class SorobanProjectManagerDialog(QDialog):
+    """Soroban project management dialog (following WalletManagerDialog pattern)"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.project_manager = SorobanProjectManager()
+        self.setup_ui()
+        self.load_projects()
+    
+    def setup_ui(self):
+        """Setup UI following existing dialog patterns"""
+        # Similar structure to WalletManagerDialog
+        # Project list, create button, delete button, set active button
+```
+
+**New Dependencies:**
+```python
+# Add to requirements.txt
+requests>=2.25.0  # Already present
+node>=16.0.0      # For npm template rendering
+npm>=8.0.0        # For template processing
+```
+
+**Template Dependencies:**
+```json
+// package.json for template processing
+{
+  "name": "metavinci-3d-templates",
+  "version": "1.0.0",
+  "scripts": {
+    "render": "node render.js",
+    "build": "webpack --mode production",
+    "dev": "webpack serve --mode development"
+  },
+  "dependencies": {
+    "three": "^0.150.0",
+    "proprium-js": "^1.0.0",
+    "handlebars": "^4.7.0",
+    "webpack": "^5.75.0",
+    "webpack-cli": "^5.0.0"
+  }
+}
+```
+
+---
+
 ### Phase 4: Contract Compilation & Deployment
 
 > **Prerequisite:** Phase 3 (Wallet Management) must be completed first
