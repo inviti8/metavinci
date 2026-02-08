@@ -21,7 +21,7 @@ class TestTunnelConfig:
 
         config = TunnelConfig()
 
-        assert config.server_url == "wss://tunnel.heavymeta.art/connect"
+        assert config.server_url == "wss://tunnel.hvym.link/connect"
         assert config.services == ["pintheon"]
         assert config.reconnect_delay == 1.0
         assert config.max_reconnect_delay == 60.0
@@ -191,13 +191,13 @@ class TestTunnelEndpoint:
         from tunnel_client import TunnelEndpoint
 
         endpoint = TunnelEndpoint(
-            url="https://GTEST123.tunnel.heavymeta.art",
+            url="https://GTEST123.tunnel.hvym.link",
             stellar_address="GTEST123",
             server_address="GSERVER456",
             services=["pintheon"]
         )
 
-        assert endpoint.url == "https://GTEST123.tunnel.heavymeta.art"
+        assert endpoint.url == "https://GTEST123.tunnel.hvym.link"
         assert endpoint.stellar_address == "GTEST123"
         assert endpoint.server_address == "GSERVER456"
         assert endpoint.services == ["pintheon"]
@@ -271,8 +271,8 @@ class TestTunnelConfigStore:
 
         assert store.get_last_endpoint() is None
 
-        store.set_last_endpoint("https://GTEST.tunnel.heavymeta.art")
-        assert store.get_last_endpoint() == "https://GTEST.tunnel.heavymeta.art"
+        store.set_last_endpoint("https://GTEST.tunnel.hvym.link")
+        assert store.get_last_endpoint() == "https://GTEST.tunnel.hvym.link"
 
         store.clear_last_endpoint()
         assert store.get_last_endpoint() is None

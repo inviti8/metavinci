@@ -49,7 +49,7 @@ class TunnelState(Enum):
 @dataclass
 class TunnelEndpoint:
     """Represents the public tunnel endpoint."""
-    url: str                    # https://GADDR....tunnel.heavymeta.art
+    url: str                    # https://GADDR....tunnel.hvym.link
     stellar_address: str        # Client's Stellar address
     server_address: str         # Server's Stellar address
     services: List[str]         # Bound services
@@ -58,7 +58,7 @@ class TunnelEndpoint:
 @dataclass
 class TunnelConfig:
     """Tunnel configuration."""
-    server_url: str = "wss://tunnel.heavymeta.art/connect"
+    server_url: str = "wss://tunnel.hvym.link/connect"
     server_address: str = ""    # Server's Stellar address (for JWT audience)
     services: List[str] = None
     reconnect_delay: float = 1.0
@@ -197,7 +197,7 @@ class HVYMTunnelClient:
     def _build_endpoint_url(self) -> str:
         """Build public endpoint URL from Stellar address."""
         # Extract domain from server URL
-        domain = "tunnel.heavymeta.art"
+        domain = "tunnel.hvym.link"
         if "://" in self.config.server_url:
             parts = self.config.server_url.split("://")[1].split("/")[0]
             domain = parts

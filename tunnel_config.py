@@ -16,7 +16,7 @@ class TunnelConfigStore:
     """
 
     # Default configuration values
-    DEFAULT_SERVER_URL = "wss://tunnel.heavymeta.art/connect"
+    DEFAULT_SERVER_URL = "wss://tunnel.hvym.link/connect"
     DEFAULT_SERVICES = ["pintheon"]
     DEFAULT_PORT_BINDINGS = {"pintheon": 9998}
 

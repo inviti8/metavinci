@@ -78,6 +78,8 @@ class CrossPlatformBuilder:
             ('soroban_generator.py', 'soroban_generator.py'),
             ('jinja2', 'jinja2'),
             ('jinja2.ext', 'jinja2.ext'),
+            # Pinwheel daemon worker
+            ('pinwheel_worker.py', 'pinwheel_worker.py'),
         ]
 
         directories = ['images', 'data', 'service', 'templates', 'ui']
@@ -187,6 +189,15 @@ class CrossPlatformBuilder:
             'ui.soroban.deployment_list_dialog',
             'ui.soroban.deployment_completion_dialog',
             'ui.soroban.wallet_selection_dialog',
+            # Pinwheel daemon
+            'pinwheel_worker',
+            'hvym_pinner',
+            'hvym_pinner.daemon',
+            'hvym_pinner.config',
+            'hvym_pinner.models',
+            'hvym_pinner.models.config',
+            'hvym_pinner.models.snapshots',
+            'aiosqlite',
         ]
 
         if target_platform == 'macos':
