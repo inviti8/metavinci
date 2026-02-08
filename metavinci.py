@@ -111,6 +111,14 @@ except ImportError:
     ContractDeployer = None
     DeploymentManager = None
 
+# Try to import Pinwheel daemon
+try:
+    from pinwheel_worker import PinwheelWorker, PINNER_AVAILABLE, build_pinner_config
+    HAS_PINWHEEL = PINNER_AVAILABLE
+except ImportError:
+    HAS_PINWHEEL = False
+    PinwheelWorker = None
+
 # Constants
 EXTRACT_RETRY_ATTEMPTS = 2
 EXTRACT_RETRY_DELAY = 1  # seconds
@@ -1575,6 +1583,13 @@ class Metavinci(QMainWindow):
         self.API_ACTIVE = False
         if HAS_API_SERVER:
             self._start_api_server()
+
+        # Pinwheel daemon
+        self.pinwheel_worker = None
+        self.PINWHEEL_ACTIVE = False
+        self.PINWHEEL_MODE = self._get_pinwheel_mode()
+        self.PINWHEEL_WALLET = self._get_pinwheel_wallet()
+
         self.win_icon = QIcon(self.HVYM_IMG)
         self.icon = QIcon(self.LOGO_IMG)
         self.pintheon_icon = QIcon(self.PINTHEON_IMG)
@@ -1779,6 +1794,10 @@ class Metavinci(QMainWindow):
         # Add Metadata API menu if available
         if HAS_API_SERVER:
             self._setup_api_menu(tray_menu)
+
+        # Add Pinwheel menu if available
+        if HAS_PINWHEEL:
+            self._setup_pinwheel_menu(tray_menu)
 
         # Add Wallet Management menu if available
         if HAS_WALLET_MANAGER:
@@ -2092,8 +2111,433 @@ class Metavinci(QMainWindow):
                 f"Failed to open Soroban deployments: {str(e)}"
             )
 
+    # =========================================================================
+    # Pinwheel Methods
+    # =========================================================================
+
+    def _setup_pinwheel_menu(self, tray_menu):
+        """Set up the Pinwheel submenu in the system tray."""
+        self.tray_pinwheel_menu = tray_menu.addMenu("Pinwheel")
+        self.tray_pinwheel_menu.setIcon(self.cog_icon)
+
+        # Status line (disabled, informational)
+        self.pinwheel_status_action = QAction("Status: Stopped", self)
+        self.pinwheel_status_action.setEnabled(False)
+        self.tray_pinwheel_menu.addAction(self.pinwheel_status_action)
+
+        self.tray_pinwheel_menu.addSeparator()
+
+        # Start / Stop
+        self.start_pinwheel_action = QAction(self.cog_icon, "Start Pinwheel", self)
+        self.start_pinwheel_action.triggered.connect(self._start_pinwheel)
+
+        self.stop_pinwheel_action = QAction(self.cog_icon, "Stop Pinwheel", self)
+        self.stop_pinwheel_action.triggered.connect(self._stop_pinwheel)
+        self.stop_pinwheel_action.setVisible(False)
+
+        self.tray_pinwheel_menu.addAction(self.start_pinwheel_action)
+        self.tray_pinwheel_menu.addAction(self.stop_pinwheel_action)
+
+        self.tray_pinwheel_menu.addSeparator()
+
+        # Mode toggle
+        self.pinwheel_mode_action = QAction(self.cog_icon, f"Mode: {self.PINWHEEL_MODE}", self)
+        self.pinwheel_mode_action.triggered.connect(self._toggle_pinwheel_mode)
+        self.tray_pinwheel_menu.addAction(self.pinwheel_mode_action)
+
+        # Settings submenu
+        self.pinwheel_settings_menu = self.tray_pinwheel_menu.addMenu("Settings")
+        self.pinwheel_settings_menu.setIcon(self.cog_icon)
+
+        self.pinwheel_wallet_action = QAction(self.stellar_icon, "Select Wallet...", self)
+        self.pinwheel_wallet_action.triggered.connect(self._select_pinwheel_wallet)
+        self.pinwheel_settings_menu.addAction(self.pinwheel_wallet_action)
+
+        self.pinwheel_min_price_action = QAction(self.cog_icon, "Set Min Price...", self)
+        self.pinwheel_min_price_action.triggered.connect(self._set_pinwheel_min_price)
+        self.pinwheel_settings_menu.addAction(self.pinwheel_min_price_action)
+
+        # Dashboard submenu (visible when running)
+        self.pinwheel_info_menu = self.tray_pinwheel_menu.addMenu("Dashboard")
+        self.pinwheel_info_menu.setIcon(self.web_icon)
+        self.pinwheel_info_menu.setEnabled(False)
+
+        self.pinwheel_earnings_action = QAction("Earnings: --", self)
+        self.pinwheel_earnings_action.setEnabled(False)
+        self.pinwheel_info_menu.addAction(self.pinwheel_earnings_action)
+
+        self.pinwheel_pins_action = QAction("Pins: --", self)
+        self.pinwheel_pins_action.setEnabled(False)
+        self.pinwheel_info_menu.addAction(self.pinwheel_pins_action)
+
+        self.pinwheel_offers_action = QAction("Offers: --", self)
+        self.pinwheel_offers_action.setEnabled(False)
+        self.pinwheel_info_menu.addAction(self.pinwheel_offers_action)
+
+        self.pinwheel_info_menu.addSeparator()
+
+        # CID Hunter stats
+        self.pinwheel_hunter_action = QAction("Hunter: --", self)
+        self.pinwheel_hunter_action.setEnabled(False)
+        self.pinwheel_info_menu.addAction(self.pinwheel_hunter_action)
+
+        self.pinwheel_suspects_action = QAction("Suspects: --", self)
+        self.pinwheel_suspects_action.setEnabled(False)
+        self.pinwheel_info_menu.addAction(self.pinwheel_suspects_action)
+
+        self.pinwheel_bounties_action = QAction("Bounties: --", self)
+        self.pinwheel_bounties_action.setEnabled(False)
+        self.pinwheel_info_menu.addAction(self.pinwheel_bounties_action)
+
+        self.pinwheel_info_menu.addSeparator()
+
+        # Approve all (for approve mode)
+        self.pinwheel_approve_action = QAction("Approve All Pending", self)
+        self.pinwheel_approve_action.triggered.connect(self._approve_all_pinwheel_offers)
+        self.pinwheel_info_menu.addAction(self.pinwheel_approve_action)
+
+    def _get_pinwheel_mode(self) -> str:
+        """Get Pinwheel mode from TinyDB config."""
+        try:
+            result = self.DB.search(self.QUERY.type == 'app_data')
+            if result and 'pinwheel_mode' in result[0]:
+                return result[0]['pinwheel_mode']
+        except Exception:
+            pass
+        return 'auto'
+
+    def _get_pinwheel_wallet(self) -> str:
+        """Get stored Pinwheel wallet address from TinyDB."""
+        try:
+            result = self.DB.search(self.QUERY.type == 'app_data')
+            if result and 'pinwheel_wallet' in result[0]:
+                return result[0]['pinwheel_wallet']
+        except Exception:
+            pass
+        return ''
+
+    def _get_pinwheel_min_price(self) -> int:
+        """Get Pinwheel minimum price from TinyDB config (stored as stroops)."""
+        try:
+            result = self.DB.search(self.QUERY.type == 'app_data')
+            if result and 'pinwheel_min_price' in result[0]:
+                return result[0]['pinwheel_min_price']
+        except Exception:
+            pass
+        return 10_000_000  # Default: 1 XLM
+
+    def _start_pinwheel(self):
+        """Start the Pinwheel daemon."""
+        if not HAS_PINWHEEL:
+            self.open_msg_dialog('hvym-pinwheel is not installed.\nInstall with: pip install hvym-pinwheel')
+            return
+
+        if not self.PINTHEON_ACTIVE:
+            self.open_msg_dialog('Pintheon must be running before starting Pinwheel.\n'
+                                 'Pinwheel needs access to the Kubo IPFS node inside Pintheon.')
+            return
+
+        # Ensure wallet is selected
+        if not self.PINWHEEL_WALLET:
+            self._select_pinwheel_wallet()
+            if not self.PINWHEEL_WALLET:
+                return  # User cancelled
+
+        # Get wallet secret
+        secret = self._get_pinwheel_wallet_secret()
+        if not secret:
+            self.open_msg_dialog('Could not retrieve wallet secret key.')
+            return
+
+        # Build config
+        contract_id = self._get_pinwheel_contract_id()
+        factory_id = self._get_pinwheel_factory_id()
+
+        if not contract_id:
+            self.open_msg_dialog('No pin service contract ID configured.\n'
+                                 'Deploy or configure the hvym_pin_service contract first.')
+            return
+
+        config = build_pinner_config(
+            keypair_secret=secret,
+            network=self.PINTHEON_NETWORK,
+            contract_id=contract_id,
+            factory_contract_id=factory_id,
+            mode=self.PINWHEEL_MODE,
+            min_price=self._get_pinwheel_min_price(),
+        )
+
+        # Create and start worker
+        self.pinwheel_worker = PinwheelWorker(config, parent=self)
+        self.pinwheel_worker.started_signal.connect(self._on_pinwheel_started)
+        self.pinwheel_worker.stopped_signal.connect(self._on_pinwheel_stopped)
+        self.pinwheel_worker.error_signal.connect(self._on_pinwheel_error)
+        self.pinwheel_worker.start()
+        logging.info("Starting Pinwheel daemon")
+
+    def _stop_pinwheel(self):
+        """Stop the Pinwheel daemon gracefully."""
+        if self.pinwheel_worker and self.pinwheel_worker.is_running:
+            self.pinwheel_worker.stop()
+            self.pinwheel_worker.wait(10000)  # Wait up to 10 seconds
+            logging.info("Pinwheel daemon stopped")
+
+    def _on_pinwheel_started(self):
+        """Handle Pinwheel started signal."""
+        self.PINWHEEL_ACTIVE = True
+        self.pinwheel_status_action.setText("Status: Running")
+        self.start_pinwheel_action.setVisible(False)
+        self.stop_pinwheel_action.setVisible(True)
+        self.pinwheel_info_menu.setEnabled(True)
+        logging.info("Pinwheel started")
+
+        # Start periodic dashboard refresh
+        self._pinwheel_refresh_timer = QTimer(self)
+        self._pinwheel_refresh_timer.timeout.connect(self._refresh_pinwheel_dashboard)
+        self._pinwheel_refresh_timer.start(30000)  # Every 30 seconds
+
+    def _on_pinwheel_stopped(self):
+        """Handle Pinwheel stopped signal."""
+        self.PINWHEEL_ACTIVE = False
+        self.pinwheel_status_action.setText("Status: Stopped")
+        self.start_pinwheel_action.setVisible(True)
+        self.stop_pinwheel_action.setVisible(False)
+        self.pinwheel_info_menu.setEnabled(False)
+
+        # Stop refresh timer
+        if hasattr(self, '_pinwheel_refresh_timer'):
+            self._pinwheel_refresh_timer.stop()
+
+    def _on_pinwheel_error(self, error: str):
+        """Handle Pinwheel error signal."""
+        self.PINWHEEL_ACTIVE = False
+        self.pinwheel_status_action.setText("Status: Error")
+        self.start_pinwheel_action.setVisible(True)
+        self.stop_pinwheel_action.setVisible(False)
+        self.pinwheel_info_menu.setEnabled(False)
+        logging.error(f"Pinwheel error: {error}")
+        QMessageBox.warning(self, "Pinwheel Error",
+                            f"Pinwheel daemon error:\n{error}")
+
+    def _refresh_pinwheel_dashboard(self):
+        """Fetch current Pinwheel state and update menu items."""
+        if not self.pinwheel_worker or not self.pinwheel_worker.is_running:
+            return
+
+        dashboard = self.pinwheel_worker.get_dashboard_sync()
+        if dashboard is None:
+            return
+
+        earnings = dashboard.get('earnings', {})
+        total_xlm = earnings.get('total_earned_xlm', '0 XLM')
+        claims = earnings.get('claims_count', 0)
+        pins = dashboard.get('pins_active', 0)
+        offers = dashboard.get('offers_seen', 0)
+
+        self.pinwheel_earnings_action.setText(f"Earned: {total_xlm} ({claims} claims)")
+        self.pinwheel_pins_action.setText(f"Active Pins: {pins}")
+        self.pinwheel_offers_action.setText(f"Offers Seen: {offers}")
+
+        # CID Hunter stats
+        hunter = dashboard.get('hunter')
+        if hunter:
+            tracked = hunter.get('total_tracked_pins', 0)
+            verified = hunter.get('verified_count', 0)
+            suspect = hunter.get('suspect_count', 0)
+            flagged = hunter.get('flagged_count', 0)
+            bounties_xlm = hunter.get('bounties_earned_xlm', '0 XLM')
+
+            self.pinwheel_hunter_action.setText(
+                f"Hunter: {tracked} tracked, {verified} verified"
+            )
+            self.pinwheel_suspects_action.setText(
+                f"Suspects: {suspect} suspect, {flagged} flagged"
+            )
+            self.pinwheel_bounties_action.setText(
+                f"Bounties Earned: {bounties_xlm}"
+            )
+
+        # Check approval queue (for approve mode)
+        if self.PINWHEEL_MODE == 'approve':
+            self._check_pinwheel_approval_queue(dashboard)
+
+    def _check_pinwheel_approval_queue(self, dashboard=None):
+        """Check if there are offers waiting for approval."""
+        if dashboard is None:
+            if not self.pinwheel_worker or not self.pinwheel_worker.is_running:
+                return
+            dashboard = self.pinwheel_worker.get_dashboard_sync()
+        if dashboard and dashboard.get('offers_awaiting_approval', 0) > 0:
+            count = dashboard['offers_awaiting_approval']
+            self.tray_icon.showMessage(
+                "Pinwheel",
+                f"{count} offer(s) awaiting approval",
+                QSystemTrayIcon.Information,
+                5000
+            )
+
+    def _toggle_pinwheel_mode(self):
+        """Toggle between auto and approve mode."""
+        new_mode = 'approve' if self.PINWHEEL_MODE == 'auto' else 'auto'
+        self.PINWHEEL_MODE = new_mode
+        self.DB.update({'pinwheel_mode': new_mode}, self.QUERY.type == 'app_data')
+        self.pinwheel_mode_action.setText(f"Mode: {new_mode}")
+
+        # If running, update the daemon's mode in real-time
+        if self.pinwheel_worker and self.pinwheel_worker.is_running:
+            try:
+                import asyncio
+                loop = self.pinwheel_worker._loop
+                if loop:
+                    future = asyncio.run_coroutine_threadsafe(
+                        self.pinwheel_worker.daemon.data_api.set_mode(new_mode), loop
+                    )
+                    future.result(timeout=5)
+            except Exception as e:
+                logging.warning(f"Failed to update Pinwheel mode: {e}")
+
+    def _select_pinwheel_wallet(self):
+        """Show dialog to select which wallet Pinwheel uses."""
+        if not HAS_WALLET_MANAGER:
+            self.open_msg_dialog('Wallet Manager not available.')
+            return
+
+        wm = WalletManager()
+        wallets = wm.list_wallets(network=self.PINTHEON_NETWORK)
+        if not wallets:
+            self.open_msg_dialog(f'No {self.PINTHEON_NETWORK} wallets found.\n'
+                                 'Create a wallet first via Wallet Management.')
+            return
+
+        labels = [f"{w.label} ({w.address[:8]}...{w.address[-4:]})" for w in wallets]
+        choice, ok = QInputDialog.getItem(
+            self, "Select Pinwheel Wallet",
+            "Choose a wallet for the Pinwheel daemon:",
+            labels, 0, False
+        )
+        if ok and choice:
+            idx = labels.index(choice)
+            selected = wallets[idx]
+            self.PINWHEEL_WALLET = selected.address
+            self.DB.update({'pinwheel_wallet': selected.address},
+                           self.QUERY.type == 'app_data')
+
+    def _set_pinwheel_min_price(self):
+        """Show dialog to set minimum offer price in XLM (stored as stroops)."""
+        current_stroops = self._get_pinwheel_min_price()
+        current_xlm = current_stroops / 10_000_000
+
+        xlm_str, ok = QInputDialog.getText(
+            self, "Pinwheel Min Price",
+            f"Minimum offer price (XLM):\n"
+            f"Current: {current_xlm:.7g} XLM",
+            text=f"{current_xlm:.7g}",
+        )
+        if ok and xlm_str:
+            try:
+                xlm_val = float(xlm_str)
+                if xlm_val < 0:
+                    self.open_msg_dialog('Price must be positive.')
+                    return
+                stroops = int(xlm_val * 10_000_000)
+                self.DB.update({'pinwheel_min_price': stroops}, self.QUERY.type == 'app_data')
+            except ValueError:
+                self.open_msg_dialog('Invalid number. Enter a value in XLM (e.g. 1.5).')
+
+    def _get_pinwheel_wallet_secret(self) -> str:
+        """Retrieve the secret key for the selected Pinwheel wallet."""
+        if not HAS_WALLET_MANAGER or not self.PINWHEEL_WALLET:
+            return ''
+        wm = WalletManager()
+        try:
+            wallet = wm.get_wallet(self.PINWHEEL_WALLET)
+        except Exception:
+            return ''
+
+        if wallet.encrypted:
+            # Mainnet wallet — need password
+            password, ok = QInputDialog.getText(
+                self, "Wallet Password",
+                f"Enter password for wallet {wallet.label}:",
+                QLineEdit.Password
+            )
+            if not ok or not password:
+                return ''
+            try:
+                return wm.get_secret_key(wallet.address, password)
+            except Exception:
+                self.open_msg_dialog('Invalid password.')
+                return ''
+        else:
+            # Testnet wallet — plaintext secret
+            return wallet.secret_key
+
+    def _get_pinwheel_contract_id(self) -> str:
+        """Get the hvym_pin_service contract ID for current network."""
+        # Check TinyDB first
+        try:
+            result = self.DB.search(self.QUERY.type == 'app_data')
+            if result and 'pinwheel_contract_id' in result[0]:
+                cid = result[0]['pinwheel_contract_id']
+                if cid:
+                    return cid
+        except Exception:
+            pass
+
+        # Check DeploymentManager
+        if HAS_SOROBAN:
+            try:
+                dm = DeploymentManager()
+                deps = dm.list_deployments()
+                for d in deps:
+                    if 'pin_service' in d.get('contract_name', '') and d.get('status') == 'success':
+                        return d.get('contract_id', '')
+            except Exception:
+                pass
+
+        # Fallback: hardcoded testnet contract
+        if self.PINTHEON_NETWORK == 'testnet':
+            return 'CCEDYFIHUCJFITWEOT7BWUO2HBQQ72L244ZXQ4YNOC6FYRDN3MKDQFK7'
+        return ''
+
+    def _get_pinwheel_factory_id(self) -> str:
+        """Get the hvym_pin_service_factory contract ID."""
+        if self.PINTHEON_NETWORK == 'testnet':
+            return 'CACBN6G2EPPLAQORDB3LXN3SULGVYBAETFZTNYTNDQ77B7JFRIBT66V2'
+        return ''
+
+    def _approve_all_pinwheel_offers(self):
+        """Approve all pending offers in the Pinwheel queue."""
+        if not self.pinwheel_worker or not self.pinwheel_worker.is_running:
+            return
+        try:
+            import asyncio
+            loop = self.pinwheel_worker._loop
+            dashboard = self.pinwheel_worker.get_dashboard_sync()
+            if not dashboard:
+                return
+            queue = dashboard.get('approval_queue', [])
+            if not queue:
+                self.tray_icon.showMessage("Pinwheel", "No offers pending approval",
+                                           QSystemTrayIcon.Information, 3000)
+                return
+            slot_ids = [o['slot_id'] for o in queue]
+            future = asyncio.run_coroutine_threadsafe(
+                self.pinwheel_worker.daemon.data_api.approve_offers(slot_ids), loop
+            )
+            results = future.result(timeout=10)
+            approved = sum(1 for r in results if r.success)
+            self.tray_icon.showMessage("Pinwheel", f"Approved {approved} offer(s)",
+                                       QSystemTrayIcon.Information, 3000)
+        except Exception as e:
+            logging.error(f"Failed to approve offers: {e}")
+
     def _quit_application(self):
         """Clean shutdown of the application."""
+        # Stop Pinwheel daemon
+        if HAS_PINWHEEL and self.pinwheel_worker:
+            self._stop_pinwheel()
+
         # Stop API server
         if HAS_API_SERVER and self.api_server:
             self._stop_api_server()
@@ -3708,6 +4152,10 @@ class Metavinci(QMainWindow):
         if confirm:
             stop = self.open_confirm_dialog('Stop Pintheon Gateway?')
         if stop:
+            # Stop Pinwheel first (depends on Pintheon's Kubo)
+            if HAS_PINWHEEL and self.PINWHEEL_ACTIVE:
+                self._stop_pinwheel()
+
             # Use direct Docker command (no CLI dependency)
             if self._stop_pintheon_direct():
                 self.PINTHEON_ACTIVE = False

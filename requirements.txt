@@ -19,6 +19,7 @@ easygui==0.98.3
 fastapi>=0.109.0
 filelock>=3.20.1
 freeze-core==0.4.2
+hvym-pinwheel>=0.1.0
 hvym-stellar==0.22.0
 icnsutil==1.1.0
 idna==3.11
